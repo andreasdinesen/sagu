@@ -915,6 +915,33 @@ let INLINE_SCRIPT_HASH = '';
 let INLINE_SCRIPT_TEXT = '';
 let APP_VERSION_FIL = '1';
 
+/*
+ * Versionen laest FRISK fra disken - men kun naar filen er aendret.
+ *
+ * `computeInlineHash()` koeres ÉN gang ved opstart, og det var nok, saa laenge
+ * en opdatering altid var en genstart. Panelets »Opdater app« skriver
+ * app-filerne igen UDEN at genstarte containeren, og saa ville serveren blive
+ * ved med at melde det gamle tal - og opdateringsbeskeden i browseren ville
+ * aldrig dukke op, selv om der laa en ny app.js paa disken.
+ *
+ * Et `stat` pr. kald til /api/public-config er billigt; at laese hele filen er
+ * det ikke, saa mtime afgoer, om der skal laeses.
+ */
+let versionMtime = 0;
+
+function versionNu() {
+  try {
+    const sti = path.join(PUBLIC_DIR, 'index.html');
+    const m = fs.statSync(sti).mtimeMs;
+    if (m !== versionMtime) {
+      versionMtime = m;
+      const v = fs.readFileSync(sti, 'utf8').match(/style\.css\?v=(\d+)/);
+      if (v) APP_VERSION_FIL = v[1];
+    }
+  } catch { /* filen kan ikke laeses - behold det, vi havde */ }
+  return Number(APP_VERSION_FIL);
+}
+
 function computeInlineHash() {
   try {
     const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
@@ -2777,15 +2804,60 @@ function fangst(userId, tekst, opt) {
   // Samme regel som i titelfeltet: `#drift` bliver et rigtigt maerke.
   const { tekst: renTitel, maerker: fundne } = maerker.pluk(felter.titel);
 
+  /*
+   * Laeg teksten NEDERST i en note, der findes i forvejen.
+   *
+   * ÉT sted for begge maal - dagens note og en note, man peger paa med et id.
+   * De to gjorde det samme, og det andet blev bygget ved at kopiere det
+   * foerste; saa ville maerke-fejlen nedenfor have vaeret to steder.
+   */
+  const tilfoejTil = (note, fejlbesked) => {
+    const linje = felter.krop ? `${renTitel}\n\n${felter.krop}` : renTitel;
+    const ny = `${String(note.body || '').replace(/\s+$/, '')}\n\n${linje}\n`;
+    const svar = gemNote(userId, note.id, { body: ny });
+    if (svar.fejl) return { fejl: ['not_found', fejlbesked] };
+    /*
+     * Maerkerne LAEGGES TIL - de erstatter ikke.
+     *
+     * `saetMaerker` skriver notens maerker forfra (den rydder `note_tags`
+     * foerst), og det er rigtigt, naar man redigerer maerkeraekken. Men her
+     * TILFOEJER man til en note, der findes: sender man »Ny router #drift«
+     * til dagens note, skal notens oevrige maerker blive. Foer forsvandt de,
+     * uden at noget fejlede - og en fangst, der sletter noget, er den vaerste
+     * slags stille fejl (fundet 2026-08-21).
+     */
+    if (fundne.length) {
+      const nu = (note.tags || []).slice();
+      for (const m of fundne) {
+        if (!nu.some((t) => t.toLowerCase() === m.toLowerCase())) nu.push(m);
+      }
+      saetMaerker(userId, note.id, nu);
+    }
+    return { note: hentNote(userId, note.id), tilfoejet: true, titel: renTitel };
+  };
+
   if (o.tilDagens) {
     const dag = dagensNote(userId, o.dato, true);
     if (!dag || dag.fejl) return { fejl: ['no_note', 'Could not open today\'s note.'] };
-    const linje = felter.krop ? `${renTitel}\n\n${felter.krop}` : renTitel;
-    const ny = `${String(dag.body || '').replace(/\s+$/, '')}\n\n${linje}\n`;
-    const svar = gemNote(userId, dag.id, { body: ny });
-    if (svar.fejl) return { fejl: ['not_found', 'Could not write to today\'s note.'] };
-    if (fundne.length) saetMaerker(userId, dag.id, fundne);
-    return { note: svar.note, tilfoejet: true, titel: renTitel };
+    return tilfoejTil(dag, 'Could not write to today\'s note.');
+  }
+
+  /*
+   * `to=<id>`: en bestemt note.
+   *
+   * **Adgangen er SKRIVE-adgang**, ikke bare »kan se«: at laegge noget
+   * nederst i en side er at aendre den. En note, der er delt til laesning,
+   * maa derfor ikke kunne fyldes op udefra (F11).
+   *
+   * Svaret er det samme 404 for »findes ikke« og »ikke min« - man maa ikke
+   * kunne aftaste, hvilke id'er der er i brug.
+   */
+  if (o.tilNote) {
+    const note = hentNote(userId, o.tilNote);
+    if (!note || !maaSkrive(userId, o.tilNote)) {
+      return { fejl: ['not_found', 'No note with that id — or it is not yours to write in.'] };
+    }
+    return tilfoejTil(note, 'Could not write to that note.');
   }
 
   const note = opretNote(userId, {
@@ -2982,7 +3054,7 @@ const ROUTES = {
       // Den version, SERVEREN udleverer. Stemmer den ikke med den, browseren
       // koerer, sidder der en gammel app.js i cachen - og saa skal brugeren
       // vide DET frem for at lede efter en funktion, der ikke er indlaest.
-      version: Number(APP_VERSION_FIL),
+      version: versionNu(),
       needsSetup: userCount() === 0,
       // Skjul ogsaa registreringslinket, ikke kun ruten.
       allowRegistration: registreringAaben(),
@@ -3404,6 +3476,20 @@ const ROUTES = {
     const u = auth.user;
 
     /*
+     * `to=` tolkes ÉT sted, saa tekst og billede aldrig kan komme i utakt.
+     *
+     * Tre former: intet (en ny note), `today` (dagens) og et note-id (den
+     * note). Det tredje er dét, der kom til - en genvej skal kunne laegge
+     * noget nederst i en side, man allerede har.
+     */
+    const tolkMaal = (raa) => {
+      const v = str(raa, 40);
+      if (v === 'today') return { tilDagens: true };
+      if (/^[a-f0-9]{32}$/.test(v)) return { tilNote: v };
+      return {};
+    };
+
+    /*
      * Et BILLEDE fra delingsmenuen.
      *
      * Genvejen sender filen som krop; navnet staar i adressen. Den lander som
@@ -3433,17 +3519,27 @@ const ROUTES = {
         db.prepare(`INSERT INTO attachments (id, user_id, note_id, name, mime, size, sha, created_at)
                     VALUES (?,?,?,?,?,?,?,?)`)
           .run(filId, u.id, null, navn, type, size, sha, now());
-        const tekst = str(ctx.query.get('text'), 500) || navn;
-        const svar = fangst(u.id, `${tekst}\n\n![${navn}](sagu:${filId})`, {
-          tilDagens: str(ctx.query.get('to'), 20) === 'today',
+        // `hvorhen`, ikke `maal`: `maal` er allerede filstien i den her blok,
+        // og to af samme navn i samme scope er en TDZ-fejl, der viser sig som
+        // »upload_failed« - altsaa det forkerte sted at lede.
+        const hvorhen = tolkMaal(ctx.query.get('to'));
+        // Uden en tekst er navnet overskriften paa en NY note - men laegges
+        // billedet ned i en note, der findes, er der ingen overskrift at
+        // skrive: saa staar billedet alene.
+        const tekst = str(ctx.query.get('text'), 500)
+          || ((hvorhen.tilDagens || hvorhen.tilNote) ? '' : navn);
+        const linjer = tekst ? `${tekst}\n\n![${navn}](sagu:${filId})` : `![${navn}](sagu:${filId})`;
+        const svar = fangst(u.id, linjer, Object.assign({
           dato: ctx.query.get('date'),
           notesbog: findNotesbog(u.id, ctx.query.get('notebook')),
-        });
+        }, hvorhen));
         if (svar.fejl) { apiFejl(res, 400, svar.fejl[0], svar.fejl[1]); return; }
         db.prepare('UPDATE attachments SET note_id = ? WHERE id = ?').run(svar.note.id, filId);
         sendJson(res, 200, {
           note: { id: svar.note.id, title: svar.note.title },
-          message: svar.tilfoejet ? `Added the image to today's note.` : `Saved “${svar.note.title}”.`,
+          message: svar.tilfoejet
+            ? `Added the image to “${svar.note.title}”.`
+            : `Saved “${svar.note.title}”.`,
         });
       } catch (err) {
         // Svar FOERST, luk bagefter - ellers ser klienten "connection reset"
@@ -3462,19 +3558,21 @@ const ROUTES = {
     const body = await readJsonBody(req, true);
     const tekst = [body.text, body.title, body.note, ctx.query.get('text')]
       .find((x) => typeof x === 'string' && x.trim()) || '';
-    const svar = fangst(u.id, tekst, {
-      tilDagens: String(body.to || ctx.query.get('to') || '') === 'today',
+    const svar = fangst(u.id, tekst, Object.assign({
       dato: body.date || ctx.query.get('date'),
       notesbog: findNotesbog(u.id, body.notebook || ctx.query.get('notebook')),
-    });
+    }, tolkMaal(body.to || ctx.query.get('to'))));
     if (svar.fejl) { apiFejl(res, 400, svar.fejl[0], svar.fejl[1]); return; }
     if (auth.viaToken) audit('fangst-via-api', u.id, auth.token.name, svar.note.id);
     sendJson(res, 200, {
       note: { id: svar.note.id, title: svar.note.title },
       // Én faerdig linje, genvejen kan vise ORDRET. Uden den skal en genvej
       // bygge en saetning af felter, og det kan den daarligt.
+      // Sig HVILKEN note. »Added to today's note« var rigtigt, saa laenge der
+      // kun var ét maal at tilfoeje til; med `to=<id>` ville den vaere en
+      // usandhed hver gang.
       message: svar.tilfoejet
-        ? `Added to today's note: ${svar.titel}`
+        ? `Added to “${svar.note.title}”: ${svar.titel}`
         : `Saved “${svar.note.title}”.`,
     });
   },

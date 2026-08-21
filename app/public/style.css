@@ -771,6 +771,29 @@ a.gh-navn:hover { text-decoration: underline; }
   color: var(--muted);
 }
 .offline-baand svg { color: var(--accent); flex: none; }
+
+/*
+ * »Der er en ny version«.
+ *
+ * Samme form som offline-baandet, men med en KNAP: den her besked er ikke en
+ * oplysning, den er et tilbud. Og den staar i toppen af indholdet - ikke i
+ * sidebarens fod, hvor en telefon aldrig viser den.
+ */
+.opdater-baand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  font-size: 13px;
+  color: var(--muted);
+}
+.opdater-baand svg { color: var(--accent); flex: none; }
+.opdater-baand .baand-tekst { flex: 1; min-width: 0; line-height: 1.5; }
+.opdater-baand .btn { flex: none; }
 /* Venter der en konflikt, er baandet ikke laengere en oplysning - det er
    noget, der skal tages stilling til (F15). */
 .offline-baand.har-strid { border-left-color: var(--danger); }

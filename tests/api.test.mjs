@@ -153,7 +153,10 @@ test('to=today samler dagens smaating ÉT sted', async () => {
   const en = await medNoegle('capture', 'POST', '/api/v1/capture?to=today', { krop: 'Foerste indfald' });
   assert.equal(en.status, 200, en.tekst);
   assert.equal(en.data.note.title, iDag(), 'noten hedder datoen');
-  assert.match(en.data.message, /today/i);
+  // Beskeden naevner NOTEN ved navn. Den hed foer »today's note«, og det var
+  // rigtigt, saa laenge der kun var ét maal at tilfoeje til - med `to=<id>`
+  // ville den vaere en usandhed hver gang.
+  assert.match(en.data.message, new RegExp(`Added to “${iDag()}”`));
 
   const to = await medNoegle('capture', 'POST', '/api/v1/capture?to=today', { krop: 'Andet indfald' });
   assert.equal(to.data.note.id, en.data.note.id, 'samme note - ikke en ny pr. indfald');
@@ -327,4 +330,90 @@ test('en ugyldig noegle er 401 - og siger ikke hvorfor', async () => {
   });
   assert.equal(r.status, 401);
   assert.equal(r.headers.get('www-authenticate'), 'Bearer', 'ellers proever klienter i ring');
+});
+
+/* ============== læg noget nederst i en note, der findes ================= */
+
+test('to=<id> lægger teksten nederst i den note', async () => {
+  const n = (await a.kald('POST', '/api/v1/notes',
+    { title: 'Serverskabet', body: '# Serverskabet\n\nUniFi, 24 porte.' })).data.note;
+
+  const r = await medNoegle('capture', 'POST', `/api/v1/capture?to=${n.id}`,
+    { krop: 'Husk at skifte filteret' });
+  assert.equal(r.status, 200, r.tekst);
+  assert.equal(r.data.note.id, n.id, 'samme note - der laves ikke en ny');
+  assert.match(r.data.message, /Added to “Serverskabet”/, 'beskeden skal naevne noten ved navn');
+
+  const md = await medNoegle('read', 'GET', `/api/v1/notes/${n.id}?format=md`);
+  assert.match(md.tekst, /UniFi, 24 porte/, 'det, der stod der, bliver staaende');
+  assert.match(md.tekst, /Husk at skifte filteret/);
+  assert.ok(md.tekst.indexOf('UniFi') < md.tekst.indexOf('Husk'), 'og det nye kommer NEDERST');
+});
+
+test('to=<id> tilføjer mærker — det ERSTATTER dem ikke', async () => {
+  /*
+   * Fejlen fandtes i forvejen på `to=today`: `saetMaerker` skriver notens
+   * mærker forfra, og det er rigtigt, når man redigerer mærkerækken. Men her
+   * *tilføjer* man til en note, der findes — og så forsvandt dens øvrige
+   * mærker, uden at noget fejlede. **En fangst, der sletter noget, er den
+   * værste slags stille fejl.**
+   */
+  const n = (await a.kald('POST', '/api/v1/notes',
+    { title: 'Med maerker', tags: ['drift', 'netvaerk'] })).data.note;
+
+  const r = await medNoegle('capture', 'POST', `/api/v1/capture?to=${n.id}`,
+    { krop: 'Ny router i skabet #indkoeb' });
+  assert.equal(r.status, 200, r.tekst);
+
+  const efter = (await a.kald('GET', `/api/v1/notes/${n.id}`)).data.note;
+  assert.deepEqual(efter.tags.slice().sort(), ['drift', 'indkoeb', 'netvaerk'],
+    'de gamle maerker skal blive, og det nye laegges til');
+});
+
+test('to=<id> kræver SKRIVE-adgang, ikke bare at man kan se noten', async () => {
+  const n = (await a.kald('POST', '/api/v1/notes', { title: 'Kun min' })).data.note;
+
+  // En anden konto, som noten er delt med til LAESNING.
+  await a.kald('POST', '/api/v1/admin', { allowRegistration: true });
+  const b = klient(srv.base);
+  await b.opret('kollega', 'kodeord-1234');
+  await a.kald('POST', `/api/v1/notes/${n.id}/access`, { username: 'kollega', level: 'read' });
+  const bNoegle = (await b.kald('POST', '/api/v1/keys', { name: 'k', scope: 'capture' })).data.key;
+
+  const r = await fetch(`${srv.base}/api/v1/capture?to=${n.id}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${bNoegle}` }, body: 'skrevet udefra',
+  });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).message, /not yours to write in/);
+
+  // ... og teksten er ikke landet.
+  assert.ok(!/skrevet udefra/.test((await a.kald('GET', `/api/v1/notes/${n.id}`)).data.note.body));
+});
+
+test('to=<id> med et ukendt id svarer som med en note, der ikke findes', async () => {
+  const r = await medNoegle('capture', 'POST', `/api/v1/capture?to=${'f'.repeat(32)}`,
+    { krop: 'ingen steder' });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.error, 'not_found');
+});
+
+test('et BILLEDE kan lægges i en note, der findes', async () => {
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64');
+  const n = (await a.kald('POST', '/api/v1/notes',
+    { title: 'Skabet', body: '# Skabet\n\nStaar i kaelderen.' })).data.note;
+
+  const r = await medNoegle('capture', 'POST', `/api/v1/capture?to=${n.id}&name=foto.png`,
+    { type: 'image/png', krop: png });
+  assert.equal(r.status, 200, r.tekst);
+  assert.equal(r.data.note.id, n.id);
+  assert.match(r.data.message, /Added the image to “Skabet”/);
+
+  const efter = (await a.kald('GET', `/api/v1/notes/${n.id}`)).data.note;
+  assert.match(efter.body, /Staar i kaelderen/, 'teksten er uroert');
+  assert.match(efter.body, /!\[foto\.png\]\(sagu:[a-f0-9]{32}\)/, 'og billedet staar nederst');
+  assert.equal(efter.files.length, 1, 'og haenger paa noten som en vedhaeftning');
+  // Uden en `text=` skal der ikke staa et filnavn som overskrift i teksten.
+  assert.ok(!/^foto\.png$/m.test(efter.body), 'filnavnet er ikke en overskrift her');
 });

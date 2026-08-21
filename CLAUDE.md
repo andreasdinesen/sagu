@@ -149,6 +149,16 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **»I dag« er ÉN regel på serveren** (`iDagISO`/`dagensNote`). Den lå før i frontenden
   (lokal tid) og i `/state` (UTC) og var uenig med sig selv. En klient må sende sin egen
   `date=` — telefonen ved bedre end serveren, hvornår det er i dag hos brugeren.
+- **`?to=` afgør, hvor en fangst lander:** ingenting = ny note, `today` = dagens, et
+  **note-id** = den note. Formen tolkes ÉT sted, så tekst og billede ikke kan komme i utakt.
+  Et id kræver **skrive**-adgang: at lægge noget nederst i en side er at ændre den.
+- **Mærker LÆGGES TIL, når man tilføjer til en note, der findes.** `saetMaerker` skriver
+  forfra (den rydder `note_tags`), og det er rigtigt i mærkerækken — men en fangst, der
+  sletter notens øvrige mærker, er en stille fejl.
+- **Kun en NYERE serverversion er en opdatering.** `!==` gav »v5 is ready, you are running
+  v6«, når serverprocessen ikke var genstartet.
+- **Serveren læser sin version frisk (efter mtime).** Panelets »Opdatér app« skriver
+  app-filerne uden at genstarte containeren; et tal læst ved opstart bliver aldrig rigtigt igen.
 - **`?format=md` skriver ikke om på brugerens tekst:** har noten sin egen overskrift,
   står den urørt.
 - **Guiden (`p9_guide.js`) er en kravspecifikation.** En formregel slår hver **metode og

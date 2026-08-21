@@ -267,8 +267,25 @@ test('en for stor upload faar et RIGTIGT 413 med en laesbar besked', async () =>
       // og saa maalte testen sin egen afbrydelse i stedet for serverens svar.
       res.on('end', () => { req.destroy(); ok({ status: res.statusCode, krop }); });
     });
-    // En afbrudt skrivning er FORVENTET her - serveren svarer og lukker.
-    req.on('error', () => { if (!faerdig) nej(new Error('forbindelsen doede FOER et svar')); });
+    /*
+     * En afbrudt skrivning er FORVENTET her - serveren svarer og lukker.
+     *
+     * Men socket-fejlen kan naa frem FOER `response`-haendelsen, naar
+     * maskinen er belastet (en fuld, parallel testkoersel). Foer afviste
+     * testen med det samme og maalte dermed sit eget kaploeb: den var groen
+     * alene og roed cirka hver fjerde gang i den samlede koersel - den
+     * vaerste slags flakkende test, fordi fejlen peger paa serveren.
+     *
+     * Testens paastand er, at der KOMMER et rigtigt 413 med en laesbar krop -
+     * ikke at der aldrig sker en socket-fejl. Derfor faar svaret et oejeblik
+     * til at naa frem, foer der doemmes.
+     */
+    req.on('error', () => {
+      if (faerdig) return;
+      setTimeout(() => {
+        if (!faerdig) nej(new Error('forbindelsen doede FOER et svar'));
+      }, 500);
+    });
     let n = 0;
     const skriv = () => {
       while (!faerdig && n < 30) {

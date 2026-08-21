@@ -77,6 +77,35 @@ function sideApi() {
         + 'own day: <code>?to=today&amp;date=</code> with the date from <em>Current Date</em>.',
     },
     {
+      navn: 'Add to a note you already have',
+      hvorfor: 'A running page — a project, a shopping list, a log — that you add to from '
+        + 'your phone during the day.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?to=NOTE_ID`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'Text — the Shortcut Input'],
+      ],
+      noter: 'The text lands at the <em>bottom</em>; nothing already there is touched. A '
+        + '<code>#tag</code> is <strong>added</strong> to the note\'s tags — it does not replace '
+        + 'them. The id is the 32 characters at the end of the note\'s address in Sagu. '
+        + 'You need a key that may write in that note; a note shared with you for reading '
+        + 'answers 404, the same as one that does not exist.',
+    },
+    {
+      navn: 'Add a photo to a note you already have',
+      hvorfor: 'A picture of the cabinet straight into the page about the cabinet.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?to=NOTE_ID&name=foto.jpg`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'File — the Shortcut Input'],
+      ],
+      noter: 'Set <em>Request Body</em> to <strong>File</strong>, not JSON. The image is '
+        + 'written in at the bottom and attached to the note. Add <code>&amp;text=</code> if it '
+        + 'needs a line above it; without one the picture stands on its own.',
+    },
+    {
       navn: 'Share an image from the share sheet',
       hvorfor: 'A photo of the cabinet, a whiteboard, a receipt — as a note with the image in it.',
       felter: [
@@ -156,6 +185,13 @@ function sideApi() {
         <tr><th>Form</th><td><code>text=Ny+router+i+skabet</code></td></tr>
         <tr><th>Plain text</th><td>the body, with no Content-Type at all</td></tr>
         <tr><th>In the address</th><td><code>?text=Ny%20router</code></td></tr>
+      </tbody>
+    </table></div>
+    <p class="meta saetning"><code>?to=</code> decides <em>where</em> it lands: nothing at all
+    makes a new note, <code>today</code> uses today's note, and a <strong>note id</strong>
+    adds to that page. The same three work for an image.</p>
+    <div class="tablewrap"><table class="data">
+      <tbody>
       </tbody>
     </table></div>
     <p class="meta saetning">A <code>#tag</code> in the first line becomes a real tag, exactly

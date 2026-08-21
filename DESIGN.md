@@ -2618,3 +2618,82 @@ stopper. Sagus eget loft er 1 GB; det er ikke dét, der rammer.
 Rådet står nu på selve import-skærmen: åbn Sagu på serverens egen adresse på
 netværket og importér der. Det er samme genvej som doda-broens (§16) — peger
 man forbi tunnelen, forsvinder både grænsen og ventetiden uden en linje kode.
+
+## 28 · Læg noget nederst i en note, der findes
+
+**Bygget 2026-08-21.** Andreas' ønske: at API'et skal kunne føje tekst eller et
+billede til en note, der allerede er oprettet.
+
+### Samme dør, ét mål mere
+
+`?to=` fandtes i forvejen og betød »hvor skal det lande«: ingenting = en ny
+note, `today` = dagens. Nu er der en tredje form — et **note-id**. Formen
+tolkes ét sted, så tekst og billede aldrig kan komme i utakt, og begge veje
+ind (JSON, formulardata, ren krop, `?text=`) virker uændret.
+
+Adgangen er **skrive**-adgang, ikke bare »kan se«: at lægge noget nederst i en
+side er at ændre den, så en note delt til læsning kan ikke fyldes op udefra
+(F11). Svaret er det samme 404 for »findes ikke« og »ikke din« — man må ikke
+kunne aftaste, hvilke id'er der er i brug.
+
+Scopet er stadig `capture`. En capture-nøgle kan ikke læse og kan derfor ikke
+opdage id'er; den skal have fået et. At skrive noget nyt er ikke det samme som
+at måtte rette i alt, hvad der ligger.
+
+### Fejlen, der lå der i forvejen
+
+`to=today` har siden F9 kaldt `saetMaerker(...)` med de mærker, fangsten fandt
+— og **`saetMaerker` skriver notens mærker forfra**. Den rydder `note_tags`
+først, hvilket er rigtigt, når man redigerer mærkerækken i appen. Men her
+*tilføjer* man til en note, der findes: sendte man »Ny router #drift« til
+dagens note, forsvandt dens øvrige mærker. Uden at noget fejlede.
+
+**En fangst, der sletter noget, er den værste slags stille fejl.** Mærkerne
+lægges nu til. Begge mål deler én funktion, så fejlen ikke kunne blive to.
+
+### Beskeden nævner noten ved navn
+
+»Added to today's note« var rigtigt, så længe der kun var ét mål. Med `to=<id>`
+ville den være en usandhed hver gang.
+
+## 29 · F17 · »Der er kommet en ny version«
+
+**Bygget 2026-08-21.**
+
+Versionslinjen i sidebarens fod har kunnet sige det siden F0 — men på en
+telefon står foden **bag hamburgeren**, så man ser den aldrig. Beskeden hører
+dér, hvor man er: et bånd i toppen med en knap.
+
+### To fejl i den mekanik, der allerede fandtes
+
+**1 · Sammenligningen var `!==`.** Den er forkert i den ene retning: er
+serverens tal *lavere* end det, browseren kører — en rullet udgivelse, eller
+en serverproces, der ikke er genstartet — så stod der »v5 is ready, you are
+running v6«, og det er vås. Kun **nyere** tæller som en opdatering. Målt i
+udvikling, hvor netop det skete.
+
+**2 · Serveren læste sin version ved OPSTART.** Panelets »Opdatér app« skriver
+app-filerne igen uden at genstarte containeren, og så ville serveren blive ved
+med at melde det gamle tal — beskeden ville aldrig dukke op, selv om der lå en
+ny `app.js` på disken. Versionen læses nu frisk, men kun når filens mtime er
+ændret: et `stat` pr. kald er billigt, at læse hele filen er det ikke.
+
+### Den skal opdages, mens man ser på den
+
+Tallet hentes igen, når fanen kommer **frem** (`visibilitychange`). Det er
+netop det øjeblik, en telefon vender tilbage til appen efter en opdatering på
+serveren. Uden det ville beskeden først dukke op ved næste genindlæsning — og
+så er den overflødig.
+
+Knappen rydder cachen *og* beder service workeren rydde sin, før den
+genindlæser. Uden det serverer workeren bare den samme gamle `app.js`, og
+knappen ville se ud, som om den ikke gjorde noget.
+
+### En flakkende test, fundet undervejs
+
+413-testen var grøn alene og rød cirka hver fjerde gang i den samlede kørsel.
+Årsagen: socket-fejlen kan nå frem **før** `response`-hændelsen, når maskinen
+er belastet — så testen målte sit eget kapløb og pegede på serveren. Testens
+påstand er, at der *kommer* et rigtigt 413 med en læsbar krop, ikke at der
+aldrig sker en socket-fejl. Svaret får nu et øjeblik til at nå frem, før der
+dømmes. Otte fulde kørsler i træk grønne bagefter.

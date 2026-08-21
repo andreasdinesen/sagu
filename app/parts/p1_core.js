@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -441,6 +441,11 @@ function shellHtml() {
       </div>
     </aside>
     <main class="main">
+      <div class="opdater-baand" id="opdaterBaand" hidden>
+        ${icon('opfrisk', 15)}
+        <span class="baand-tekst"></span>
+        <button class="btn" id="opdaterNu">Update</button>
+      </div>
       <div class="offline-baand" id="offlineBaand" hidden>
         ${icon('offline', 15)}
         <span class="baand-tekst">Offline — showing what was loaded last.</span>
@@ -477,9 +482,18 @@ function statsHtml() {
   return dele.map((d) => `<span>${esc(d)}</span>`).join('');
 }
 
+/*
+ * Kun NYERE taeller som en opdatering.
+ *
+ * Sammenligningen var `!==`, og den er forkert i den ene retning: er
+ * serverens tal LAVERE end det, browseren koerer - en rullet udgivelse, eller
+ * en serverproces, der ikke er genstartet - saa staar der »v5 is ready, you
+ * are running v6«, og det er noget vaas. Maalt i udvikling, hvor netop det
+ * skete (2026-08-21).
+ */
 function versionHtml() {
   const server = state.config.version;
-  const gammel = server && server !== APP_VERSION;
+  const gammel = server && server > APP_VERSION;
   if (gammel) {
     return `<button class="version-line meta version-old" id="versionBtn"
       title="Your browser is running v${APP_VERSION}, but the server has v${server}. Click to reload.">
@@ -537,14 +551,10 @@ function bindShell() {
   // Er serverens version nyere end den indlaeste, sidder der en gammel app.js
   // i cachen. Ryd den FOER genindlaesningen - ellers serveres den samme fil.
   const vBtn = document.getElementById('versionBtn');
-  if (vBtn) {
-    vBtn.addEventListener('click', async () => {
-      try {
-        if (window.caches) await Promise.all((await caches.keys()).map((n) => caches.delete(n)));
-      } catch { /* uden cache-api er der ikke noget at rydde */ }
-      location.reload();
-    });
-  }
+  if (vBtn) vBtn.addEventListener('click', () => hentNyVersion());
+  const opdKnap = document.getElementById('opdaterNu');
+  if (opdKnap) opdKnap.addEventListener('click', () => hentNyVersion());
+  visOpdaterBaand();
 
   document.getElementById('navToggle').addEventListener('click',
     () => document.body.classList.toggle('navopen'));
@@ -803,6 +813,79 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 
 window.addEventListener('resize', () => { byggToc(); });
+
+/* --------------------------------------------- ny version (F17) */
+
+/*
+ * »Der er kommet en ny version.«
+ *
+ * Versionslinjen i sidebarens fod har kunnet sige det siden F0 - men paa en
+ * telefon staar foden BAG hamburgeren, saa man ser den aldrig. Beskeden hoerer
+ * dér, hvor man er.
+ *
+ * Tallet kommer fra serveren (`/api/public-config`), og `APP_VERSION` er
+ * bagt ind i den app.js, browseren koerer. Er de forskellige, sidder der en
+ * gammel fil i cachen - og saa er DET, brugeren skal vide, ikke
+ * versionsnummeret alene.
+ */
+function visOpdaterBaand() {
+  const b = document.getElementById('opdaterBaand');
+  if (!b) return;
+  const server = state.config.version;
+  // Kun NYERE - se versionHtml(). En aeldre server er ikke en opdatering.
+  const ny = server && server > APP_VERSION;
+  b.hidden = !ny;
+  if (!ny) return;
+  const t = b.querySelector('.baand-tekst');
+  if (t) {
+    t.innerHTML = `<strong>Sagu v${esc(String(server))} is ready.</strong> `
+      + `You are running v${esc(String(APP_VERSION))}. Updating reloads the app and `
+      + 'fetches your notes again.';
+  }
+}
+
+/**
+ * Spoerger serveren, om der er kommet noget nyt.
+ *
+ * Kaldes naar fanen kommer FREM igen - det er dét oejeblik, en telefon vender
+ * tilbage til appen efter en opdatering paa serveren. Uden det ville beskeden
+ * foerst dukke op ved naeste genindlaesning, og saa er den overfloedig.
+ *
+ * Fejler kaldet, sker der ingenting: man er formentlig offline, og saa er en
+ * ny version det mindste af det.
+ */
+async function tjekVersion() {
+  try {
+    const c = await api('GET', '/api/public-config');
+    state.config.version = c.version;
+    visOpdaterBaand();
+  } catch { /* offline - se F14's eget baand */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.user) tjekVersion();
+});
+
+/**
+ * Henter den nye app.
+ *
+ * Cachen ryddes FOER genindlaesningen - baade fra siden og gennem service
+ * workeren. Uden det serverer workeren bare den samme gamle `app.js` igen, og
+ * knappen ville se ud, som om den ikke gjorde noget (RUNE-ERFARINGER §5).
+ */
+async function hentNyVersion() {
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage('ryd');
+    }
+    if (window.caches) await Promise.all((await caches.keys()).map((n) => caches.delete(n)));
+    // Workeren selv skal ogsaa afloeses - ellers styrer den gamle stadig.
+    if (navigator.serviceWorker) {
+      for (const r of await navigator.serviceWorker.getRegistrations()) await r.update();
+    }
+  } catch { /* uden cache-api er der ikke noget at rydde */ }
+  location.reload();
+}
 
 /* ------------------------------------------------------ offline (F14) */
 
