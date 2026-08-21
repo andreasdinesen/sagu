@@ -4309,9 +4309,22 @@ const MOENSTRE = [
     },
   },
   {
+    /*
+     * At kommentere kraever `capture` - ikke `write`.
+     *
+     * En kommentar er noget NYT ved siden af noten, ikke en aendring af den.
+     * Det er praecis dét, `capture` findes til, og det er samme skel som F11
+     * allerede traf: en kollega med LAESE-adgang maa gerne kommentere, fordi
+     * »kig lige paa det her« tit er hele grunden til at dele en side. At
+     * tilfoeje til selve noten (§28) kraever derimod skriveadgang, for dét
+     * aendrer siden.
+     *
+     * Aendret 2026-08-21, saa dodas `link`-noegle kan skrive en kommentar
+     * tilbage paa den note, en opgave kom fra.
+     */
     metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/comments$/,
     kald: async (req, res, ctx) => {
-      const auth = godkend(req, res, 'write');
+      const auth = godkend(req, res, 'capture');
       if (!auth) return;
       const noteId = ctx.params[0];
       if (!hentNote(auth.user.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
@@ -4321,10 +4334,21 @@ const MOENSTRE = [
         kind: body.kind, origin: 'app',
       });
       if (svar.fejl) { apiFejl(res, 400, svar.fejl[0], svar.fejl[1]); return; }
-      sendJson(res, 200, {
-        comments: hentKommentarer(noteId, kanModerere(auth.user.id, noteId)),
-        id: svar.id,
-      });
+      /*
+       * **Listen kommer KUN med, hvis noeglen ogsaa maa laese.**
+       *
+       * Svaret indeholdt hele samtalen. Havde vi bare saenket scopet, var
+       * skrive-doeren blevet til en laese-kanal: en `capture`-noegle kunne
+       * skrive en tom-agtig kommentar paa et hvilket som helst note-id og
+       * faa alt, hvad der staar, retur - og saa er den ene ting, `capture`
+       * findes for, vaek (»writes but never looks«).
+       *
+       * En `link`-noegle (capture+read) og en session faar listen som foer.
+       */
+      sendJson(res, 200, Object.assign(
+        { id: svar.id, message: svar.ventende ? 'Comment added — it is waiting to be approved.' : 'Comment added.' },
+        maaLaese(auth) ? { comments: hentKommentarer(noteId, kanModerere(auth.user.id, noteId)) } : {},
+      ));
     },
   },
   {
@@ -6095,6 +6119,19 @@ function godkendMcp(req) {
   if (!bruger) return null;
   stemplBrug(token);
   return { token, userId: token.user_id, scope: token.scope, viaToken: true };
+}
+
+/**
+ * Maa det her kald ogsaa LAESE?
+ *
+ * En cookie-session maa alt, brugeren maa. En noegle maa det, dens scope
+ * siger. Bruges dér, hvor et svar baerer mere, end kaldet selv bad om - saa
+ * en skrive-doer ikke bliver til en laese-kanal.
+ */
+function maaLaese(auth) {
+  if (!auth.viaToken) return true;
+  const s = auth.token && auth.token.scope;
+  return !!(SCOPE_TILLADER[s] && SCOPE_TILLADER[s].has('read'));
 }
 
 /** Samme scope-matrix som API'et. ÉT sted, ellers driver de fra hinanden. */

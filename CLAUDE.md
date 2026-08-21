@@ -137,6 +137,12 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **Et link til en note skal have sin EGEN linje**, når det sendes til doda. `!`-markøren
   løber til linjens ende, så et link hængt på enden æder både sig selv og datoen — uden
   at noget fejler (DESIGN.md §16).
+- **En KOMMENTAR er `capture`, ikke `write`.** Den er noget nyt ved siden af noten, ikke en
+  ændring af den — samme skel som F11 traf, hvor en side delt til læsning godt må
+  kommenteres. At tilføje til notens egen tekst kræver derimod skriveadgang.
+- **Et svar må aldrig bære mere, end kaldet bad om.** Kommentar-POST returnerede hele
+  samtalen; med `capture` ville skrive-døren være blevet en læse-kanal. `maaLaese(auth)`
+  afgør, om listen kommer med.
 - **`link`-scopet er read+capture og aldrig `write`.** Det er den rettighed, en søsterapp
   skal have: finde den rigtige note og lave en ny — ikke slette arkivet.
 - **Den tilgivende formularlæser kender ikke feltnavne.** »Kroppen ER teksten« gælder kun,

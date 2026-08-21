@@ -2697,3 +2697,29 @@ er belastet — så testen målte sit eget kapløb og pegede på serveren. Teste
 påstand er, at der *kommer* et rigtigt 413 med en læsbar krop, ikke at der
 aldrig sker en socket-fejl. Svaret får nu et øjeblik til at nå frem, før der
 dømmes. Otte fulde kørsler i træk grønne bagefter.
+
+## 30 · En kommentar er `capture`, ikke `write`
+
+**Ændret 2026-08-21**, efter Andreas' ønske om at kunne skrive en kommentar på
+en Sagu-note direkte fra doda. Dodas bro har en `link`-nøgle (capture + read),
+og kommentar-ruten krævede `write`.
+
+Skellet er det samme, F11 allerede traf: **en kommentar ændrer ikke noten.**
+En side, der er delt til dig til læsning, må godt kommenteres — »kig lige på
+det her« er tit hele grunden til at dele den. At tilføje til notens egen tekst
+(§28) kræver derimod skriveadgang, for dét ændrer siden.
+
+### Scopet kunne ikke sænkes alene
+
+Svaret bar **hele samtalen**. Havde vi kun ændret konstanten, var skrive-døren
+blevet til en læse-kanal: en `capture`-nøgle kunne skrive en ligegyldig
+kommentar på et hvilket som helst note-id og få alt, der står, retur — og så er
+den ene ting, `capture` findes for, væk (*»writes but never looks — a lost
+phone must not be able to read the archive«*).
+
+Listen kommer nu kun med, hvis nøglen også må læse. En `link`-nøgle og en
+session får den som før; en `capture`-nøgle får sit id og en linje.
+
+**Reglen er generel og værd at holde fast i: et svar må aldrig bære mere, end
+kaldet bad om.** Et scope, der sænkes, skal måles på svaret — ikke kun på
+adgangen.

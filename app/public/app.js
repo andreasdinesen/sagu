@@ -2521,7 +2521,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -8945,7 +8945,7 @@ function sideApi() {
     <div class="tablewrap"><table class="data">
       <thead><tr><th>Scope</th><th>Can</th><th>Cannot</th></tr></thead>
       <tbody>
-        <tr><td><code>capture</code></td><td>Add new notes and images</td>
+        <tr><td><code>capture</code></td><td>Add new notes, images and <strong>comments</strong></td>
           <td><strong>Read nothing at all</strong></td></tr>
         <tr><td><code>read</code></td><td>Read and search</td><td>Write anything</td></tr>
         <tr><td><code>link</code></td><td>Read, search and add</td><td>Change or delete</td></tr>
@@ -8953,6 +8953,12 @@ function sideApi() {
           <td>Make keys, change your password, or touch server settings</td></tr>
       </tbody>
     </table></div>
+    <p class="meta saetning">A <strong>comment</strong> counts as capture, not as writing:
+    it is something new beside the note, not a change to it — the same distinction the app
+    itself makes, where a page shared with you for reading can still be commented on.
+    Adding to the note's own text is different and needs a key that may write in it.
+    A capture key gets no reply beyond »done«: a write-only door must not become a way to
+    read.</p>
     <p class="meta saetning">No key can make another key or change your password — not even
     <code>full</code>. Otherwise one leaked key would be enough to give itself permanent
     access, or to lock you out of your own app. A key is revoked the moment you remove it

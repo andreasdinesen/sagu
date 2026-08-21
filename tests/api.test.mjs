@@ -417,3 +417,53 @@ test('et BILLEDE kan lægges i en note, der findes', async () => {
   // Uden en `text=` skal der ikke staa et filnavn som overskrift i teksten.
   assert.ok(!/^foto\.png$/m.test(efter.body), 'filnavnet er ikke en overskrift her');
 });
+
+/* ==================== en kommentar er noget NYT, ikke en ændring ======== */
+
+test('en capture-nøgle kan skrive en kommentar — men får ikke samtalen retur', async () => {
+  /*
+   * Scopet blev sænket fra `write` til `capture`, fordi en kommentar er noget
+   * nyt ved siden af noten og ikke en ændring af den. Det er samme skel, F11
+   * allerede traf: en kollega med læse-adgang må gerne kommentere.
+   *
+   * **Men svaret bar hele samtalen.** Havde vi kun sænket scopet, var
+   * skrive-døren blevet til en læse-kanal: en capture-nøgle kunne skrive en
+   * ligegyldig kommentar på et hvilket som helst note-id og få alt, der står,
+   * retur — og så er den ene ting, capture findes for, væk.
+   */
+  const n = (await a.kald('POST', '/api/v1/notes', { title: 'Til gennemsyn' })).data.note;
+  await a.kald('POST', `/api/v1/notes/${n.id}/comments`, { body: 'Noget hemmeligt i forvejen' });
+
+  const r = await medNoegle('capture', 'POST', `/api/v1/notes/${n.id}/comments`, {
+    type: 'application/json', krop: JSON.stringify({ body: 'Set fra doda' }),
+  });
+  assert.equal(r.status, 200, r.tekst);
+  assert.ok(r.data.id, 'kommentaren skal vaere oprettet');
+  assert.equal(r.data.comments, undefined, 'listen maa IKKE komme med til en noegle, der ikke maa laese');
+  assert.ok(!r.tekst.includes('hemmeligt'), 'og slet ikke den samtale, der stod der i forvejen');
+
+  // ... men den ER landet.
+  const set = (await a.kald('GET', `/api/v1/notes/${n.id}/comments`)).data.comments;
+  assert.ok(set.some((c) => c.body === 'Set fra doda'));
+});
+
+test('en link-nøgle får listen med — den må både skrive og læse', async () => {
+  const n = (await a.kald('POST', '/api/v1/notes', { title: 'Fra doda' })).data.note;
+  const r = await medNoegle('link', 'POST', `/api/v1/notes/${n.id}/comments`, {
+    type: 'application/json', krop: JSON.stringify({ body: 'Skrevet fra doda' }),
+  });
+  assert.equal(r.status, 200, r.tekst);
+  assert.ok(Array.isArray(r.data.comments), 'en link-noegle maa laese, saa listen kommer med');
+  assert.equal(r.data.comments[0].body, 'Skrevet fra doda');
+});
+
+test('en read-nøgle kan LÆSE kommentarer, men ikke skrive en', async () => {
+  const n = (await a.kald('POST', '/api/v1/notes', { title: 'Kun laesning' })).data.note;
+  assert.equal((await medNoegle('read', 'GET', `/api/v1/notes/${n.id}/comments`)).status, 200);
+
+  const r = await medNoegle('read', 'POST', `/api/v1/notes/${n.id}/comments`, {
+    type: 'application/json', krop: JSON.stringify({ body: 'burde ikke lykkes' }),
+  });
+  assert.equal(r.status, 403);
+  assert.match(r.data.message, /cannot capture/);
+});
