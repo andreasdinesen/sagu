@@ -293,9 +293,11 @@ test('ACCEPT: 5.000 noter soeges under 100 ms', async () => {
       db.prepare(`INSERT INTO notes (id, user_id, title, body_md, seq, created_at, updated_at)
                   VALUES (?,?,?,?,?,?,?)`)
         .run(id, bruger, `${emne} note ${i}`, krop, i, t, t);
-      db.prepare(`INSERT INTO note_fts (title, headings, body, meta, folded, note_id, user_id)
-                  VALUES (?,?,?,?,?,?,?)`)
-        .run(`${emne} note ${i}`, `${emne} ${i}\nDetaljer`, krop, '', '', id, bruger);
+      // Indekset har ingen user_id (m12): det afgraenser ingenting - `SYNLIG`
+      // gør det, paa `notes`, hvor ejerskabet staar.
+      db.prepare(`INSERT INTO note_fts (title, headings, body, meta, folded, note_id)
+                  VALUES (?,?,?,?,?,?)`)
+        .run(`${emne} note ${i}`, `${emne} ${i}\nDetaljer`, krop, '', '', id);
     }
     db.exec('COMMIT');
     db.close();

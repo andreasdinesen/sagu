@@ -30,7 +30,11 @@ async function tegnSideIndhold() {
     // Soegesiden har sin EGEN overskrift; den generiske ville staa oven i den.
     if (state.view === 'search') { host.innerHTML = sideSoeg(); bindSoeg(); return; }
     if (state.view === 'trash') { host.innerHTML = hoved + await sideTrash(); bindTrash(); return; }
-    if (state.view === 'shared') { host.innerHTML = hoved + sideKommer('Sharing between accounts', 'F11'); return; }
+    if (state.view === 'shared') {
+      host.innerHTML = hoved + await sideDelt();
+      bindDelt();
+      return;
+    }
     if (state.view === 'tags') { host.innerHTML = hoved + sideTags(); bindTags(); return; }
     if (state.view === 'comments') {
       host.innerHTML = hoved + await sideKommentarer();
@@ -38,6 +42,7 @@ async function tegnSideIndhold() {
       return;
     }
     if (state.view === 'import') { host.innerHTML = hoved + sideImport(); bindImport(); return; }
+    if (state.view === 'api') { host.innerHTML = hoved + sideApi(); return; }
     host.innerHTML = hoved + await sideNoter({});
     bindNoteliste();
   } catch (ex) {
@@ -373,6 +378,60 @@ async function sideSettings() {
     }
   }
 
+  let dodaDel = '';
+  try {
+    const d = await api('GET', '/api/v1/doda');
+    dodaDel = `
+  <h2>doda</h2>
+  <div class="card">
+    <p class="meta saetning">Sagu and doda are two apps, not one. They are tied together with
+    <strong>links</strong> — a note can send a task, and the task carries a link back.
+    Nothing is synchronised, so neither can quietly overwrite the other.</p>
+    ${d.connected ? `<p class="doda-forbundet">Connected to <strong>${esc(d.url)}</strong>${
+  d.tasks ? ` · ${d.tasks} task${d.tasks === 1 ? '' : 's'} sent from your notes` : ''}</p>` : ''}
+    <label class="field"><span>doda address</span>
+      <input class="input" id="dodaUrl" value="${esc(d.url || '')}"
+        placeholder="https://doda.example.com" autocomplete="off" spellcheck="false"></label>
+    <label class="field" style="margin-top:10px"><span>API key from doda</span>
+      <input class="input" id="dodaKey" type="password" autocomplete="off"
+        placeholder="${d.connected ? 'Saved — leave empty to keep it' : 'doda_…'}"></label>
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="dodaGem">${d.connected ? 'Save and test' : 'Connect'}</button>
+      ${d.connected ? '<button class="btn" id="dodaFjern">Disconnect</button>' : ''}
+    </div>
+    <p class="meta saetning">In doda: Settings → API keys → create a <strong>full</strong> key.
+    A <strong>capture</strong> key also works, but then doda cannot tell Sagu what happened
+    to a task, so status will not be shown. The key is tested before it is saved, and it never
+    leaves this server again.</p>
+  </div>`;
+  } catch { /* vist som tom */ }
+
+  let ghDel = '';
+  try {
+    const g = await api('GET', '/api/v1/github/status');
+    ghDel = `
+  <h2>GitHub</h2>
+  <div class="card">
+    <p class="meta saetning">Paste a GitHub file address on its own line in a note, and it
+    becomes the code — <strong>frozen at the commit it pointed to</strong>, so the note keeps
+    explaining the code it was written about. Issue and pull request addresses become a chip
+    with the title and whether it is still open.</p>
+    ${g.connected ? `<p class="doda-forbundet">Connected as <strong>${esc(g.login || 'GitHub')}</strong></p>` : ''}
+    <label class="field"><span>Personal access token</span>
+      <input class="input" id="ghToken" type="password" autocomplete="off"
+        placeholder="${g.connected ? 'Saved — leave empty to keep it' : 'github_pat_… or ghp_…'}"></label>
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="ghGem">${g.connected ? 'Save and test' : 'Connect'}</button>
+      ${g.connected ? '<button class="btn" id="ghFjern">Disconnect</button>' : ''}
+    </div>
+    <p class="meta saetning">Without a token GitHub allows <strong>60 requests an hour</strong>
+    and answers <strong>404</strong> for anything private — the same answer as »does not
+    exist«, which is why a missing token looks like a missing file. With a token: 5.000 an
+    hour, and your private repositories. A token with <em>read-only</em> access to contents
+    is enough; it is tested before it is saved, and it never leaves this server again.</p>
+  </div>`;
+  } catch { /* vist som tom */ }
+
   return `
   <h2>Appearance</h2>
   <div class="card">
@@ -444,20 +503,71 @@ async function sideSettings() {
       </tr>`).join('')}</tbody></table></div>` : ''}
     <div class="btnrow" style="margin-top:14px">
       <input class="input" id="noegleNavn" placeholder="What is it for?" style="max-width:220px">
-      <select class="input" id="noegleScope" style="max-width:140px">
+      <select class="input" id="noegleScope" style="max-width:150px">
         <option value="read">read</option>
         <option value="capture">capture</option>
+        <option value="link">link</option>
         <option value="full">full</option>
       </select>
       <button class="btn" id="noegleNy">Create key</button>
     </div>
     <p id="noegleVaerdi" class="meta saetning" hidden></p>
+    <div class="btnrow" style="margin-top:12px">
+      <button class="btn" id="tilApi">How to use these →</button>
+    </div>
+    <p class="meta saetning"><strong>read</strong> looks but never writes.
+    <strong>capture</strong> writes but never looks — a lost phone must not be able to
+    read the archive. <strong>link</strong> does both, and nothing else: it is what a
+    sister app needs to find the right note and make a new one.
+    <strong>full</strong> can also change and delete.</p>
   </div>
+
+  <h2>Connected apps</h2>
+  <div class="card">
+    <p class="meta saetning">Claude and other MCP clients you have allowed. They asked
+    through a consent page and got a key of their own — you did not have to paste one.
+    Add Sagu in Claude as a custom connector with the address
+    <code>${esc(offentligBase())}/mcp</code>.</p>
+    <div id="forbListe"><p class="meta saetning">Loading…</p></div>
+    <p class="meta saetning">Revoking cuts it off at once: both the key it holds and the
+    one it could have renewed with. It never had permission to change your password,
+    create keys, or revoke connections — those need this browser.</p>
+  </div>
+  ${dodaDel}
+  ${ghDel}
   ${adminDel}`;
 }
 
+/** Forbundne apps - hentes bagefter, som udgivelseslisten. */
+async function forbindelsesListeHtml() {
+  let liste = [];
+  try { liste = (await api('GET', '/api/v1/connections')).connections; } catch { return ''; }
+  if (!liste.length) return '<p class="meta saetning">Nothing is connected yet.</p>';
+  return `<div class="tablewrap"><table class="data">
+    <thead><tr><th>App</th><th>Scope</th><th class="num">Last used</th><th></th></tr></thead>
+    <tbody>${liste.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.scope || '')}</td>
+      <td class="num">${esc(c.last_used_at ? visTid(c.last_used_at) : 'never')}</td>
+      <td style="text-align:right"><button class="btn ghost danger"
+        data-forbslet="${esc(c.id)}">Revoke</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function bindForbindelsesListe() {
+  document.querySelectorAll('[data-forbslet]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Cut this app off? It will have to ask again.')) return;
+      try {
+        await api('DELETE', `/api/v1/connections/${encodeURIComponent(el.dataset.forbslet)}`);
+        toast('Connection revoked.');
+        const host = document.getElementById('forbListe');
+        if (host) { host.innerHTML = await forbindelsesListeHtml(); bindForbindelsesListe(); }
+      } catch (ex) { toast(ex.message); }
+    });
+  });
+}
+
 function bindSettings() {
-  // Listen hentes bagefter og erstatter kun sit eget element: en side, der
+  // Listerne hentes bagefter og erstatter kun deres eget element: en side, der
   // venter paa alle sine kald, foeles langsom, og listen er ikke det, man kom
   // efter (RUNE-ERFARINGER, doda v27).
   (async () => {
@@ -465,6 +575,39 @@ function bindSettings() {
     if (!host) return;
     host.innerHTML = await udgivelsesListeHtml();
     bindUdgivelsesListe();
+  })();
+
+  const ghGem = document.getElementById('ghGem');
+  if (ghGem) {
+    ghGem.addEventListener('click', async () => {
+      const felt = document.getElementById('ghToken');
+      ghGem.disabled = true;
+      try {
+        const d = await api('POST', '/api/v1/github/token', { token: felt.value.trim() });
+        toast(d.connected ? `Connected to GitHub as ${d.login}.` : 'Disconnected.');
+        tegnSide();
+      } catch (ex) { toast(ex.message); ghGem.disabled = false; }
+    });
+  }
+
+  const ghFjern = document.getElementById('ghFjern');
+  if (ghFjern) {
+    ghFjern.addEventListener('click', async () => {
+      // Tom streng = kobl fra. Cachen bliver staaende: den er ikke hemmelig,
+      // og et uddrag, man allerede har set, skal ikke forsvinde.
+      try {
+        await api('POST', '/api/v1/github/token', { token: '' });
+        toast('Disconnected from GitHub.');
+        tegnSide();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+
+  (async () => {
+    const host = document.getElementById('forbListe');
+    if (!host) return;
+    host.innerHTML = await forbindelsesListeHtml();
+    bindForbindelsesListe();
   })();
 
   document.querySelectorAll('[data-tema]').forEach((el) => {
@@ -495,6 +638,46 @@ function bindSettings() {
       } catch (ex) { toast(ex.message); reg.checked = !reg.checked; }
     });
   }
+
+  const dodaGem = document.getElementById('dodaGem');
+  if (dodaGem) {
+    dodaGem.addEventListener('click', async () => {
+      const url = document.getElementById('dodaUrl').value.trim();
+      const key = document.getElementById('dodaKey').value.trim();
+      dodaGem.disabled = true;
+      dodaGem.textContent = 'Testing…';
+      try {
+        // Serveren proever forbindelsen FOER den gemmer, og ruller tilbage
+        // ved fejl - saa der aldrig ligger et token og LIGNER en virkende
+        // forbindelse (RUNE-ERFARINGER, doda v16).
+        const r = await api('POST', '/api/v1/doda', { url, key });
+        toast(r.message || 'Connected to doda.');
+        await tegnSide();
+      } catch (ex) {
+        toast(ex.message);
+        dodaGem.disabled = false;
+        dodaGem.textContent = 'Connect';
+      }
+    });
+  }
+  const dodaFjern = document.getElementById('dodaFjern');
+  if (dodaFjern) {
+    dodaFjern.addEventListener('click', async () => {
+      // Sig hvad der SKER med det, der allerede findes - ellers toer man ikke
+      // trykke (RUNE-ERFARINGER, doda v35).
+      if (!window.confirm('Disconnect doda? The tasks your notes have already sent stay '
+        + 'where they are, in doda and on the notes.')) return;
+      try {
+        await api('DELETE', '/api/v1/doda');
+        toast('doda disconnected.');
+        await tegnSide();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+
+  // En noegle er ubrugelig uden en opskrift. Herfra er der ét klik til dem.
+  const tilApi = document.getElementById('tilApi');
+  if (tilApi) tilApi.addEventListener('click', () => gaaTil('api'));
 
   const gemUrl = document.getElementById('offentligGem');
   if (gemUrl) {

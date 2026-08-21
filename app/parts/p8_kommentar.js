@@ -320,3 +320,105 @@ async function genindlaesTaellere() {
     if (antal) nav.insertAdjacentHTML('beforeend', `<span class="nav-count">${antal}</span>`);
   } catch { /* et tal, der ikke kunne opdateres, er ikke vaerd at raabe op om */ }
 }
+
+/* ==================================================== doda (F8) ========= */
+
+/*
+ * Opgaverne, en note har sendt til doda.
+ *
+ * Ruden bor sammen med kommentarerne, fordi de to svarer paa det samme
+ * spoergsmaal: hvad er der SKET omkring den her side. Og ligesom dem hentes
+ * de, naar noten aabnes - aldrig pr. optegning. Rundturen gennem tunnelen er
+ * ~150 ms, og en note med fem opgaver ville vaere naesten et sekund, hvor der
+ * ikke sker noget (RUNE-ERFARINGER, doda v27).
+ */
+
+const dodaState = { noteId: null, opgaver: [], connected: false, gammel: null };
+
+async function hentDodaOpgaver(noteId, tving) {
+  const r = await api('GET', `/api/v1/notes/${noteId}/tasks${tving ? '?refresh=1' : ''}`);
+  dodaState.noteId = noteId;
+  dodaState.opgaver = r.tasks || [];
+  dodaState.connected = !!r.connected;
+  dodaState.gammel = r.staleReason || null;
+}
+
+/** dodas statusord, som de skal LAESES. */
+function dodaStatusTekst(s) {
+  return {
+    inbox: 'in the inbox', next: 'next action', waiting: 'waiting for', someday: 'someday',
+    done: 'done', dropped: 'dropped', deleted: 'deleted in doda',
+  }[s] || s;
+}
+
+function dodaOpgaverHtml() {
+  if (!dodaState.connected && !dodaState.opgaver.length) return '';
+  const aabne = dodaState.opgaver.filter((t) => t.status !== 'done' && t.status !== 'dropped'
+    && t.status !== 'deleted');
+  return `<section class="dodaopgaver" id="dodaOpgaver">
+    <h2>Tasks in doda${dodaState.opgaver.length
+    ? ` <span class="group-count">${aabne.length}/${dodaState.opgaver.length}</span>` : ''}</h2>
+    ${dodaState.gammel
+    /*
+     * En liste, der ikke er frisk, skal SIGE det - og blive staaende. En bro,
+     * der bliver tom, naar den anden ende er nede, ligner en bro, der har
+     * mistet noget.
+     */
+    ? `<p class="meta saetning">Showing what doda last said — ${esc(dodaState.gammel)}</p>` : ''}
+    ${dodaState.opgaver.length
+    ? `<ul class="doda-liste">${dodaState.opgaver.map((t) => `
+      <li class="doda-opgave${t.status === 'done' || t.status === 'dropped' ? ' udfoert' : ''}">
+        <span class="doda-titel">${esc(t.title)}</span>
+        <span class="kom-maerke doda-status ${esc(t.status)}">${esc(dodaStatusTekst(t.status))}</span>
+      </li>`).join('')}</ul>`
+    : '<p class="meta saetning">Nothing sent yet.</p>'}
+    <div class="kom-skriv">
+      <input class="input" id="dodaFelt" placeholder="Send a task to doda — #context @project !tomorrow"
+        autocomplete="off">
+      <div class="kom-knapper">
+        <button class="btn" id="dodaSend">Send to doda</button>
+        ${dodaState.opgaver.length
+    ? '<button class="linkbtn" id="dodaOpfrisk">Check doda now</button>' : ''}
+      </div>
+    </div>
+  </section>`;
+}
+
+function tegnDodaOpgaver() {
+  const host = document.getElementById('dodaOpgaver');
+  if (!host) return;
+  host.outerHTML = dodaOpgaverHtml();
+  bindDodaOpgaver();
+}
+
+function bindDodaOpgaver() {
+  const host = document.getElementById('dodaOpgaver');
+  if (!host) return;
+  const felt = host.querySelector('#dodaFelt');
+  const send = host.querySelector('#dodaSend');
+  if (send && felt) {
+    const gaa = async () => {
+      const t = felt.value.trim();
+      if (!t) { toast('Write what the task should say.'); return; }
+      felt.value = '';
+      await sendOpgaveTilDoda(t);
+    };
+    send.addEventListener('click', gaa);
+    felt.addEventListener('keydown', (e) => {
+      // Enter sender. Feltet er ét felt med ét formaal - og tastetrykket maa
+      // ikke boble op til notens egne genveje.
+      if (e.key === 'Enter') { e.preventDefault(); gaa(); }
+      e.stopPropagation();
+    });
+  }
+  const opfrisk = host.querySelector('#dodaOpfrisk');
+  if (opfrisk) {
+    opfrisk.addEventListener('click', async () => {
+      opfrisk.textContent = 'Checking…';
+      try {
+        await hentDodaOpgaver(dodaState.noteId, true);
+        tegnDodaOpgaver();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+}

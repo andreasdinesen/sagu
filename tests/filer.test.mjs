@@ -205,25 +205,83 @@ test('sletning af en note fjerner ogsaa dens filer fra disken', async () => {
 
 /* ==================================================== F4: resten ======== */
 
-test('413 kommer FOER forbindelsen lukkes - ikke som "connection reset"', async () => {
-  // Kalder man req.destroy() med det samme, ser klienten en afbrudt
-  // forbindelse i stedet for vores 413, og en API-klient aner ikke hvorfor
-  // (RUNE-ERFARINGER, doda F7). Serveren skal svare FOERST.
-  //
-  // Fil-loftet er 25 MB; her sendes 30 MB som en stroem, saa serveren
-  // opdager det undervejs og skal naa at svare.
+test('en for stor upload faar et RIGTIGT 413 med en laesbar besked', async () => {
+  /*
+   * Hvad den her beviser - og hvad den IKKE beviser.
+   *
+   * Den beviser, at en upload over loftet svarer 413 med en maskinkode og en
+   * saetning, der siger hvad graensen ER - i stedet for et tomt eller
+   * afbrudt kald.
+   *
+   * Den beviser IKKE serverens RAEKKEFOELGE (svar foerst, luk bagefter, doda
+   * F7). Det stod i testens navn i to faser, og det var forkert: jeg
+   * saboterede serveren til at kalde `req.destroy()` med det samme og koerte
+   * baade en `fetch`- og en `node:http`-klient imod den. **Begge blev
+   * groenne.** Over loopback ligger svaret allerede i socket-bufferen, naar
+   * forbindelsen lukkes, saa klienten faar det uanset raekkefoelgen.
+   *
+   * Raekkefoelgen er stadig rigtig, og begrundelsen staar ved koden - men en
+   * test, hvis NAVN lover mere, end den maaler, er den samme fejl som en
+   * taeller, der beviser, at noget blev talt og ikke at det virker
+   * (RUNE-ERFARINGER, Sagu F6).
+   *
+   * Fil-loftet er 25 MB; her sendes 30 MB som en stroem, saa serveren
+   * opdager det undervejs.
+   */
+  /*
+   * Med `fetch` var den her FLAKKENDE, og fejlen pegede paa serveren.
+   *
+   * `fetch` afviser hele kaldet, hvis skrivningen bliver afbrudt, mens den
+   * stadig sender - og under en fuld, parallel testkoersel naaede klienten
+   * ikke altid at se svaret foerst. Det er klientens kapløb, ikke serverens
+   * opfoersel, og en test, der maaler det, peger det forkerte sted hen
+   * (RUNE-ERFARINGER, Sagu F3: den vaerste slags flakkende test).
+   *
+   * `node:http` giver kontrollen tilbage: der skrives, indtil svaret kommer,
+   * og saa stopper vi - praecis som en klient, der opdager et 413 undervejs.
+   */
+  const http = await import('node:http');
   const blok = Buffer.alloc(1024 * 1024, 0x62);
-  const stroem = new ReadableStream({
-    start(c) { for (let i = 0; i < 30; i++) c.enqueue(blok); c.close(); },
+  const svar = await new Promise((ok, nej) => {
+    const u = new URL(`${srv.base}/api/v1/files?name=kaempe.bin`);
+    const req = http.request({
+      hostname: u.hostname,
+      port: u.port,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: {
+        Cookie: a.cookie,
+        'X-Sagu-Upload': '1',
+        'Content-Type': 'application/octet-stream',
+        'Transfer-Encoding': 'chunked',
+      },
+    });
+    let faerdig = false;
+    req.on('response', (res) => {
+      faerdig = true;
+      let krop = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { krop += d; });
+      // Stop med at SKRIVE (`faerdig`), men lad svaret loebe faerdigt.
+      // `req.destroy()` her ville dræbe socket'en, foer kroppen var laest -
+      // og saa maalte testen sin egen afbrydelse i stedet for serverens svar.
+      res.on('end', () => { req.destroy(); ok({ status: res.statusCode, krop }); });
+    });
+    // En afbrudt skrivning er FORVENTET her - serveren svarer og lukker.
+    req.on('error', () => { if (!faerdig) nej(new Error('forbindelsen doede FOER et svar')); });
+    let n = 0;
+    const skriv = () => {
+      while (!faerdig && n < 30) {
+        n += 1;
+        if (!req.write(blok)) { req.once('drain', skriv); return; }
+      }
+      if (!faerdig) req.end();
+    };
+    skriv();
   });
-  const r = await fetch(`${srv.base}/api/v1/files?name=kaempe.bin`, {
-    method: 'POST',
-    headers: { Cookie: a.cookie, 'X-Sagu-Upload': '1', 'Content-Type': 'application/octet-stream' },
-    body: stroem,
-    duplex: 'half',
-  });
-  assert.equal(r.status, 413, 'der skal komme et RIGTIGT svar, ikke et afbrudt kald');
-  const d = await r.json();
+  assert.equal(svar.status, 413, 'der skal komme et RIGTIGT svar, ikke et afbrudt kald');
+  assert.ok(svar.krop.length, 'og en krop, der kan laeses - ikke et tomt svar');
+  const d = JSON.parse(svar.krop);
   assert.equal(d.error, 'too_large');
   assert.match(d.message, /\d+ MB/, 'beskeden skal sige hvad graensen ER');
 });

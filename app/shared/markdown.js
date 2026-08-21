@@ -393,6 +393,15 @@
    *   editor ved, hvilket afsnit der blev klikket i.
    * @returns {{html: string, overskrifter: Array<{niveau, tekst, id}>}}
    */
+  /*
+   * »Hele afsnittet er ÉN adresse.«
+   *
+   * Bevidst snaever: `https://` og ingen mellemrum. En linje med tekst
+   * omkring adressen er en saetning, ikke en indlejring - og et afsnit paa
+   * to linjer, hvor den ene er en adresse, er heller ikke.
+   */
+  const ER_BAR_URL = /^https:\/\/[^\s<>"']+$/;
+
   function render(md, opt) {
     const o = opt || {};
     const stykker = blokke(md);
@@ -453,6 +462,22 @@
             <thead><tr>${b.hoved.map((c, i) => celle(c, i, 'th')).join('')}</tr></thead>
             <tbody>${b.raekker.map((r) => `<tr>${r.map((c, i) => celle(c, i, 'td')).join('')}</tr>`).join('')}</tbody>
           </table></div>`;
+      } else if (b.slags === 'afsnit' && o.bartLink && ER_BAR_URL.test(b.tekst.trim())) {
+        /*
+         * Et afsnit, der ER én bar adresse, kan blive til noget andet.
+         *
+         * Krogen hedder `bartLink` og ikke `github`, fordi **rendereren maa
+         * ikke kende domaenet**. Den ved kun, at linjen er én adresse og
+         * intet andet - hvad den saa skal blive til, bestemmer vaerten
+         * (F12: en kode-indlejring eller en sags-chip). Samme snit som
+         * `linkUrl` og `billedUrl`.
+         *
+         * Svarer krogen null, er det et helt almindeligt afsnit. En
+         * indlejring, der ikke kan vises, skal falde tilbage til det link,
+         * der stod der - ikke til ingenting.
+         */
+        const saerlig = o.bartLink(b.tekst.trim(), b);
+        html += saerlig || `<p${mrk}>${afsnitHtml(b.tekst, o)}</p>`;
       } else {
         html += `<p${mrk}>${afsnitHtml(b.tekst, o)}</p>`;
       }

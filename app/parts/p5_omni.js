@@ -29,7 +29,7 @@ const OMNI_MODER = {
   '+': {
     id: 'task',
     pil: '+ New task in doda',
-    ph: 'Task title… (arrives in F8)',
+    ph: 'Task title… — it goes to doda',
     legend: [],
     enter: 'Create',
   },
@@ -130,7 +130,16 @@ async function opdaterOmni() {
     return;
   }
   if (omni.mode === '+') {
-    omni.raekker = [{ slags: 'doda', tekst, etiket: tekst ? `Send "${tekst}" to doda` : 'Send a task to doda' }];
+    // Er en note aaben, faar opgaven et link tilbage til den - saa siger
+    // raekken det HOEJT, i stedet for at det sker bag ryggen paa nogen
+    // (RUNE-ERFARINGER, doda v28: vis det, FOER handlingen sker).
+    const paaNote = state.view === 'note' && editor.note ? editor.note.title || 'Untitled' : null;
+    omni.raekker = [{
+      slags: 'doda',
+      tekst,
+      etiket: tekst ? `Send "${tekst}" to doda` : 'Send a task to doda',
+      under: paaNote ? `linked to “${paaNote}”` : null,
+    }];
     tegnOmniChips(null);
     tegnPanel();
     return;
@@ -243,7 +252,8 @@ function tegnPanel() {
     const ikon = { ny: 'plus', nybog: 'book', bog: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
     return `<button class="omni-row${paa}${r.slags === 'fejl' ? ' fejl' : ''}" data-row="${i}">
         <span class="omni-row-ikon">${r.ikon ? esc(r.ikon) : icon(ikon || 'book', 16)}</span>
-        <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span></span>
+        <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span>
+          ${r.under ? `<span class="omni-row-uddrag">${esc(r.under)}</span>` : ''}</span>
       </button>`;
   }).join('');
   host.hidden = false;
@@ -304,10 +314,47 @@ async function vaelgRaekke(i) {
     return;
   }
   if (r.slags === 'doda') {
-    // Markoeren findes fra F2; koblingen bygges i F8. At sige det er bedre
-    // end en knap, der ikke goer noget (doda v38: en hjaelpetekst, der lover
-    // en funktion, som ikke findes, er den dyreste slags fejl).
-    toast('Sending tasks to doda arrives in F8.');
+    if (!r.tekst) { toast('Write what the task should say.'); return; }
+    sendOpgaveTilDoda(r.tekst);
+  }
+}
+
+/**
+ * Sender en opgave til doda.
+ *
+ * ÉT sted, saa `+`-markoeren og opgaveruden paa noten giver samme besked og
+ * samme fejl. Er en note aaben, faar opgaven et link tilbage til den; ellers
+ * er det en fritstaaende opgave, og det er ogsaa i orden - man staar ikke
+ * altid i en note, naar noget falder én ind.
+ */
+async function sendOpgaveTilDoda(tekst) {
+  const note = state.view === 'note' && editor.note ? editor.note : null;
+  try {
+    if (!note) {
+      // Uden en note er der ingen note-rute at gaa igennem. Broen har en
+      // fritstaaende doer, saa markoeren virker fra enhver skaerm.
+      const r = await api('POST', '/api/v1/doda/tasks', { text: tekst });
+      toast(r.message || 'Sent to doda.');
+      return;
+    }
+    const r = await api('POST', `/api/v1/notes/${note.id}/tasks`, { text: tekst });
+    dodaState.opgaver = r.tasks || [];
+    dodaState.noteId = note.id;
+    tegnDodaOpgaver();
+    toast(r.message || 'Sent to doda.');
+  } catch (ex) {
+    /*
+     * En fejlet forbindelse er ikke en fejlet gemning.
+     *
+     * `not_connected` er ikke en fejl, brugeren har lavet - det er en
+     * indstilling, han ikke har sat endnu. Sig hvad han skal goere, og gaa
+     * derhen (en knap, der bare ikke virker, er det vaerste svar).
+     */
+    if (ex && ex.code === 'not_connected') {
+      toast('doda is not connected yet.', { label: 'Connect', run: () => gaaTil('settings') });
+      return;
+    }
+    toast(ex && ex.message ? ex.message : 'Could not reach doda.');
   }
 }
 

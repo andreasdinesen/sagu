@@ -587,10 +587,21 @@ async function aabnNote(id) {
     // foerste optegning i stedet for at hoppe ind bagefter. En fejl her maa
     // ikke tage noten med sig - den er det, brugeren kom efter.
     try { await hentKommentarer(id); } catch { kom.liste = []; kom.noteId = id; }
+    // Opgaverne hentes SAMMEN med noten - ét kald, ikke ét pr. optegning.
+    // En fejl her maa ikke tage noten med sig.
+    try { await hentDodaOpgaver(id); } catch { dodaState.opgaver = []; dodaState.noteId = id; }
     if (editor.note && editor.note.id !== id) return;
     opdaterNav();
     tegnTrae();
     tegnSide();
+    /*
+     * Sporet opfriskes EFTER optegningen, ikke foer (F13).
+     *
+     * Serveren har allerede noteret besoeget - det skete i selve
+     * note-opslaget, hvor alle veje ind moedes. Det her er kun sidebarens
+     * liste, og den maa ikke koste en ventetid paa den note, man kom efter.
+     */
+    hentGenveje().then(tegnGenveje);
   } catch (ex) {
     editor.indlaeser = null;
     toast(ex.message);
@@ -630,14 +641,17 @@ function broedkrummer(note) {
  */
 function maerkerHtml(n) {
   const maerker = n.tags || [];
+  // Paa en note, jeg kun maa laese, staar maerkerne som TEKST: intet kryds og
+  // ingen tilfoej-knap. Fjerde sted, en redigering kunne begynde (F11).
+  const kanRette = maaRette(n);
   return `<div class="note-maerker" id="noteMaerker">
-      ${maerker.map((t) => `<span class="chip maerke">${esc(t)}<button class="chip-x"
-        data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button></span>`).join('')}
-      <button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
+      ${maerker.map((t) => `<span class="chip maerke">${esc(t)}${kanRette ? `<button class="chip-x"
+        data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button>` : ''}</span>`).join('')}
+      ${kanRette ? `<button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
       <input class="chip-felt" id="maerkeFelt" list="maerkeListe" placeholder="tag name"
         autocomplete="off" spellcheck="false" hidden>
       <datalist id="maerkeListe">${(state.tags || [])
-    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>
+    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>` : ''}
     </div>`;
 }
 
@@ -700,6 +714,14 @@ function bindMaerker() {
 }
 
 function gemMaerke() {
+  /*
+   * »Saved« paa en side, man ikke KAN gemme, er en usandhed.
+   *
+   * Maerket svarer paa »naaede mit arbejde frem?« - og paa en note, jeg kun
+   * maa laese, er der intet arbejde. Baandet ovenover siger allerede hvorfor
+   * (F11).
+   */
+  if (!maaRette(editor.note)) return '<span class="gem">Read only</span>';
   if (editor.konflikt) return '<span class="gem konflikt">Not saved — conflict</span>';
   if (editor.gemmer) return '<span class="gem">Saving…</span>';
   if (editor.beskidt) return '<span class="gem">Unsaved</span>';
@@ -718,16 +740,20 @@ function sideNote() {
       <button class="note-ikon" id="noteIkon" title="Pick an icon"
         aria-label="Pick an icon">${n.icon ? esc(n.icon) : icon('notes', 20)}</button>
       <input class="note-title" id="noteTitle" value="${esc(n.title)}"
-        placeholder="Untitled" autocomplete="off" spellcheck="false">
+        placeholder="Untitled" autocomplete="off" spellcheck="false"
+        ${maaRette(n) ? '' : 'readonly'}>
       <div class="note-tools">
         <span id="gemMaerke">${gemMaerke()}</span>
         <button class="iconbtn" id="bredBtn" aria-pressed="${n.fullWidth ? 'true' : 'false'}"
           title="${n.fullWidth ? 'Use reading width' : 'Use the full width'}">${icon('width', 16)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
-        ${udgivKnapHtml(n.published)}
+        ${favoritKnapHtml(n)}
+        ${delKnapHtml(n)}
+        ${n.mine === false ? '' : udgivKnapHtml(n.published)}
         <button class="iconbtn" id="menuBtn" title="More">${icon('dots', 16)}</button>
       </div>
     </div>
+    ${delingsBaandHtml(n)}
     ${maerkerHtml(n)}
     ${editor.konflikt ? konfliktHtml() : ''}
     <div class="note-body" id="noteBody"></div>
@@ -738,6 +764,7 @@ function sideNote() {
         ${n.backlinks.map((b) => `<button class="backlink" data-krumme="${esc(b.id)}">
           ${esc(b.title || 'Untitled')}</button>`).join('')}
       </div>` : ''}
+    ${dodaState.noteId === n.id ? dodaOpgaverHtml() : ''}
     ${kom.noteId === n.id ? kommentarerHtml() : ''}`;
 }
 
@@ -783,6 +810,9 @@ function tegnKrop() {
     pyntKodeblokke(host);
     bindTjek(host);
     bindBilleder(host);
+    // Indlejringerne fyldes BAGEFTER: optegningen maa aldrig vente paa et
+    // netvaerkskald (F12).
+    fyldGhIndlejringer(host);
   } catch (ex) {
     host.innerHTML = `<div class="render-fejl"><p class="meta saetning">
       This note could not be rendered, so here it is as plain text.</p>
@@ -838,6 +868,10 @@ function renderValg() {
     billedUrl: (u) => saguUrl(u),
     // Et LINK kan pege paa baade en fil og en anden note.
     linkUrl: (u) => saguUrl(u) || noteUrl(u),
+    // Et afsnit, der ER én bar adresse, kan blive til en indlejring (F12).
+    // Rendereren kender ikke GitHub - den spoerger bare, om nogen vil have
+    // linjen.
+    bartLink: (u, b) => ghKrog(u, b),
   };
 }
 
@@ -885,10 +919,14 @@ function tegnMedAabenBlok(host, n) {
       rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
     ${del(efter)}`;
 
-  // De renderede dele skal ogsaa have knapper og lightbox.
+  // De renderede dele skal ogsaa have knapper, lightbox og indlejringer.
+  // **Begge optegningsveje** - den her og `tegnKrop()` - skal goere det samme;
+  // glemmer den ene noget, virker funktionen kun, naar ingen blok er aaben,
+  // og fejlen ligner »kortet forsvandt, da jeg klikkede« (F12).
   pyntKodeblokke(host);
   bindTjek(host);
   bindBilleder(host);
+  fyldGhIndlejringer(host);
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;
@@ -953,6 +991,9 @@ function autoHoejde(felt) {
 }
 
 function aabnBlok(fra) {
+  // En delt note, jeg kun maa laese, aabner ikke en raa markdown-blok. Uden
+  // vagten ville teksten se ud til at kunne rettes (F11).
+  if (!maaRette(editor.note)) return;
   editor.aabenBlok = fra;
   tegnKrop();
 }
@@ -974,6 +1015,19 @@ function lukBlok() {
   editor.aabenBlok = null;
   tegnKrop();
   planlaegGem();
+  /*
+   * ÉT sted til at fryse GitHub-adresser (F12).
+   *
+   * Her - og ikke i indsaettelses-haendelsen - fordi linjen kan vaere skrevet,
+   * indsat eller kommet med en hel blok, man har klistret ind. Alle veje ind
+   * ender med at blokken lukkes.
+   *
+   * Ingen `await`: gemningen er allerede planlagt, og en fejl hos GitHub maa
+   * ikke kunne haenge editoren. Lykkes det, tegnes kroppen igen med den
+   * frosne adresse.
+   */
+  frysGhAdresser().then((aendret) => { if (aendret) tegnKrop(); })
+    .catch(() => { /* linjen bliver staaende; kortet siger hvorfor */ });
 }
 
 /** Skriver feltets linjer tilbage paa deres plads i noten. */
@@ -1087,6 +1141,7 @@ function bindNoteSide() {
   const n = editor.note;
   if (!n) return;
   bindKommentarer();
+  bindDodaOpgaver();
 
   const titel = document.getElementById('noteTitle');
   if (titel) {
@@ -1165,6 +1220,12 @@ function bindNoteSide() {
   // Symptomet var en overskrift uden titel - og, vaerre, at ruden aldrig kunne
   // finde notens EKSISTERENDE udgivelse, fordi opslaget skete paa `undefined`.
   if (udgiv) udgiv.addEventListener('click', () => visUdgivPanel());
+  // Samme regel som ovenfor: en pil, ikke funktionen selv - ellers bliver
+  // klik-haendelsen til funktionens foerste parameter.
+  const delKnap = document.getElementById('delBtn');
+  if (delKnap) delKnap.addEventListener('click', () => visDelPanel());
+  const favKnap = document.getElementById('favBtn');
+  if (favKnap) favKnap.addEventListener('click', () => skiftFavorit());
 
   document.querySelectorAll('[data-krumme]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.krumme));
@@ -1274,23 +1335,34 @@ function visNoteMenu() {
   // staar der ikke: en knap, der ikke kan goere noget, er ikke en knap.
   const foer = soeskendeFoer(n);
 
+  /*
+   * Menuen viser kun det, man faktisk kan.
+   *
+   * `mit` = jeg ejer siden; `ret` = jeg maa skrive i den. En knap, der
+   * afviser, naar man trykker paa den, er ikke en knap - det er en faelde, og
+   * paa en delt side ville halvdelen af menuen vaere det (F11). Serveren
+   * afviser uanset hvad; det her er, for at man ikke skal proeve.
+   */
+  const mit = n.mine !== false;
+  const ret = maaRette(n);
+
   const host = document.createElement('div');
   host.className = 'usermenu notemenu';
   host.id = 'noteMenu';
   host.innerHTML = `
-    <button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
-    <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>
+    ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
+    <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
-    <button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
+    ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
   esc((foer.title || 'Untitled').slice(0, 24))}”</span></button>` : ''}
     <button class="usermenu-item" data-do="op">${icon('fold', 16)}<span>Move up</span></button>
     <button class="usermenu-item" data-do="ned">${icon('udfold', 16)}<span>Move down</span></button>
     <button class="usermenu-item" data-do="flyt">${icon('book', 16)}<span>Move to notebook…</span></button>
-    ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}
+    ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}` : ''}
     <button class="usermenu-item" data-do="fs">${icon('focus', 16)}<span>Browser fullscreen</span></button>
-    <button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>`;
+    ${mit ? `<button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>` : ''}`;
   vaert.appendChild(host);
 
   host.querySelectorAll('[data-do]').forEach((el) => {
@@ -1368,26 +1440,21 @@ function visNoteMenu() {
 /* ------------------------------------------------------------- genveje */
 
 /*
- * Kun taster, der ikke kan forveksles med at skrive.
+ * Kun det, der IKKE staar i genvejsbordet.
  *
- * Vagten skal spoerge om BAADE `activeElement` og haendelsens `target`: en
- * optimistisk opdatering kan naa at fjerne det fokuserede element, og saa ser
- * et vaern, der kun kigger paa activeElement, ingenting (doda v29).
+ * Selve genvejene bor i `GENVEJE` i p12 - ét sted, saa hjaelpeoversigten er
+ * genereret og ikke skrevet af (F13). Tilbage her er den ene ting, bordet
+ * ikke kan udtrykke: **Escape ud af fokustilstand, ogsaa mens man staar i et
+ * felt.** Alle andre genveje skal netop IKKE fyre, mens man skriver - den her
+ * skal, fordi fokustilstand er noget, man vil ud af, uden foerst at skulle
+ * finde ud af, hvor markoeren er.
  */
 document.addEventListener('keydown', (e) => {
-  const maal = e.target;
-  const iFelt = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-  if (iFelt(maal) || iFelt(document.activeElement)) {
-    if (e.key === 'Escape' && erIFokus() && !document.getElementById('blokFelt')) saetFokus(false);
-    return;
-  }
+  if (e.key !== 'Escape' || !erIFokus()) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-  if (e.key === 'Escape' && erIFokus()) { saetFokus(false); return; }
-  if ((e.key === 'f' || e.key === 'F') && state.view === 'note') {
-    e.preventDefault();
-    saetFokus(!erIFokus());
-  }
+  // ... men ikke, mens en raa blok er aaben: dér lukker Escape blokken.
+  if (document.getElementById('blokFelt')) return;
+  saetFokus(false);
 });
 
 // Forlader man browserens fuldskaerm med Esc, skal vores egen tilstand foelge

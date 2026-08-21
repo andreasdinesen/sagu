@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -62,15 +62,9 @@ function nyId() {
  *    trimmede vaerdien og maalte laengden paa den utrimmede.
  */
 function plukMaerker(raa) {
-  const maerker = [];
-  const tekst = String(raa || '')
-    .replace(/(^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{0,59})/gu, (helt, foer, navn) => {
-      maerker.push(navn);
-      return foer;
-    })
-    .replace(/\s+/g, ' ')
-    .trim();
-  return { tekst, maerker };
+  // Reglen bor i `app/shared/maerker.js`, saa serveren og browseren tolker
+  // `#maerke` ENS. Wrapperen bliver staaende, saa kaldstederne er uroerte.
+  return saguMaerker.pluk(raa);
 }
 
 function esc(s) {
@@ -204,6 +198,15 @@ const ICONS = {
   kalender: '<path d="M4.5 6.5h15v13h-15z"/><path d="M4.5 10h15M9 4.5v3M15 4.5v3"/>',
   skabelon: '<path d="M4.5 5.5h15v13h-15z"/><path d="M4.5 9.5h15M9.5 9.5v9"/>',
   klips: '<path d="M17 8.5l-6.6 6.6a2.5 2.5 0 003.5 3.5l6.6-6.6a4.5 4.5 0 00-6.4-6.4l-6.6 6.6a6.5 6.5 0 009.2 9.2l5.8-5.8"/>',
+  // F12. Tegnet er GitHubs kat, forenklet til den samme stregtykkelse som
+  // resten - et fremmed logo hentet fra et CDN ville baade bryde CSP'en og
+  // se ud som et fremmedlegeme.
+  github: '<path d="M9.5 20.5c-4 1.2-4-2.2-5.5-2.7m11 5.2v-3.4c0-1 .1-1.4-.5-2 2.6-.3 5-1.3 5-5.6a4.3 4.3 0 00-1.2-3 4 4 0 00-.1-3s-1-.3-3.2 1.2a11 11 0 00-5.8 0C7 5.7 6 6 6 6a4 4 0 00-.1 3 4.3 4.3 0 00-1.2 3c0 4.3 2.4 5.3 5 5.6-.6.6-.6 1.2-.5 2v3.4"/>',
+  opfrisk: '<path d="M20 12a8 8 0 11-2.3-5.7"/><path d="M20 4v4.5h-4.5"/>',
+  laas: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/>',
+  stjerne: '<path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
+  tastatur: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h10"/>',
+  stjerneFuld: '<path fill="currentColor" d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
   import: '<path d="M12 3.5v11M8.5 11L12 14.5 15.5 11"/><path d="M4.5 15.5v3a1.5 1.5 0 001.5 1.5h12a1.5 1.5 0 001.5-1.5v-3"/>',
   ind: '<path d="M4 6.5h16M9 12h11M9 17.5h11"/><path d="M4 10l2.5 2L4 14"/>',
   fold: '<path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/>',
@@ -232,6 +235,9 @@ const VIEWS = [
   // Settings, ikke i den daglige liste (Andreas, 2026-08-21).
   { id: 'import', label: 'Import & export', icon: 'import', group: 0 },
   { id: 'settings', label: 'Settings', icon: 'settings', group: 0 },
+  // group: 0 - naas fra Settings, hvor noeglerne bor. En opskrift hoerer
+  // ved siden af det, den handler om.
+  { id: 'api', label: 'API & Shortcuts', icon: 'settings', group: 0 },
   // group: 0 = staar IKKE i navigationen. En note naas fra traeet; uden en
   // valgt note er der ingenting at gaa ind til.
   { id: 'note', label: 'Note', icon: 'notes', group: 0 },
@@ -246,7 +252,7 @@ const viewById = (id) => VIEWS.find((v) => v.id === id) || VIEWS[0];
  * paa dem - ellers lyser INTET i menuen, og man kan ikke se, hvor man er
  * (RUNE-ERFARINGER §9c).
  */
-const BAG_BRUGEREN = new Set(['settings', 'import']);
+const BAG_BRUGEREN = new Set(['settings', 'import', 'api']);
 
 const BESKRIVELSER = {
   notes: 'Everything you have written, newest first.',
@@ -257,6 +263,7 @@ const BESKRIVELSER = {
   trash: 'Deleted notes. They are removed for good after 30 days.',
   import: 'Bring your Notion archive in, and take everything out again whenever you like.',
   settings: 'Appearance, account and access.',
+  api: 'How to reach Sagu from an iPhone shortcut, or from another program.',
 };
 
 /* ------------------------------------------------------------ optegning */
@@ -318,6 +325,7 @@ function bindGate() {
       });
       state.user = data.user;
       state.config.needsSetup = false;
+      if (fortsaetTilConnector()) return;
       await hentState();
       render();
     } catch (ex) {
@@ -342,6 +350,9 @@ function bindGate() {
       try {
         const d = await loginMedPasskey();
         state.user = d.user;
+        // Ogsaa her: begge veje ind skal kunne fortsaette til samtykkesiden,
+        // ellers virker connectoren kun for den, der taster sit kodeord.
+        if (fortsaetTilConnector()) return;
         await hentState();
         render();
       } catch (ex) {
@@ -380,6 +391,7 @@ function shellHtml() {
         <button class="pinbtn" id="pinBtn" aria-label="Hide the menu"
           title="Hide the menu">${icon('pin', 16)}</button></div>
       <div id="navHost">${navHtml()}</div>
+      <div id="navGenveje">${genvejeHtml()}</div>
       <div id="treeHost" class="treehost"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
@@ -617,6 +629,11 @@ function visBrugerMenu() {
   const host = document.createElement('div');
   host.className = 'usermenu';
   host.id = 'userMenu';
+  /*
+   * Genvejsoversigten staar HER, fordi en genvej, man ikke kan FINDE, ikke
+   * findes (RUNE-ERFARINGER, tovo v8). Spoergsmaalstegnet er den eneste vej
+   * ind i listen, og det kan man kun taste, hvis man ved, det er der.
+   */
   host.innerHTML = `
     <div class="usermenu-head">
       <div class="usermenu-name">${esc(state.user.username)}</div>
@@ -624,6 +641,8 @@ function visBrugerMenu() {
     </div>
     <button class="usermenu-item" data-go="import">${icon('import', 17)}<span>Import &amp; export</span></button>
     <button class="usermenu-item" data-go="settings">${icon('settings', 17)}<span>Settings</span></button>
+    <button class="usermenu-item" data-go="genveje">${icon('tastatur', 17)}<span>Keyboard shortcuts</span>
+      <kbd style="margin-left:auto">?</kbd></button>
     <button class="usermenu-item danger" data-go="logout">${icon('out', 17)}<span>Log out</span></button>`;
   fod.appendChild(host);
 
@@ -632,6 +651,7 @@ function visBrugerMenu() {
     el.addEventListener('click', async () => {
       const hvad = el.dataset.go;
       luk();
+      if (hvad === 'genveje') { visGenvejsPanel(); return; }
       if (hvad === 'settings' || hvad === 'import') { gaaTil(hvad); return; }
       await api('POST', '/api/logout', {});
       state.user = null;
@@ -732,6 +752,29 @@ window.addEventListener('resize', () => { byggToc(); });
 
 /* --------------------------------------------------------------- start */
 
+/**
+ * Adressen at vende tilbage til, naar man er logget ind.
+ *
+ * Serveren sender `?next=/oauth/authorize?...` hertil, naar en connector beder
+ * om samtykke og der ingen session er. **KUN den ene sti accepteres** - alt
+ * andet ville vaere en aaben viderestilling, og en connector-godkendelse er
+ * praecis det sted, hvor man ikke skal kunne lokkes videre.
+ */
+function oauthNaeste() {
+  try {
+    const n = new URLSearchParams(location.search).get('next') || '';
+    return n.startsWith('/oauth/authorize?') ? n : null;
+  } catch { return null; }
+}
+
+/** Kaldes efter login. Returnerer true, hvis siden er paa vej et andet sted hen. */
+function fortsaetTilConnector() {
+  const n = oauthNaeste();
+  if (!n) return false;
+  location.replace(n);
+  return true;
+}
+
 (async function start() {
   anvendTema(nuvaerendeTema());
   try {
@@ -739,7 +782,12 @@ window.addEventListener('resize', () => { byggToc(); });
     document.title = state.config.appName || 'Sagu';
     const me = await api('GET', '/api/me');
     state.user = me.user;
+    // Var jeg allerede logget ind, da connectoren sendte mig herhen, skal jeg
+    // slet ikke se appen - kun samtykkesiden.
+    if (state.user && fortsaetTilConnector()) return;
     if (state.user) await hentState();
+    // Favoritter og spor hentes ÉN gang her - ikke ved hver optegning.
+    if (state.user) await hentGenveje();
   } catch (ex) {
     document.getElementById('root').innerHTML =
       `<div class="gate"><div class="card"><div class="brand">${icon('logo', 26)} Sagu</div>

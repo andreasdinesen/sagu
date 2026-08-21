@@ -26,6 +26,12 @@ forsyningskæde at holde patchet.
 | **Import** | Notions »Export → Markdown & CSV«, inklusive databaser → notesbøger, interne links og vedhæftninger |
 | **Eksport** | Hele arkivet som markdown-mapper i en zip, eller som JSON, der kan gendannes |
 | **Flerbruger** | `user_id` i dataadgangen selv, adgangsnøgler med scopes, passkeys |
+| **Deling** | Del en side — og det under den — med en anden konto, som læse eller skrive. Arven regnes af træet, så en underside lavet bagefter kommer med. Ejerskifte flytter hele undertræet |
+| **GitHub** | En fil-adresse på sin egen linje bliver til koden — **frosset til den commit, den pegede på**, så noten bliver ved med at forklare den kode, den blev skrevet om. Issues og PR-er bliver til chips med titel og tilstand |
+| **Tastatur** | Enkelttaster uden ⌘/Ctrl, og en oversigt på `?` der er **genereret** af det samme bord, tasterne bruger |
+| **API** | Skrevet til en iPhone-genvej med ét tekstfelt: fangst som JSON, formulardata, ren tekst eller `?text=`, `?format=md` ud, `changes?since=` med slettede id'er — og en indbygget guide med færdige opskrifter |
+| **doda-bro** | En note kan sende en tjeklistelinje til søsterappen [doda](https://github.com/andreasdinesen/doda) som en opgave og vise dens status igen — med links, aldrig synkronisering |
+| **Claude** | MCP-server på `/mcp` med ni værktøjer, og OAuth 2.1 med samtykkeside, så claude.ai's webklient forbinder sig selv. Scopet håndhæves både i listen og ved kaldet |
 
 ## Installation
 
@@ -80,13 +86,17 @@ app/
   import.js        Notion-import som baggrundsjob
   zip.js           egen ZIP-læser og -skriver oven på node:zlib
   webauthn.js      håndskrevet WebAuthn (passkeys)
+  doda.js          broen til opgave-appen
+  github.js        kode og sager i en note; ETag-cache, frossen commit-sha
+  mcp.js           ni værktøjer over JSON-RPC
+  oauth.js         OAuth 2.1 — motoren kender hverken database eller HTTP
   shared/          UMD — bruges af BÅDE browseren og serveren
     markdown.js      rendereren; hvidliste, escape først
     soeg.js          søgesyntaksens parser
     notion.js        Notion-formatets parser
-  parts/p1..p8.js  frontend, samles til public/app.js af build'et
+  parts/p1..p12.js frontend, samles til public/app.js af build'et
 build_rune.py      ikon, kommentar-strip, require-spærre, payload-budget
-tests/             226 tests
+tests/             372 tests
 ```
 
 ## Nogle valg, der er værd at kende
@@ -101,8 +111,17 @@ tests/             226 tests
 - **`user_id`-filteret ligger i dataadgangen selv**, aldrig i kaldstederne — og
   det gælder også administratorer. At være admin betyder at måtte ændre
   *installationen*, ikke at måtte læse andres noter.
+- **Deles en side, deles det under den — og arven regnes af træet**, ikke af en
+  kopieret adgangsrække. En underside lavet bagefter kommer med; flyttes en
+  note ud, forsvinder adgangen med det samme. Ejeren betaler ingenting for
+  det: hans eget id står først i betingelsen og kortslutter den.
+- **At måtte skrive er ikke at måtte bestemme.** Slette, udgive, dele videre og
+  give siden fra sig kan kun ejeren.
 - **Ukendt, tilbagekaldt og udløbet svarer ens: 404.** En 403 ville bekræfte,
   at adressen findes.
+- **Der er én vej ind i API'et.** Et OAuth-token fra connectoren er en helt
+  almindelig række i nøgletabellen, bare med et klient-id og et udløb — så et
+  tilbagekald kun skal huskes ét sted.
 - **Interfacet er engelsk; koden, kommentarerne og dokumenterne er danske.**
 
 Beslutningerne og deres begrundelser står i [`DESIGN.md`](DESIGN.md), planen i
@@ -113,4 +132,5 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **2** | doda-broen begge veje (F8), API og iPhone-genveje med indbygget guide (F9), MCP-server og claude.ai-connector med OAuth 2.1 (F10), deling mellem konti med arv gennem undertræet (F11), GitHub-indlejringer med frossen commit-sha (F12), tastaturgenveje, favoritter og »senest besøgte« (F13). |
 | **1** | Første udgivelse. Fundament og flerbruger (F0), noter og editor (F1), søgning (F2), Notion-følelsen (F3), filer (F4), Notion-import og eksport (F5), wiki og offentliggørelse (F6), kommentarer (F7). |

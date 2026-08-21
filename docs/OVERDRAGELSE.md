@@ -1,4 +1,4 @@
-# Overdragelse — Sagu, efter F6
+# Overdragelse — Sagu, efter F13 (alle faser bygget)
 
 > **Skrevet 2026-08-21.** Denne fil er et *øjebliksbillede*, ikke en kravkilde.
 > Kravene står i `docs/HANDOVER.md`, beslutningerne i `DESIGN.md`, planen i
@@ -9,18 +9,18 @@
 
 ## 1 · Hvor står vi
 
-**F0–F7 er bygget, og v1 er udgivet 2026-08-21** — offentligt repo, install-scriptet
-henter app-koden fra `refs/tags/v1`.
+**ALLE faser er bygget (F0–F13). v1 (F0–F7) er i drift på Hjorten**; F8–F13
+venter på et ja. Offentligt repo, install-scriptet henter app-koden fra `refs/tags/v<N>`.
 
 | | |
 |---|---|
-| Tests | **226 grønne** (`node --test --test-timeout=600000 tests/*.test.mjs`, ~14 s), 1 sprunget over (kræver en rigtig Notion-eksport i `SAGU_NOTION_EKSPORT`) |
-| Install-script | **1.640 / 126.000 tegn (1,3 %)** — koden hentes fra GitHub. Payloaden ville indlejret være ~119.000 tegn (~94 %) |
-| Repoet | **offentligt**, efter auditten i `DESIGN.md` §13 |
-| `APP_VERSION` | **1** — aldrig bumpet, aldrig udgivet |
-| Git | **Der er stadig intet git-repo.** `~/ClaudeMacBook/sagu` er en almindelig mappe |
-| Migrationer | m1–m8 |
-| Næste fase | **F8 · doda-integration** — den vigtigste enkeltdel |
+| Tests | **372 grønne** (`node --test tests/*.test.mjs`, ~20 s), 1 sprunget over (kræver en rigtig Notion-eksport i `SAGU_NOTION_EKSPORT`) |
+| Install-script | **1.640 / 126.000 tegn (1,3 %)** — koden hentes fra GitHub. Payloaden ville indlejret være **151.518 tegn (120,3 %)**: appen er for stor til den gamle vej |
+| Repoet | **offentligt** (`andreasdinesen/sagu`), efter auditten i `DESIGN.md` §13 |
+| `APP_VERSION` | **1** — bumpes først, når Andreas siger ja til v2 |
+| Git | ét commit (`Sagu v1`), tagget `v1`. F8–F13 er **ucommitteret** |
+| Migrationer | m1–m14 |
+| Næste | **Udgivelse af v2.** Der er ingen faser tilbage i planen |
 
 Faserne:
 
@@ -34,7 +34,12 @@ Faserne:
 | F5 | Import fra Notion — og eksport | bygget |
 | F6 | Wiki og offentliggørelse | bygget |
 | F7 | Kommentarer, i appen og på wikien | bygget |
-| F8–F13 | doda · API · MCP · deling · GitHub · polering | ikke påbegyndt |
+| F8 | doda-integration, begge veje | bygget |
+| F9 | API og iPhone-genveje | bygget |
+| F10 | MCP-server og claude.ai-connector | bygget |
+| F11 | Deling mellem konti | bygget |
+| F12 | GitHub i noter | bygget |
+| F13 | Genveje, favoritter, spor | bygget |
 
 ---
 
@@ -57,11 +62,9 @@ kører det udgivne script — står i `DESIGN.md` måling 1 og §13.
    hvis en payload-fil ikke er i git.
 3. **En hemmelighed må aldrig i en kildefil mere.** Repoet er offentligt.
 
-**Det, der stadig mangler at blive prøvet:** en rigtig installation på Hjorten.
-Alt er kørt på macOS, og **busybox' `tar` og `find` er ikke afprøvet** —
-scriptet bruger med vilje kun `tar x -C`, som den nuværende rune allerede
-bruger. Hjorten svarede ikke fra denne maskine (ikke på LAN'et), og der er
-ingen container-runtime her.
+**Prøvet i drift 2026-08-21:** Sagu v1 er installeret på Hjorten og svarer på
+`sagu.<mit-domaene>`. Hentningen kørte i `node:24-alpine` uden tilpasning, så
+busybox' `tar` og `find` er ikke længere et åbent spørgsmål.
 
 Rækkefølgen, når du begynder:
 
@@ -83,23 +86,29 @@ Rækkefølgen, når du begynder:
 
 ---
 
-## 3 · Tre ting, der venter på Andreas
+## 3 · Det, der venter på Andreas
 
 Ingen af dem må afgøres uden ham.
 
-1. **`andreasdinesen/sagu` skal oprettes — offentligt.** Der er stadig ikke
-   oprettet noget repo, og intet er committet. **Runen kan først installeres,
-   når repoet findes og `v1` er tagget**, for install-scriptet henter derfra.
-2. **Skal F6 udgives?** Et push er en udgivelse, og først dér bumpes
-   `APP_VERSION`.
-3. **Wikiens adresse.** `SAGU-PLAN` §10 spørger, om den skal ligge på
-   `sagu.<mit-domaene>/w/<slug>` eller på et domæne, kollegaerne kan kende (fx
-   `wiki.<mit-domaene>`). Stierne (`/w/<slug>`, `/s/<token>`) virker under enhver
-   vært, så det blokerer intet — men det skal afklares inden udgivelsen.
+1. **Sagu v2 (F8–F13) er ikke udgivet.** Alt står ucommitteret i
+   arbejdsmappen. Udgivelsen er tre trin: bump `APP_VERSION` til 2 → commit →
+   `git tag v2` → `git push --tags`. **Runen henter `refs/tags/v<N>`, så uden
+   taggen installerer den ingenting.**
+2. **doda v40 venter på det samme ja.** dodas YAML peger på `refs/tags/v39`,
+   som **ikke findes på GitHub**. doda må ikke geninstalleres, før den er
+   bumpet og tagget — og panelets doda-felt skal have et `GITHUB_TOKEN`
+   (dodas repo er privat; GitHub svarer 404, ikke 403, når tokenet mangler
+   adgang).
+3. **Connectoren skal prøves af mod den rigtige claude.ai.** Hele flowet er
+   testet mod en rigtig server, men først en rigtig webklient viser, om
+   opdagelsen holder hele vejen. Adressen er `https://<sagus-vaert>/mcp`
+   (Settings → Connectors → Add custom connector).
+4. **Skal `sagu.dk` pege på den?** Feltet »Public address« i Settings er der;
+   det bestemmer, hvad links og `canonical` skrives med, og bruges aldrig til
+   en omdirigering.
 
 **Uden for projektet:** `~/ClaudeMacBook/rune-erfaringer/RUNE-ERFARINGER.md`
-har F6's lærdomme liggende som ucommittede ændringer. Det repo skal committes
-og pushes efter et stykke arbejde — også det kræver Andreas' ja.
+skal have F8–F10's lærdomme og committes+pushes — også det kræver et ja.
 
 ---
 
@@ -153,8 +162,14 @@ ville være at bede brugeren om at lave om på sit indhold for appens skyld.
 
 ```
 app/
-  server.js        migrationer m1–m7, auth, note-CRUD, træ, søgning,
-                   vedhæftninger, udgivelser, eksport/gendan   (~170 KB)
+  server.js        migrationer m1–m10, auth, note-CRUD, træ, søgning,
+                   vedhæftninger, udgivelser, eksport/gendan, MCP- og
+                   OAuth-ruterne                               (~190 KB)
+  doda.js          broen til opgave-appen: adresse + nøgle, aldrig pr. optegning
+  github.js        kode og sager i en note (F12); ETag-cache, frossen sha
+  mcp.js           ni værktøjer over JSON-RPC; kalder Sagus egne funktioner
+  oauth.js         OAuth 2.1-motoren — porteret fra doda, kender hverken
+                   database eller HTTP (seks funktioner injiceres)
   wiki.js          den OFFENTLIGE wiki — server-renderet, ingen app-JS
                    (inkl. kommentarformularen, som er ren HTML)
   import.js        Notion-import som baggrundsjob (start/status/afbryd/kig)
@@ -163,13 +178,14 @@ app/
     markdown.js      rendereren. Hvidliste. Kroge: billedUrl, linkUrl
     soeg.js          søgesyntaksens parser
     notion.js        Notion-formatets parser
-  parts/p1..p8.js  frontend, samles til public/app.js af build'et
-                   (p8 = kommentarer: under noten og Comments-skaermen)
+  parts/p1..p12.js frontend, samles til public/app.js af build'et
+                   (p8 = kommentarer, p9 = API-guiden, p10 = deling,
+                    p11 = GitHub, p12 = genveje/favoritter)
   public/app.js    GENERERET — redigér aldrig
   public/wiki.js   wikiens egen lille fil (ikke app-koden)
 runes/sagu.yaml    GENERERET — redigér aldrig
 build_rune.py      ikoner, kommentar-strip, require-spærre, payload-budget
-tests/*.test.mjs   226 tests i 13 filer
+tests/*.test.mjs   372 tests i 20 filer
 ```
 
 **Regler, der er lette at komme til at bryde** (de fulde står i `CLAUDE.md`):
@@ -221,20 +237,51 @@ mappe er præcis den, der bliver hentet ned fra GitHub ved en installation.
 
 ---
 
-## 7 · F8 · doda-integration — det, der venter
+## 7 · F10 · connectoren — det, du skal vide, hvis du rører den
 
-Detaljerne står i `SAGU-PLAN.md`. Det, F7 og F0 allerede har lagt til rette:
+Hele historien står i `DESIGN.md` §18. Det korte:
 
-- **Den smalle dør findes.** `POST /api/v1/notes` med `capture`-scope kan
-  oprette og **kan ikke se noget som helst**. Det var dén dør, der gjorde
-  MsGraphBud billig at bygge (`DESIGN.md` måling 3).
-- **Rundturen er målt til ~150 ms** gennem tunnelen. F8 må **aldrig** kalde
-  doda pr. optegning — status hentes med et tidsstempel-cache.
-- **Der er ingen navneopløsning mellem runer.** URL + nøgle, som Andreas selv
-  sætter begge steder. Peges URL'en på LAN-adressen, forsvinder de 150 ms
-  uden en linje kode.
-- Kommentarerne fra F7 er også dét, doda skal kunne vise på en note (`vis
-  notens kommentarer` i planens F8).
+- **`app/oauth.js` er porteret næsten ordret fra doda** og kender hverken
+  database eller HTTP. Rør den kun, hvis protokollen kræver det — alt
+  Sagu-specifikt hører i `server.js`.
+- **Der er én vej ind i API'et.** Et OAuth-access-token er en helt almindelig
+  række i `tokens`, bare med `client_id` og `expires_at`.
+- **Fire ting fejler TAVST og har hver sin test**: 401 uden
+  `resource_metadata`, `form-action 'self'` (dræber »Allow«), CORP der
+  kasserer opdagelsesdokumentet, og et fremmed `Origin` (DNS-rebinding).
+- **Sagu er flerbruger, doda er ikke.** En forbindelse hører til den, der
+  trykkede »Allow«. `user_id` skal stå i hver eneste WHERE.
+
+## 7b · F11 · deling — det, du skal vide, hvis du rører adgangen
+
+Hele historien står i `DESIGN.md` §19. Det korte:
+
+- **Der er ÉN adgangsregel**, og den bor i tre fragmenter i `server.js`:
+  `SYNLIG` (må se), `SKRIVBAR` (må ændre) og `EJET` (må bestemme). De to
+  første tager nøjagtig **to** parametre — `userId` to gange — fordi der er
+  over tyve kaldsteder.
+- **Arven regnes af det levende træ**, ikke af rækker. Rør den ikke uden at
+  læse måling 5 først: en materialiseret ACL skulle vedligeholdes tre steder.
+- **Fire ting kan kun ejeren:** slette, udgive, dele videre, give videre.
+- **Hver ny liste er et sted, reglen kan mangle.** Otte huller lukkede i F11,
+  og det sidste — sidebarens træ — blev fundet ved at logge ind som bruger
+  nummer to og **kigge**, ikke af en test. Laver du en ny liste over noter,
+  så spørg dig selv, om den er *mit arkiv* eller *alt jeg må se*. De to er
+  ikke det samme.
+- **`maaRette()` i `p10_deling.js`** er frontendens ene sted. Kommer der en
+  femte måde at begynde en redigering på, skal den spørge dér.
+
+## 7c · F12 og F13 — det korte
+
+`DESIGN.md` §20 og §21. Det, der er værd at vide, før du rører dem:
+
+- **Sha'en står i TEKSTEN.** Rør ikke ved det: markdown er sandheden, og det
+  er dét, der gør, at en indlejring overlever en eksport.
+- **Wikien henter aldrig fra GitHub.** Kun cachen. En offentlig side må ikke
+  kunne bruge ejerens kvote op.
+- **`GENVEJE` er ét bord**, og `?`-oversigten er genereret af det. Tilføjer du
+  en genvej, står den i hjælpen af sig selv — det er hele pointen.
+- **Favoritter og spor er brugerens.** Samme regel som alt andet i F11.
 
 **Udskudt med vilje — skriv det ikke som manglende:**
 
@@ -244,6 +291,14 @@ Detaljerne står i `SAGU-PLAN.md`. Det, F7 og F0 allerede har lagt til rette:
 | Aliaser pr. side, fæstnede søgeord | to felter og en redigeringsflade hver → **F13** |
 | Flere kodeord pr. udgivelse | modellen kan bære det; ingen har brug for det endnu |
 | »Hent hele wikien som markdown-zip« | motoren findes (F5), skal afgrænses til udgivelsen → **F13** |
+| SSE-strøm på `/mcp` | alt besvares i selve POST-svaret; `GET`/`DELETE` svarer 405 |
+| Deling af en hel NOTESBOG | en bog er ejerens; del bogens forside med undertræ i stedet |
+| »Hvem rettede sidst« i fladen | `updated_by` gemmes og testes, men vises ikke endnu → **F13** |
+| Delinger i en eksport | bevidst udeladt — en ACL-række peger på en anden brugers id (`DESIGN.md` §19) |
+| GitHub Enterprise | kun `github.com`; en anden vært har sit eget API og sin egen godkendelse |
+| Gists og mapper (`/tree/`) | en indlejring, der ikke kan vise noget nyttigt, skal ikke se ud som en indlejring |
+| Syntaksfarver i en GitHub-indlejring | sproget sættes som klasse; farverne mangler stadig → senere |
+| Migreringen af Notion-wikierne | ikke kode. Importen (F5) og udgivelsen (F6) er der; flytningen er Andreas' |
 
 ## 8 · Arbejdsgangen, kort
 

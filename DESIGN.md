@@ -199,12 +199,17 @@ foran, så en tavs no-op ikke kan lade testen »bestå«.
 | Præfiks-mappenavnet hardkodet | præfiks-testen rød |
 | `app/public/app.js` taget ud af git | `FEJL: disse filer er ikke i git og ville mangle efter en hentning` |
 
-**Det, der IKKE er bevist, og som skal siges højt:** alt er kørt på macOS med
-bsdtar og GNU-agtige værktøjer. `tar x -C` og `find -maxdepth` er valgt, fordi
-de er det mindste, busybox skal kunne — `tar x` bruges allerede af den
-nuværende rune — men **busybox' egen udgave er ikke afprøvet**: Hjorten svarer
-ikke fra denne maskine, og der er ingen container-runtime her. Første rigtige
-installation på Hjorten er derfor stadig den prøve, der mangler.
+**Busybox-spørgsmålet — lukket 2026-08-21.** Alt var kørt på macOS med bsdtar,
+og `tar x -C` + `find -maxdepth` var valgt, fordi de er det mindste, busybox
+skal kunne. Det kunne ikke afprøves her: Hjorten svarer ikke fra denne maskine,
+og der er ingen container-runtime. **Prøven blev installationen selv** — Sagu
+v1 er installeret på Hjorten og svarer på `sagu.<mit-domaene>` (v1,
+`needsSetup: false`, 154 ms rundtur gennem tunnelen, altså præcis måling 3's
+tal). Hentningen, udpakningen og ombytningen kørte i `node:24-alpine` uden en
+eneste tilpasning.
+
+Lærestregen om metoden holder alligevel: det var rigtigt at sige højt, at det
+var ubevist, frem for at lade en grøn testsuite se ud som et fuldt bevis.
 
 ### Måling 2 · FTS5
 
@@ -1475,7 +1480,7 @@ App-koden når kun tre værter: `github.com`, `notion.so` og `dr.dk`.
 | Fund | Hvorfor det er et fund | Hvad der blev gjort |
 |---|---|---|
 | Et personligt `*.notion.site`-værtsnavn **hardkodet i app-koden** (`markdown.js`) | Et personligt Notion-arbejdsrum stod i en liste over »kendte værter« i en app, andre kan installere. Og listen kunne alligevel kun dække de arbejdsrum, nogen havde skrevet ned | Reglen er nu **endelsen** (`*.notion.site`) — en regel, ikke en liste (tools v1) |
-| `andreas@omlidt.dk` i kommentar og test | En rigtig adresse i et offentligt repo er føde for skrabere. Eksemplet skulle kun vise, at et kolon i en adresse ikke er et filter | `navn@eksempel.dk` |
+| En rigtig mailadresse i kommentar og test | En rigtig adresse i et offentligt repo er føde for skrabere. Eksemplet skulle kun vise, at et kolon i en adresse ikke er et filter | `navn@eksempel.dk` |
 | Et rigtigt `ExportBlock-<uuid>` hardkodet i `notion.test.mjs` | Et rigtigt Notion-blok-id er i sig selv en oplysning om et privat arbejdsrum — og stien virkede kun på én maskine | Stien kommer nu fra `SAGU_NOTION_EKSPORT`; testen springes over uden den. Kørt igen med variablen sat: **290 sider, 13 notesbøger, 252 links** |
 | Levende adresser (app-subdomæner under Andreas' egne domæner) i dokumenterne | Et endepunkt, der **er i drift**, er det tætteste på følsomt, repoet har: det inviterer til at blive prøvet af | Sløret til `<mit-domaene>` |
 
@@ -1681,3 +1686,602 @@ Alle spor af arbejdspladsens produktnavn er væk fra testfikstur, kommentarer og
 dokumenter (`Haandbog`, `backup-nat.log`, `logAnonymizer` i stedet). Et
 eksempel skal vise sin **pointe**, ikke hvor det kom fra — og repoet er
 offentligt.
+
+---
+
+## 16 · F8 · doda-integrationen — Sagus halvdel
+
+Krav 17, og planens »den vigtigste enkeltdel«. **Halvdelen her er Sagus:** at
+sende en opgave og vise, hvad der blev af den. Den anden halvdel — `app/sagu.js`
+inde i doda, `*` i dodas fangstfelt, søgning i Sagu fra doda — er et andet
+repo og en anden udgivelse.
+
+### URL og nøgle, ikke et containernavn
+
+Skemaet er entydigt (måling 3): det private bridge-net gælder sidecars inde i
+én rune, og der er ingen navneopløsning mellem to runer. Feltet er derfor en
+adresse og en nøgle, brugeren selv sætter — som MsGraphBud allerede gør i
+drift. Og fordi feltet **er** en URL, er genvejen gratis: peges den på LAN-
+adressen i stedet for på tunnelen, forsvinder de ~150 ms uden en linje kode.
+
+Forbindelsen er **personlig** (scope = brugerens id). Sagu er flerbruger, og to
+brugere deler ikke doda.
+
+### Aldrig et kald pr. optegning
+
+Rundturen er målt til 140–190 ms. En note med fem opgaver ville være næsten et
+sekund, hvor der ikke sker noget. Derfor:
+
+- Status står i Sagus **egen** tabel (`doda_tasks`, m9) og læses derfra.
+- Den opfriskes højst **én gang i kvarteret**, og kun når en note åbnes.
+- Opfriskningen er **ét** kald (`/changes?since=`) for alle brugerens opgaver
+  — ikke ét pr. opgave. Vandmærket står i settings og overlever en genstart.
+
+Der er en test på begge dele: ti opslag i træk skal give **nul** kald, og tre
+opgaver skal give **ét**. Attrappen tæller selv, så reglen er målt frem for
+beskrevet.
+
+### Fejlstien er den vigtige
+
+En bro fejler oftere end den lykkes, og de tre fejl fører til hver sin
+handling — så de skal kunne skelnes:
+
+| | Hvad brugeren skal gøre |
+|---|---|
+| `unreachable` | se på adressen, og på om doda kører |
+| `bad_key` | lave en ny nøgle |
+| `wrong_scope` | *ikke* skifte nøglen ud — den er i orden, bare for smal |
+
+Den sidste er værd at holde adskilt: blander man den med `bad_key`, skifter
+brugeren en nøgle ud, der er helt i orden — og dodas egen besked siger allerede
+præcis, hvilket scope den har. Den sendes derfor **ordret** videre.
+
+**Nøglen prøves, før den gemmes**, og rulles tilbage ved fejl. Ellers ligger et
+forkert token og *ligner* en virkende forbindelse, indtil man prøver at bruge
+den (doda v16). Og en `capture`-nøgle er ikke en fejl: den kan stadig oprette,
+og forbindelsen siger så højt, at status ikke kan vises.
+
+**En fejlet forbindelse er ikke en fejlet gemning:** ruten svarer 502 (ikke
+500), og en fejlet *opfriskning* rører ikke rækkerne — de står der stadig med
+det, de sidst vidste, og siden siger hvorfor de ikke er friske. En bro, der
+bliver tom, når den anden ende er nede, ligner en bro, der har mistet noget.
+
+### `link`-scopet, og hvorfor det måtte findes
+
+`capture` kan oprette og se ingenting; `read` kan se og oprette ingenting. Det
+er den rigtige opdeling for en telefon, men den kan ikke udtrykke det, en
+søsterapp har brug for: doda skal kunne **søge** i noterne og **oprette** én —
+og ikke andet. Uden `link` måtte doda have en `full`-nøgle, og så ville en
+integration, der kun skriver links, også kunne slette hele arkivet.
+
+`write` er stadig forbeholdt `full`. Det er præcis planens accept: *nøglen i
+doda har read+capture og kan ikke slette noter.*
+
+### Målt mod en RIGTIG doda — og det var dét, der fandt fejlen
+
+Attrappen dækker fejlstierne, men den er min egen forståelse af doda. Derfor
+blev en rigtig doda startet ved siden af og forbundet.
+
+**Første forsøg hang linket på enden af linjen med et tankestreg. Det kostede
+både linket og datoen:**
+
+```
+samme linje   →  titel »Ret trin 2«, due: null,     note: ''
+egen linje    →  titel »Ret trin 2«, due: i morgen, note: <adressen>
+```
+
+Dodas `!`-markør løber til linjens ende, så `!i morgen — http://…` blev ét
+datoudtryk, der ikke gav mening. Opgaven kom ind uden forfaldsdato og uden
+link, og **intet fejlede**. Kuren er ikke omhu, men formatet: adressen får sin
+egen linje, modtageren læser første linje som titel og resten som beskrivelse,
+og så lander den præcis, hvor den hører hjemme.
+
+Reglen er generel og værd at kunne udenad: **at hænge noget PÅ en linje, hvis
+syntaks er åben, er at give det væk** (MsGraphBud v6).
+
+I Sagus egen liste fjernes adressen igen — den peger tilbage på den note,
+rækken allerede står på. *Linkets tekst betyder noget; adressen er maskineri.*
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **243 grønne** (+17 i `tests/doda.test.mjs`), 1 sprunget over |
+| Hver vagt set fejle | tilbagerulning · `wrong_scope` · friskheds-tjekket · »listen tømmes ikke« · `link` må ikke skrive · rensning af titlen |
+| Ti opslag i træk | **nul** kald til doda |
+| Tre opgaver, én opfriskning | **ét** kald |
+| Mod en rigtig doda | opgave sendt med kontekst, forfaldsdato og link i beskrivelsen · tikket af i doda · slog igennem i Sagu ved opfriskning, og **ikke** før |
+| 375 px | nul overløb, hverken på dokumentet eller pr. element |
+
+### Det, der ikke er bygget her — og hvorfor
+
+`+` i søgefeltet og opgaveruden på noten dækker »fra Sagu mod doda«. Resten af
+planens F8 hører i **doda**: `app/sagu.js`, søgning i Sagu inde fra doda, at
+hænge en note på en opgave via `link_url`, og `*` i fangstfeltet. Sagus side af
+dét er allerede på plads: den smalle dør (`POST /api/v1/notes` med `link`) er
+bygget og testet — det var netop dén dør, der gjorde MsGraphBud billig.
+
+---
+
+## 17 · F9 · API'et og iPhone-genvejene
+
+Krav 19. Det meste af laget lå der fra F0 — nøgler med scopes, hash-lagret,
+`sidst brugt`-stempel, øjeblikkelig tilbagekaldelse. **F9 er dét, der gør laget
+brugbart fra en telefon.**
+
+### En genvej har ét tekstfelt og ingen tålmodighed
+
+Den kan ikke bygge JSON, ikke læse en fejlkode og ikke spørge om noget. Alt i
+`POST /api/v1/capture` følger af det:
+
+- **Fire veje ind:** JSON, formulardata, ren krop og `?text=` i adressen.
+- **Svaret har en færdig `message`-linje**, genvejen kan vise ordret. Uden den
+  skal den bygge en sætning af felter, og det kan den dårligt.
+- **Første linje er titlen, resten er noten** — den regel resten af familien
+  allerede bruger (MsGraphBud → doda), og den eneste, man kan gætte på.
+- **`#mærke` tolkes af den SAMME regel som i titelfeltet.** Reglen lå kun i
+  frontenden, så den flyttede til `app/shared/maerker.js` frem for at blive
+  kopieret: der må ikke findes en særlig API-vej ind i dataene (§9a).
+- **`?notebook=Drift` virker på NAVN.** En genvej kan ikke slå et id op, og at
+  kræve ét ville betyde et kald mere — så er »ét felt og en knap« væk. En bog,
+  der ikke findes, fælder ikke fangsten: teksten er det vigtige.
+
+### `to=today` — og hvis dagen er en anden
+
+`to=today` føjer til dagens note i stedet for at lave en ny. Det er dét, en
+genvej oftest skal: samle dagens småting ét sted.
+
+**Reglen for »i dag« lå to steder og var uenig med sig selv.** Frontenden
+regnede lokal tid, `/state` regnede UTC — og de første timer af døgnet i dansk
+tid pegede de på hver sin dag. Ingen brugte tallet endnu, så det var en fejl,
+der ventede. Nu bor reglen ét sted på serveren, og **en klient kan sende sin
+egen dato** (`?date=`): telefonen ved bedre end serveren, hvornår det er i dag
+hos brugeren. En værdi, der ikke er en dato, falder tilbage til serverens dag
+frem for at fælde fangsten.
+
+### Billedet fra delingsmenuen
+
+`POST /api/v1/capture` med en `image/*`-krop bliver til en note med billedet i.
+Det er med vilje muligt med `capture`: **at lægge noget nyt ind er ikke det
+samme som at måtte rette i alt, hvad der ligger.** Den almindelige fil-rute
+kræver stadig `write`, fordi den kan hænge en fil på en hvilken som helst note.
+
+### Ud igen
+
+- **`?format=md`** giver noten som ren markdown — ikke JSON at grave i.
+  Markdown *er* sandheden i databasen, så der er intet at konvertere; det er
+  hele udbyttet af beslutning 1. Og **har noten sin egen overskrift, står den
+  urørt**: første udgave klippede den af og satte titlen ind, så dagens note
+  blev til `# 2026-08-21` i stedet for `# Friday, 21 August 2026`, som
+  brugeren faktisk havde stående. At skrive om på nogens tekst er værre end at
+  gentage en titel.
+- **`GET /api/v1/changes?since=`** fortæller også, hvad der er **slettet**. En
+  liste over det, der findes, kan ikke sige, at noget er forsvundet — og en
+  klient, der kun ser tilføjelser, samler på spøgelser (doda F9).
+
+### To huller, som først kom frem ved at køre som en rigtig klient
+
+**`curl --data '…'` sætter form-typen af sig selv.** Hele sætningen blev til et
+tomt felt med et mystisk navn, og fangsten svarede »send noget tekst«, selv om
+teksten var der. Min egen test sendte slet ingen Content-Type og gik fri.
+»Tilgivende« skal betyde det: er der ingen felter at genkende, **er** kroppen
+teksten.
+
+**Der var ingen `WWW-Authenticate` på et 401.** Uden den ved en klient ikke, at
+der findes en måde at godkende sig på, og prøver i ring. Det er samme header,
+F10's connector-opdagelse hænger på: svarer `/mcp` 401 uden den, opgiver
+klienten forbindelsen, *uden at noget ser i stykker ud* (§9a, fælde 1).
+
+### Guiden er en kravspecifikation — så den blev en formregel
+
+»En hjælpetekst, der beskriver en funktion, som ikke findes, er den dyreste
+slags fejl: brugeren tror, han bruger den forkert« (doda v38). Tredje gang den
+mekanik bider i familien, så den er nu en **regel og ikke en note**:
+`tests/form.test.mjs` læser opskrifterne og slår hver **metode og adresse** op
+i serverens ruter.
+
+Første udgave slog kun *stien* op — og tre ruter (`GET`, `PATCH`, `DELETE`)
+deler det samme mønster, så en omdøbt GET-rute blev ikke fanget. Det opdagede
+jeg ved at sabotere netop den. **En regel, der måler mindre, end den lyder
+til, er den samme fejl som en test med et for stort navn.**
+
+Guiden skriver adresserne med `offentligBase()` (§15), så en opskrift, man
+kopierer, peger det rigtige sted hen uanset hvilken vært man selv sad på.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **266 grønne** (+22 i `tests/api.test.mjs`, +2 formregler), 1 sprunget over |
+| Hver vagt set fejle | scopet på fangsten (14 røde) · de slettede i `changes` · `#mærke`-reglen · `to=today` · `WWW-Authenticate` · `format=md` på en fremmed note |
+| Hele scope-matricen | målt **uden cookie** — `capture` kan skrive og læse intet, `read` kan læse og skrive intet, og **ingen** nøgle kan lave nøgler, skifte kodeord eller røre serverindstillinger |
+| Kørt som en rigtig genvej | ren tekst → note med mærke · `to=today` to gange → ét sted, i rækkefølge · `?format=md` → ren markdown |
+| Payload, hvis den var indlejret | **127.927 tegn = 101,5 %** af det gamle loft. F9 alene ville have sprængt det |
+
+## 18 · F10 · MCP-serveren og connectoren til claude.ai
+
+**Bygget 2026-08-21.** Ni værktøjer over JSON-RPC, og hele OAuth 2.1-flowet,
+så claude.ai's webklient kan forbinde sig selv — uden at nogen kopierer en
+nøgle nogen steder hen.
+
+### Motoren blev flyttet, ikke skrevet
+
+`app/oauth.js` er **porteret næsten ordret fra doda**. Det kunne lade sig gøre,
+fordi den ikke kender hverken database eller HTTP: den får seks funktioner ind
+(`gemKlient`, `hentKlient`, `udstedTokens`, `findRefresh`, `tilbagekaldRefresh`)
+og rører aldrig et `res`. Alt det Sagu-specifikke — tabellerne, samtykkesiden,
+ruterne — står i `server.js`.
+
+Det er fjerde gang, den mekanik betaler sig: **en motor, der ikke kender sin
+omverden, kan flyttes; en, der gør, skal skrives om.** Det, der VAR anderledes
+her, står nedenfor.
+
+### Access-tokens fik ingen ny tabel
+
+De går gennem `opretToken` og ender i `tokens` — præcis som en håndlavet nøgle,
+bare med et `client_id` og et `expires_at` (de to kolonner blev lagt ind
+allerede i m1 til netop det). Så er der **én vej ind i API'et**, og `findToken`
+er det ene sted, en nøgle kan vise sig ugyldig. To tabeller ville betyde to
+steder at huske et tilbagekald — og den slags glemsel opdages først, når
+nogen prøver at lukke noget ude.
+
+`oauth_refresh` er derimod sin egen: et refresh-token er ikke en adgangsnøgle,
+kan ikke bruges på API'et, og **roterer** — den gamle dør i samme øjeblik den
+nye fødes, så en stjålet kopi kun virker én gang.
+
+Nøglelisten filtrerer på `client_id IS NULL`. Uden det ville et OAuth-token stå
+under »Access keys« som en nøgle, man ikke kan huske at have lavet.
+
+### Det, der var Sagus eget: **appen er flerbruger**
+
+I doda hører en forbindelse til installationen. Her hører den til **den, der
+trykkede »Allow«** — og det gennemsyrer tre steder:
+
+- `tokens.user_id` og `oauth_refresh.user_id` bærer brugeren, så et
+  connector-token når præcis den ene brugers arkiv. Filteret ligger som altid i
+  `hentNote`/`gemNote` selv, ikke i MCP'ens værktøjer.
+- `hentForbindelser(userId)` og `tilbagekaldKlient(userId, clientId)` har
+  `user_id` i **hver eneste** WHERE. Klientrækken er kun et navn og en
+  adresseliste og deles gerne; tokens gør ikke. Uden filteret ville en
+  tilbagekaldelse rive den anden brugers forbindelse med — testen
+  »en forbindelse hører til den, der godkendte den« er sat til at fange det.
+- Samtykkesiden skriver, **hvem** man godkender som (`Signed in as …`). To
+  brugere i samme browser er ellers to identiske sider.
+
+### Kun `read` og `full` tilbydes over OAuth
+
+Sagu har fire scopes, men `capture` og `link` er lavet til en genvej og til en
+søsterapp, der kender sin egen opgave. En connector forhandler sin rettighed
+gennem en **samtykkeside**, og den skal kunne beskrives i én sætning til den,
+der trykker »Allow«. »Kan skrive, men ikke læse« er ikke en sætning, nogen
+træffer et valg på. De to smalle scopes laves i hånden under Settings, hvor der
+står, hvad de kan.
+
+### To fælder, der fejler tavst — og derfor har hver sin test
+
+**1 · CORP kasserer svaret EFTER CORS-tjekket.** `securityHeaders` sætter
+`Cross-Origin-Resource-Policy: same-origin`, og den spærrer et
+opdagelsesdokument, selv om `Access-Control-Allow-Origin: *` står der. De fire
+offentlige OAuth-ruter sætter derfor `cross-origin` selv.
+
+**2 · `form-action 'self'` dræber »Allow«-knappen.** Direktivet håndhæves også
+på den **omdirigering**, indsendelsen fører til — ikke kun på formularens egen
+adresse. Samtykkesiden POSTer til sig selv, men svarer 302 til klientens
+`redirect_uri`, og med bare `'self'` blokerer browseren hele indsendelsen:
+ingen navigation, ingen serverlog, intet at fejlsøge på. Derfor tilføjes
+præcis den ene oprindelse, klienten er **registreret** med — ikke `https:` i
+al almindelighed. En test med en redirect tilbage til samme vært ville aldrig
+have fanget det.
+
+### Formularlæseren åd samtykkeformularen
+
+`readJsonBody(req, tilgivende)` faldt tilbage til »hele kroppen ER teksten«,
+når der ikke var et `text`-, `title`- eller `note`-felt blandt formularfelterne.
+Den regel blev skrevet til `curl --data 'noget tekst'` (F9) — men
+samtykkeformularen har syv rigtige felter og ingen af de tre navne, så hele
+indsendelsen blev til én tekststreng, og »Allow« svarede **400**.
+
+Kendetegnet er ikke, hvad felterne **hedder**, men at der ikke er ét eneste
+`=` i kroppen: altså præcis ét felt uden værdi. **En regel, der kender
+feltnavne, kender kun de kald, den blev skrevet til.**
+
+### Udgivelsen fik ét sted at blive til
+
+`publish_note` skal ramme de samme spærringer som knappen i appen — SKRIVBAR
+frem for SYNLIG, »allerede udgivet«, slug-reglen, kodeordslængden. Derfor blev
+rutens krop trukket ud i `opretUdgivelse(userId, o)`, og ruten er nu tre
+linjer. To kopier ville betyde, at den ene glemte en af spærringerne, og det er
+den slags glemsel, der lige præcis rammer noget, der ligger **på nettet**.
+Samme øvelse gav `hentMaerker()` og `udgivNote()`.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **313 grønne** (+25 i `tests/mcp.test.mjs`, +21 i `tests/oauth.test.mjs`), 1 sprunget over |
+| Hver vagt set fejle | 12 sabotager, alle røde: Origin-tjekket · scopet i `tools/list` · scopet ved kaldet · `form-action` · PKCE · engangskoden · refresh-rotationen · `resource_metadata` · `user_id` i tilbagekaldet · nøjagtig `redirect_uri` · samtykke-beviset · en omdøbt rute bag opdagelsesdokumentet |
+| Scope i praksis | en `capture`-nøgle ser **præcis ét** værktøj; `link` ser aldrig et, der skriver; listen er en hjælp, og `tools/call` tjekker igen |
+| To brugere | en connector-nøgle finder ikke den anden brugers note — hverken ved søgning eller på id — og en tilbagekaldelse rører kun ens egen forbindelse |
+| Payload, hvis den var indlejret | **137.479 tegn = 109,1 %** af det gamle loft |
+
+## 19 · F11 · Deling mellem konti
+
+**Bygget 2026-08-21.** Datalaget har ligget der siden F0 (`user_id` og
+`note_acl` kan ikke eftermonteres); denne fase er dét, der skulle bygges
+ovenpå — og de otte huller, delingen åbnede i kode, der så rigtig ud, så
+længe der kun fandtes én konto.
+
+### Målt: arven regnes af det levende træ
+
+Deles en side, deles det, der ligger under den. Spørgsmålet var, om
+inheritance skulle **materialiseres** (en ACL-række pr. underside) eller
+**regnes**. SQLite tillader en korreleret `WITH RECURSIVE` inde i `EXISTS`, så
+det kunne måles frem for gættes.
+
+**Måling 5** — 4.840 noter, dybde 5:
+
+| | |
+|---|---|
+| Fuldt scan som **ejeren**, uden arv | 0,13 ms |
+| Fuldt scan som **ejeren**, med arv | **0,13 ms** |
+| Fuldt scan som den, noten er delt med | 8,8 ms |
+
+Ejeren betaler **ingenting**, fordi `n.user_id = ?` står først i OR'en og
+kortslutter den — gennemløbet køres aldrig. Det er den vej, hvert eneste af
+Andreas' egne kald går. Værste tilfælde (en konto, der ikke ejer noget, scanner
+alt) er 8,8 ms.
+
+Derfor: ingen materialiseret tabel, ingen hurtig sti. **OR'ens kortslutning ER
+den hurtige sti.** Og vigtigere end millisekunderne: der er intet at holde i
+takt. En ACL-kopi pr. underside skulle vedligeholdes tre steder — når nogen
+laver en underside, flytter en ind, flytter en ud — og en udledt tabel, der
+skal vedligeholdes tre steder, driver fra det, den er udledt af. En
+adgangsfejl af den slags er tavs: den ser rigtig ud, lige til den ikke er det.
+
+To tests står vagt om netop dét, en kopi ville have fået galt i halsen: en
+underside lavet **bagefter**, og en note flyttet **ud** af træet igen.
+
+### `write` betyder »skriv i den«, ikke »bestem over den«
+
+Fire ting kan kun ejeren — slette, udgive, dele videre og give siden fra sig —
+og de har deres eget fragment, `EJET`. Grunden er ikke forsigtighed for
+forsigtighedens skyld: en kollega, der må rette i en side, skal ikke kunne
+lægge hele undertræet på det åbne net eller i papirkurven. Ejeren ville opdage
+det bagefter, og **»bagefter« er for sent for noget, der har været offentligt.**
+
+Fragmentet `SYNLIG`/`SKRIVBAR` tager stadig **nøjagtig to parametre** — `userId`
+to gange — præcis som før arven kom til. Med over tyve kaldsteder ville et
+fragment, der pludselig krævede tre, skulle rettes hvert eneste sted.
+
+### De otte huller, delingen åbnede
+
+Alle otte var kode, der var rigtig med én konto:
+
+| Hvor | Hvad der ville ske |
+|---|---|
+| **Søgningen** låste på `note_fts.user_id` | En delt note kunne kun findes, **når indekset MISSEDE** og nødbremsen overtog — en fejl, der ligner et dårligt søgeord |
+| **Baglæns links** havde ingen adgangsregel | En delt side ville vise titlerne på ejerens øvrige sider, så snart én af dem linkede hertil — og en titel er tit hele indholdet (»Opsigelse, Jens«) |
+| **`hentFil`** fulgte kun sin ejer | En delt side ville stå med huller, hvor billederne skulle være |
+| **Upload med `?note=`** spurgte om læse-adgang | Kommentaren sagde »en note, man må skrive i«; koden spurgte om noget andet |
+| **Mærker** hørte til den, der skrev | `#drift` skrevet af en kollega ville lande under **hans** konto på **min** note — synligt for os begge, men kun i hans mærkeliste, og min egen `tag:drift` ville ikke finde min egen side |
+| **Undersider** arvede ikke ejeren | En side lavet af en kollega i mit træ ville høre til ham — altså stå i mit træ uden at jeg kunne se den |
+| **Flytning** havde ingen ejer-grænse | En note trukket ind under en delt side ville arve delingen: adgang til noget, ingen havde delt |
+| **Sidebarens træ** var sin egen forespørgsel | Alices »Drift« stod under bobs egne notesbøger, som om den var hans |
+
+Det sidste blev **ikke** fundet af en test. `hentNoter` havde fået sit
+ejer-filter, men træruten er sin egen forespørgsel, og den tegner sidebaren
+efter notesbøger. Det blev fundet ved at logge ind som bruger nummer to og
+**kigge**. Lærestregen står i RUNE-ERFARINGER: en liste, ingen test kigger på,
+er et sted en regel kan mangle uden at nogen opdager det.
+
+### Kolonnen, der lignede en spærring
+
+Da søgningens `fts.user_id`-filter måtte gå, stod kolonnen tilbage i indekset:
+skrevet ved hver indeksering, læst af ingen. Det blev opdaget ved at **sabotere
+dens vedligeholdelse og få nul røde tests** — og en sabotage uden røde betyder
+enten, at der mangler en test, eller at det, man saboterede, ikke betyder
+noget. Her var det det sidste.
+
+Kolonnen er derfor fjernet (m12). Den farlige rest er ikke, at den koster
+plads: det er, at den næste, der læser skemaet, vil tro, at indekset er pr.
+bruger og bygge videre på en spærring, der ikke findes. En **formregel** holder
+filteret væk, og en test på det **levende** skema holder kolonnen væk —
+formreglen kan ikke måle skemaet, for `m3` opretter stadig den gamle tabel, og
+en migration er fortid.
+
+Prisen er én genopbygning af indekset ved opgraderingen. Den udløses af
+**tilstanden** (tomt indeks, men noter i basen), ikke af migrationsnummeret: en
+genopbygning, der kun kører fra én migration, er en engangshandling, man ikke
+kan bruge igen — og et tomt søgeindeks er tavst. Appen svarer bare »intet
+matcher«.
+
+### En eksport bærer ikke delingerne
+
+En ACL-række peger på en **anden** brugers id. Læses den ind i en frisk
+installation, peger den på et id, der enten ikke findes — eller er blevet en
+helt andens. Det sidste er den værste slags fejl, en gendannelse kan lave: den
+giver adgang til nogen, ingen har peget på, og den ser rigtig ud.
+
+Prisen er, at delingerne skal sættes igen efter en gendannelse. Det er en
+håndfuld klik; det andet er et hul, ingen opdager. Der er en test på, at
+eksporten ikke engang indeholder et fremmed bruger-id.
+
+### Ejerskifte flytter tre ting
+
+`givVidere` skifter ejer på **hele undertræet** (et træ har én ejer), rydder
+`notebook_id` og gør noten til en rod (bogen tilhørte den gamle ejer, og en
+note i en fremmed bog kan ikke tegnes noget sted), og lader **den gamle ejer
+beholde `write`** — ellers ville »giv videre« være det samme som at miste
+siden, og det er ikke det, nogen mener. Han kan fjerne sig selv bagefter; det
+er hans valg, ikke en bivirkning.
+
+### Fladen siger det på forhånd
+
+`maaRette()` er ét sted, brugt af de **fire** steder en redigering kan begynde:
+titelfeltet, det at åbne en blok, tjekbokse og mærkerækken. Værktøjsrækken og
+menuen viser kun det, man faktisk kan. En flade, der lader dig skrive og først
+afviser ved gemningen, ligner en fejl i appen — ikke en spærring. Serveren
+afviser uanset hvad; det her er, for at man ikke skal prøve.
+
+Og gemme-mærket siger **»Read only«** frem for »Saved« på en side, man ikke kan
+gemme. »Saved« ville være en usandhed.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **338 grønne** (+25 i `tests/deling.test.mjs`, +1 formregel), 1 sprunget over |
+| Hver vagt set fejle | **15 sabotager**: arven · slet · udgiv · filsletning · upload · baglæns links · FTS-låsen · mærkernes ejer · undersidens ejer · flytningens ejer-grænse · videredeling · »All notes« · »delt med mig« · sidebarens træ · kontolisten |
+| Sabotage uden røde | **1** — og den afslørede en kolonne, ingen læste (m12) |
+| Prøvet med to rigtige konti | delt fra alices skærm, åbnet fra bobs: bånd, låst titel, »Read only«, ingen udgiv-knap, halv menu — og hans rettelse landede på hendes note med `updated_by` = bob |
+| Payload, hvis den var indlejret | **141.700 tegn = 112,5 %** af det gamle loft |
+
+## 20 · F12 · GitHub i noter
+
+**Bygget 2026-08-21.** En GitHub-adresse på sin egen linje bliver til koden —
+eller til en chip med en sags tilstand.
+
+### Sha'en fryses, og det er hele fasen
+
+En adresse med en **gren** i (`/blob/main/...`) peger på noget, der ændrer sig.
+Skriver man en note om, hvordan noget virker, og indsætter de linjer der viser
+det, skal de linjer blive ved med at vise det — også når nogen retter i filen i
+næste uge. Ellers står noten og forklarer en kode, der ikke findes mere, **uden
+at noget fejler**.
+
+Grenen slås derfor op én gang, ved indsættelsen, og adressen i noten skrives om
+til den sha, grenen pegede på. Fra da af er indlejringen frossen, og der er en
+opdatér-knap. Det er et **valg**, ikke en automatik.
+
+Sha'en står i **teksten**, ikke i en tabel ved siden af. Markdown er sandheden
+(§2), så indlejringen overlever en eksport, en gendannelse og en note kopieret
+over i en anden app.
+
+### Der må ikke gå et kald pr. optegning
+
+Samme lektie som doda-broen (§16). En note med fem indlejringer må ikke blive
+fem rundture, hver gang siden tegnes. Alt går gennem `github_cache`:
+
+- en **frossen fil** caches for evigt — den kan ikke laves om, så cachenøglen
+  bærer sha'en og der er intet udløb. Målt: tre optegninger mere koster nul kald.
+- en **sag eller en gren** caches i 15 minutter og genopfriskes med
+  `If-None-Match`, så et 304 hverken koster kvote eller båndbredde.
+
+Og når GitHub har en dårlig dag, vises **det gamle svar med en advarsel**. En
+note, der pludselig taber sit indhold, er værre end en, der viser noget lidt
+gammelt.
+
+### Wikien henter aldrig selv
+
+Den offentlige side læser **kun** cachen. En fremmed, der genindlæser hurtigt
+nok, ville ellers bruge ejerens GitHub-kvote op — med ejerens token, altså mod
+hans private repoer. En delt side ville være en måde at tømme en andens kvote
+på. Ligger svaret ikke i cachen, er linjen det link, den var.
+
+Kortet på wikien er rent HTML uden en eneste knap: der er ingen app-JS på en
+offentlig side, og en kopier-knap, der ikke virker, er værre end ingen.
+
+### 404 betyder to ting, og beskeden skal sige begge
+
+GitHub skelner ikke mellem »findes ikke« og »du må ikke se det« — et 403 ville
+bekræfte, at et privat repo findes. Fejlbeskeden nævner derfor begge og
+foreslår et token. Det er **samme fælde som ved payload-udvejen** (måling 1),
+hvor den kostede en aften på at fejlsøge et token, der var helt i orden.
+
+Kvotebeskeden siger, hvor mange minutter der er til den er tilbage. »Try again
+later« er ikke noget, nogen kan handle på.
+
+### Regler, der blev målt frem frem for antaget
+
+**Der er ingen `..`-vagt i URL-tolkningen.** Første udgave havde en — og den
+kunne aldrig fyre: `new URL()` normaliserer stien, før modulet ser den, også
+den kodede form (`%2e%2e`). En vagt, der ikke kan fyre, er værre end ingen: den
+næste, der læser, tror der er noget at bekymre sig om og bygger videre på en
+spærring, der ikke findes. Samme lærdom som m12's kolonne, og der er en test på
+selve normaliseringen, så påstanden kan efterprøves.
+
+**Test-sømmen accepterer kun loopback.** `SAGU_GITHUB_API` findes, fordi de
+fejl, der betyder noget, kræver en falsk GitHub. Men en søm, der kan pege hvor
+som helst, er en måde at sende Andreas' token til en fremmed vært på — så alt
+andet end `127.0.0.1`/`localhost` ignoreres uden at sige noget.
+
+**Rendereren kender ikke GitHub.** Krogen hedder `bartLink` og siger kun »dette
+afsnit er én bar adresse«; hvad den skal blive til, bestemmer værten. Samme
+snit som `linkUrl` og `billedUrl`. Uden det ville markdown-modulet — som både
+browseren og wikien deler — have et domæne indbygget.
+
+### To fejl, som kun det at klikke kunne finde
+
+1. **Knapperne i kortet åbnede redigeringsfeltet.** Kroppen har én delegeret
+   klik-handler, der åbner den rå blok — det er dét, den hybride editor er. Så
+   et tryk på »kopiér« gjorde begge dele: koden blev kopieret, og teksten blev
+   til et tekstfelt, så kortet forsvandt under fingeren.
+2. **Kortene blev ikke fyldt, når en blok stod åben.** Editoren tegner noten to
+   steder, og den anden vej glemte `fyldGhIndlejringer`. Det gav
+   »kortet forsvandt, da jeg klikkede«. Kuren blev en **formregel**: de to
+   optegningsveje skal kalde det samme.
+
+Og kortets chip sagde »frozen at this commit« med et **grennavn** i, når noten
+var skrevet gennem API'et eller MCP'en. Den påstand var det stik modsatte af
+det, der var tilfældet; nu står der, hvad der er, og knappen tilbyder det, der
+mangler.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **22 i `tests/github.test.mjs`** + 1 formregel |
+| Hver vagt set fejle | 13 sabotager, alle røde |
+| Målt mod det rigtige GitHub | Sagus egen README frosset til `5c1cdf0`, og en flettet PR i `nodejs/node` som chip |
+| Cachen | en frossen fil: 1 kald, derefter 0. En sag: 304 uden kvote |
+
+## 21 · F13 · Genveje, favoritter og spor
+
+**Bygget 2026-08-21.**
+
+### Genvejsoversigten er GENERERET
+
+`GENVEJE` er både det, tastaturet gør, og det, hjælpen viser — ét bord.
+Loggen har »en hjælpetekst er en kravspecifikation« stående fire gange (doda
+v9/v35/v38, Sagu F9), og kuren er hver gang den samme: ikke mere omhu, men ét
+sted. Her **kan** de ikke drive fra hinanden.
+
+Genvejene er enkelttaster uden modifikator med vilje: `Cmd`/`Ctrl` hører
+browseren til, og at stjæle dem er at ødelægge noget, der virkede. Og listen
+kan findes fra brugermenuen — en genvej, man ikke kan se, findes ikke.
+
+### Favoritter og spor er MINE, ikke notens
+
+Begge hænger på brugeren. Sagu er flerbruger, og en note kan være delt: et flag
+på noten ville betyde, at min stjerne dukkede op hos kollegaen, og at hans
+besøg skubbede rundt på min egen liste. Begge lister læses gennem `SYNLIG`, så
+en note, jeg har mistet adgangen til, forsvinder af sig selv.
+
+Sporet skrives **ét sted** — i selve note-opslaget, hvor alle veje ind mødes
+(sidebaren, en søgning, et `[[link]]`, en genvej). Lagde man det i frontenden,
+ville den femte vej ind mangle. Og en **nøgle** skriver ikke i sporet: en
+iOS-genvej, der henter en note som markdown, og en MCP-klient, der læser den
+for at svare på noget, er ikke mig, der var her.
+
+### Et tidsstempel i en sorteringskolonne — fjerde gang
+
+`note_visits` sorterede først på `at`, og to noter åbnet i **samme sekund** gav
+uafgjort: rækkefølgen blev vilkårlig. Det er samme fælde, som `naesteSeq`
+allerede findes for.
+
+Det interessante var, hvordan det blev fundet — og hvordan det **ikke** kunne
+måles. Sabotagen af sorteringen gav **nul røde**, fordi en uafgjort sortering
+er *uspecificeret*, ikke forkert: SQLite må vælge frit, og den valgte rigtigt
+begge gange. Et resultat, der er rigtigt ved et tilfælde, er ikke en måling.
+
+Kravet blev derfor stillet på **dataene** i stedet: to besøg i samme sekund
+skal have forskelligt løbenummer. Er den betingelse opfyldt, kan rækkefølgen
+ikke afhænge af urets opløsning.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **10 i `tests/polering.test.mjs`** + 1 formregel |
+| Hver vagt set fejle | 8 sabotager — hvoraf **tre først gav nul røde** og afslørede tre for svage tests |
+| Prøvet i browseren | `?` viser listen · `n` fyrer ikke, mens man skriver i søgefeltet · `s` sætter stjernen og opdaterer sidebaren |

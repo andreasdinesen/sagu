@@ -339,6 +339,19 @@ ${o.krop}
         if (!t) return null;
         return { href: (!erBog && t.dybde === 0) ? `${rod}/` : `${rod}/${kort.get(t.id)}` };
       },
+      /*
+       * GitHub-indlejringer paa wikien (F12).
+       *
+       * **Kun fra cachen.** En besoegende maa aldrig kunne udloese et kald
+       * til GitHub: siden er offentlig, og en fremmed, der genindlaeser
+       * hurtigt nok, ville ellers bruge Andreas' kvote op - og med hans
+       * token, altsaa mod hans private repoer. Ligger svaret ikke i cachen,
+       * bliver linjen det link, den var.
+       *
+       * Kortet er RENT HTML. Ingen kopier-knap, ingen opfrisk-knap: wikien
+       * har ikke app-JS, og en knap, der ikke virker, er vaerre end ingen.
+       */
+      bartLink: (u, b) => srv.githubKort(u, b),
     });
 
     /*

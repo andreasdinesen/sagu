@@ -24,6 +24,44 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **Nul npm-pakker, nul CDN.** Node ≥22: `node:http`, `node:sqlite`, `node:crypto`, `node:zlib`.
 - **`user_id`-filteret ligger i `hentNote` / `hentNoter` / `gemNote` / `gemBulk` selv** —
   aldrig i kaldstederne. Admin er ingen undtagelse. `note_acl` gælder også admin.
+- **Deles en side, deles det under den — og arven REGNES af det levende træ**
+  (`ARVET` i `SYNLIG`/`SKRIVBAR`). Aldrig en ACL-række pr. underside: den skulle
+  vedligeholdes tre steder og ville drive fra træet. Ejeren betaler intet for arven —
+  `n.user_id = ?` står først i OR'en og kortslutter den (DESIGN.md måling 5).
+- **`SYNLIG` og `SKRIVBAR` tager nøjagtig TO parametre** (`userId` to gange). Over tyve
+  kaldsteder; et fragment, der kræver tre, skal rettes hvert eneste sted.
+- **Fire ting kan kun ejeren** (`EJET`): slette, udgive, dele videre og give siden fra
+  sig. `write` betyder »skriv i den«, ikke »bestem over den«.
+- **»All notes« og sidebarens træ er MINE noter.** `SYNLIG` bliver stående, men begge
+  lister filtrerer også på `n.user_id = ?` — en delt side ligger i EJERENS notesbog og
+  ville ellers stå midt i mine egne. Det, andre har delt, har sin egen visning.
+- **Mærker på en note hører til notens EJER**, ikke til den, der skriver. Ellers laver en
+  kollegas `#drift` et mærke under hans konto på min note.
+- **En underside arver sin forælders EJER** — et undertræ har én ejer, præcis som det
+  ligger i én notesbog. Derfor kan en note heller ikke flyttes ind under en fremmed side.
+- **Søgeindekset har INGEN `user_id`** (m12). Et indeks afgrænser ikke adgang — `SYNLIG`
+  gør, på `notes`. Filteret kunne aldrig finde en delt note, og kolonnen, der blev
+  tilbage, lignede en spærring uden at være en. En formregel holder filteret væk.
+- **`maaRette()` er ét sted**, brugt af de fire steder en redigering kan begynde:
+  titelfeltet, at åbne en blok, tjekbokse og mærkerækken. En flade, der lader dig skrive
+  og først afviser ved gemningen, ligner en fejl i appen — ikke en spærring.
+- **En GitHub-adresse i en note bærer sin egen sha.** Grenen slås op ÉN gang, ved
+  indsættelsen, og adressen skrives om i **teksten** — ikke i en tabel ved siden af.
+  Ellers forklarer noten en kode, der ikke findes mere, uden at noget fejler.
+- **Wikien henter ALDRIG fra GitHub — kun fra `github_cache`.** En fremmed, der
+  genindlæser hurtigt nok, ville ellers bruge ejerens kvote op med ejerens token.
+- **`bartLink`-krogen kender ikke GitHub.** Rendereren ved kun, at afsnittet er én bar
+  adresse; hvad det skal blive til, bestemmer værten. Samme snit som `linkUrl`.
+- **`SAGU_GITHUB_API` accepterer kun loopback.** En test-søm, der kan pege hvor som
+  helst, er en måde at sende tokenet til en fremmed vært på.
+- **Genvejene står i ÉT bord** (`GENVEJE` i `p12_polering.js`), og `?`-oversigten er
+  genereret af det. En afskrevet genvejsliste er en liste over hvad appen plejede at kunne.
+- **Favoritter og »senest besøgte« er BRUGERENS**, ikke notens — og læses gennem `SYNLIG`.
+  Et flag på noten ville vise min stjerne hos den, jeg har delt med.
+- **Sporet skrives i selve note-opslaget**, hvor alle veje ind mødes. Og aldrig af en
+  nøgle: en genvej eller en MCP-klient er ikke mig, der var her.
+- **En eksport bærer ikke `note_acl`.** Rækken peger på en anden brugers id; gendannet i
+  en frisk installation kunne den give adgang til nogen, ingen har peget på.
 - **Endepunkter uden login** (`/w/:slug`, `/s/:token`, filer i et delt træ) må aldrig
   scanne datasættet, og svarer **404** ved forkert token — ikke 401 eller 403.
 - **Udgivelsens noter beregnes ét sted** (`udgivelsensNoter`), og hver eneste offentlige
@@ -55,8 +93,47 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **Ethvert træ skal have en cyklus-vagt.** En note flyttet ind under sit eget
   barn giver en ring, hvor begge forsvinder fra sidebaren — og gemningen
   lykkes, så intet fejler.
+- **doda kaldes ALDRIG pr. optegning.** Rundturen er ~150 ms. Status på en notes
+  opgaver står i Sagus egen `doda_tasks` og opfriskes højst én gang i kvarteret — med
+  ÉT kald (`/changes?since=`) for alle opgaver, ikke ét pr. opgave. En fejlet
+  opfriskning rører ikke rækkerne; den siger bare, at de ikke er friske.
+- **Et link til en note skal have sin EGEN linje**, når det sendes til doda. `!`-markøren
+  løber til linjens ende, så et link hængt på enden æder både sig selv og datoen — uden
+  at noget fejler (DESIGN.md §16).
+- **`link`-scopet er read+capture og aldrig `write`.** Det er den rettighed, en søsterapp
+  skal have: finde den rigtige note og lave en ny — ikke slette arkivet.
+- **Den tilgivende formularlæser kender ikke feltnavne.** »Kroppen ER teksten« gælder kun,
+  når der ikke er ét eneste `=` i den. Reglen hed før »intet text/title/note-felt«, og den
+  åd samtykkeformularens syv felter, så »Allow« svarede 400.
+- **API'et er skrevet til en genvej med ét tekstfelt.** `POST /api/v1/capture` tager
+  teksten som JSON, formulardata, ren krop eller `?text=` — og svarer med en færdig
+  `message`-linje. »Tilgivende« gælder KUN ved nøgle-adgang: en Bearer-nøgle sendes
+  aktivt, så der er intet at forfalske.
+- **»I dag« er ÉN regel på serveren** (`iDagISO`/`dagensNote`). Den lå før i frontenden
+  (lokal tid) og i `/state` (UTC) og var uenig med sig selv. En klient må sende sin egen
+  `date=` — telefonen ved bedre end serveren, hvornår det er i dag hos brugeren.
+- **`?format=md` skriver ikke om på brugerens tekst:** har noten sin egen overskrift,
+  står den urørt.
+- **Guiden (`p9_guide.js`) er en kravspecifikation.** En formregel slår hver **metode og
+  adresse** i opskrifterne op i serverens ruter. Ændres et endepunkt, skal guiden med i
+  samme ombæring.
 - **Adgangsnøgler har en `user_id`** og et scope. En nøgle når sin egen brugers data og
   intet andet.
+- **Et OAuth-access-token ER en adgangsnøgle** — samme `tokens`-tabel, samme `findToken`,
+  bare med et `client_id` og et udløb. Én vej ind i API'et; to tabeller ville betyde to
+  steder at huske et tilbagekald. Nøglelisten filtrerer derfor på `client_id IS NULL`.
+- **En forbindelse hører til den, der godkendte den** — ikke til installationen.
+  `hentForbindelser` og `tilbagekaldKlient` har `user_id` i HVER eneste WHERE.
+  Klientrækken deles gerne mellem brugere; tokens gør ikke.
+- **Kun `read` og `full` tilbydes over OAuth.** `capture` og `link` kan ikke beskrives i
+  én sætning på en samtykkeside — »kan skrive, men ikke læse« er ikke et valg, nogen
+  træffer. De laves i hånden under Settings.
+- **De offentlige OAuth-ruter sætter `Cross-Origin-Resource-Policy: cross-origin` selv.**
+  `securityHeaders` sætter `same-origin`, og den kasserer svaret EFTER CORS-tjekket.
+- **Samtykkesidens CSP skal udvides med klientens oprindelse** (`form-action`). Direktivet
+  håndhæves på den omdirigering, indsendelsen fører til — uden den dør »Allow« tavst.
+- **En udgivelse bliver til ét sted** (`opretUdgivelse`). MCP'ens `publish_note` skal ramme
+  de samme spærringer som knappen i appen; det ligger PÅ NETTET, hvis den ene glemmer en.
 - **`settings` har `(scope, key)`**, hvor scope er brugerens id eller `*` for installationen.
   Kun admin skriver `*`-nøgler. Hemmeligheder (`github_token`, `doda_key`, …) er
   `secret: true` og forlader **aldrig** serveren — frontenden får `connected: true`.
@@ -91,6 +168,9 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **En udledt tabel eksporteres aldrig.** `note_links` udledes af notens tekst
   og genopbygges fra teksten ved gendannelsen — ellers kan den vende tilbage i
   utakt med det, den er udledt af.
+- **Ingen backticks i en SQL-template** — heller ikke i en kommentar. En backtick
+  afslutter template-literalen, og fejlen bliver en `SyntaxError` et helt andet sted i
+  filen. Det er sket fire gange; der er en formregel nu.
 - Kildefiler må ikke indeholde `{{STORE_BOGSTAVER}}` eller `YGG_PAYLOAD_EOF`.
 - Echo-linjer i install-scriptet: **ASCII** (æøå → ae/oe/aa).
 
@@ -151,6 +231,9 @@ Dev-serveren hedder `sagu` i den **globale** `~/.claude/launch.json` (port **891
   første parameter** (`addEventListener('click', visUdgivPanel)` gjorde klikket til
   funktionens `maal`). En note virker kun, mens man husker at læse den — en
   formregel gælder også det, man skriver om et halvt år (tools v2).
+- **`tests/deling.test.mjs` er isolationstestens modstykke.** Isolationstesten beviser, at
+  to konti ikke kan nå hinanden; denne beviser, at en deling giver præcis den adgang, den
+  lover — **og ikke en tomme mere**. Det farlige ved deling er ikke, at for lidt virker.
 - **Delingstesten skal ses fejle i BEGGE ender:** sabotér låsen (`erLaastOp`) og sabotér
   udgivelsens id-liste (`filIUdgivelse`, `hentUdgivetNote`, `soegIUdgivelse`) hver for
   sig. Den anden sabotage afslørede, at filvagten slet ikke var dækket.

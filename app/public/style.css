@@ -716,6 +716,139 @@ table.data td.center, table.data th.center { text-align: center; }
    getBoundingClientRect() paa klik-tidspunktet (Beanledger v29). */
 .notemenu { position: absolute; top: calc(100% + 6px); right: 0; left: auto; bottom: auto; min-width: 230px; }
 
+/* ------------------------------------------------- GitHub i noter (F12) */
+
+.gh-kort {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--card);
+  margin: 14px 0;
+  overflow: hidden;
+}
+.gh-hoved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  min-width: 0;
+}
+.gh-mark { color: var(--muted); flex: none; display: flex; }
+.gh-navn {
+  font-weight: 500;
+  color: var(--fg);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.gh-navn:hover { text-decoration: underline; }
+.gh-sha {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex: none;
+}
+/* ------------------------------------ genveje og favoritter (F13) */
+
+.genvejsliste { margin-top: 2px; }
+.nav-titel {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 12px 4px;
+}
+.nav-emoji { width: 20px; display: inline-flex; justify-content: center; flex: none; }
+/* En genvej, der ikke gør noget HER, står med som grå — listen skal vise
+   hele tastaturet, ikke kun det, der virker på denne ene skærm. */
+.genvej-doed { opacity: .45; }
+kbd {
+  font-family: var(--mono);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.gh-levende { color: var(--accent); border-color: currentColor; }
+.gh-tools { margin-left: auto; display: flex; gap: 2px; flex: none; }
+.gh-krop { padding: 12px; }
+
+/* Koden ruller i sin EGEN ramme. En bred linje maa ikke skubbe siden
+   (RUNE-ERFARINGER, Tilmeld + tovo v13). */
+.gh-kode { overflow-x: auto; max-height: 32em; overflow-y: auto; }
+.gh-kode table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+.gh-kode td { padding: 0 0 0 12px; vertical-align: top; white-space: pre; line-height: 1.55; }
+/* Linjenumre kan ikke markeres med musen - ellers foelger de med i en
+   kopiering, og saa kan koden ikke indsaettes noget sted. */
+.gh-nr {
+  width: 1%;
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+  padding-right: 12px !important;
+  border-right: 1px solid var(--border);
+  position: sticky;
+  left: 0;
+  background: var(--card);
+}
+.gh-l { padding-right: 12px !important; }
+.gh-fod { padding: 8px 12px; border-top: 1px solid var(--border); font-size: 12px; }
+.gh-fejl { color: var(--danger); font-size: 13px; margin: 0; padding: 10px 12px; }
+.gh-daarlig { border-color: var(--danger); }
+
+.gh-status {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+}
+.gh-open { color: #3fb950; }
+.gh-closed { color: #f85149; }
+.gh-merged { color: #a371f7; }
+.gh-maerke {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/*
+ * Baandet paa en note, en anden ejer (F11).
+ *
+ * Dæmpet, ikke alarmerende: det er ikke en fejl at laese en side, nogen har
+ * delt - det er hele pointen. Kun farven skiller de to tilstande, saa
+ * »kun laesning« og »jeg maa rette« kan ses uden at laese teksten.
+ */
+.delt-baand {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--r);
+  background: var(--card);
+}
+.delt-baand.kan-skrive { border-left-color: var(--accent); }
+.delt-baand svg { color: var(--muted); flex: none; margin-top: 2px; }
+.delt-baand .meta { margin-top: 2px; }
+
 .konflikt-baand {
   display: flex;
   flex-wrap: wrap;
@@ -1860,4 +1993,70 @@ body.traekker { cursor: grabbing; user-select: none; }
   width: 1px;
   height: 1px;
   overflow: hidden;
+}
+
+/* ========================================================== doda (F8) ====
+ *
+ * Opgaveruden bor sammen med kommentarerne og laaner deres klasser, hvor de
+ * betyder det samme (`.kom-skriv`, `.kom-maerke`): de to ruder svarer paa det
+ * samme spoergsmaal - hvad er der SKET omkring den her side.
+ */
+
+.dodaopgaver {
+  margin-top: 44px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.dodaopgaver h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doda-liste { list-style: none; margin: 14px 0 0; padding: 0; }
+.doda-opgave {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.doda-opgave:last-child { border-bottom: 0; }
+.doda-titel { flex: 1 1 12rem; min-width: 0; overflow-wrap: break-word; }
+/* En udfoert opgave skal kunne SES som udfoert uden at laese statusordet. */
+.doda-opgave.udfoert .doda-titel { color: var(--muted); text-decoration: line-through; }
+.doda-status { flex: none; }
+.doda-status.next { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+.doda-status.done { text-decoration: none; }
+.doda-status.deleted, .doda-status.dropped { text-decoration: line-through; }
+
+.doda-forbundet { margin: 0 0 12px; }
+
+/* ===================================================== API-guiden (F9) ====
+ *
+ * En opskrift skal kunne LAESES med telefonen i den anden haand: felterne i
+ * den raekkefoelge, de staar i Shortcuts, og vaerdien som noget, man kan
+ * markere og kopiere.
+ */
+
+.opskrift { margin-top: 22px; }
+.opskrift:first-of-type { margin-top: 8px; }
+.opskrift h3 { font-size: 15px; margin: 0 0 2px; }
+.opskrift .lead { margin: 0 0 10px; }
+.opskrift-felter th {
+  white-space: nowrap;
+  width: 1%;
+  color: var(--muted);
+  font-weight: 600;
+}
+/* En lang adresse maa bryde - ellers skubber den tabellen ud over kanten,
+   og paa en telefon er hver eneste af dem lang (RUNE-ERFARINGER §4). */
+.opskrift-felter code {
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
 }

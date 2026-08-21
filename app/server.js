@@ -28,8 +28,11 @@ const webauthn = require('./webauthn.js');
 const markdown = require('./shared/markdown.js');
 // Samme soegesyntaks i browseren, i serveren og senere i wikien.
 const soeg = require('./shared/soeg.js');
+const maerker = require('./shared/maerker.js');
 const importModul = require('./import.js');
 const wikiModul = require('./wiki.js');
+const dodaModul = require('./doda.js');
+const ghShared = require('./shared/github.js');
 const zipmod = require('./zip.js');
 
 const DATA_DIR = process.env.DATA_DIR || process.cwd();
@@ -519,6 +522,217 @@ const MIGRATIONS = [
       ALTER TABLE shares ADD COLUMN moderate_comments INTEGER NOT NULL DEFAULT 1;
     `);
   },
+
+  function m9(d) {
+    /*
+     * F8 - opgaverne, en note har sendt til doda.
+     *
+     * Tabellen findes af ÉN grund: **der maa aldrig gaa et kald til doda pr.
+     * optegning.** Rundturen er maalt til 140-190 ms gennem tunnelen, og en
+     * note med fem opgaver ville vaere naesten et sekund, hvor der ikke sker
+     * noget (RUNE-ERFARINGER, doda v27). Status laeses derfor herfra, og
+     * opfriskes hoejst én gang i kvarteret med ét kald til /changes.
+     *
+     * `doda_id` er dodas noegle, `id` er Sagus egen - to arkiver, to
+     * id-rum, og de maa ikke blandes sammen. Titlen gemmes ved siden af,
+     * saa raekken kan vises, ogsaa naar doda ikke svarer: en bro, der bliver
+     * TOM naar den anden ende er nede, ligner en bro, der har mistet noget.
+     */
+    d.exec(`
+      CREATE TABLE doda_tasks (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        note_id    TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        doda_id    TEXT NOT NULL,
+        title      TEXT NOT NULL DEFAULT '',
+        status     TEXT NOT NULL DEFAULT 'open',
+        line       INTEGER,          -- tjekliste-linjen, den kom fra
+        created_at INTEGER NOT NULL,
+        checked_at INTEGER            -- hvornaar status sidst blev opfrisket
+      );
+      CREATE INDEX doda_tasks_note ON doda_tasks(note_id);
+      CREATE UNIQUE INDEX doda_tasks_id ON doda_tasks(user_id, doda_id);
+    `);
+  },
+
+  function m10(d) {
+    /*
+     * F10 - claude.ai's connector.
+     *
+     * Claude Code og Desktop kan sende en fast noegle i en header. Webklienten
+     * kan ikke: den kender ikke serveren paa forhaand, saa den skal kunne
+     * registrere sig selv (RFC 7591) og sende brugeren gennem et login.
+     *
+     * **Access-tokens har ingen tabel her.** De gaar gennem `opretToken` og
+     * ender i `tokens` med et `client_id` og et `expires_at` - de to
+     * kolonner blev lagt ind allerede i m1 til netop det. Saa er der ÉN vej
+     * ind i API'et, og `findToken` er det ene sted, en noegle kan vise sig
+     * ugyldig. To tabeller ville betyde to steder at huske et tilbagekald.
+     *
+     * `oauth_refresh` er derimod sin egen: et refresh-token er ikke en
+     * adgangsnoegle, kan ikke bruges paa API'et, og roterer - den gamle doer,
+     * naar den nye fodes, saa en stjaalet kopi kun virker én gang.
+     *
+     * Klienten er IKKE bundet til en bruger. Den samme claude.ai registrerer
+     * sig for hver bruger, der forbinder; det er `tokens.user_id` og
+     * `oauth_refresh.user_id`, der siger, hvis data der naas. Sagu er
+     * flerbruger, og en klientraekke er kun et navn og en adresseliste.
+     */
+    d.exec(`
+      CREATE TABLE oauth_clients (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        redirect_uris TEXT NOT NULL,     -- JSON-liste, matches NOEJAGTIGT
+        created_at    INTEGER NOT NULL
+      );
+
+      CREATE TABLE oauth_refresh (
+        hash       TEXT PRIMARY KEY,     -- sha256, aldrig klartekst
+        token_id   TEXT NOT NULL,
+        client_id  TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+        scope      TEXT NOT NULL,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      CREATE INDEX oauth_refresh_klient ON oauth_refresh(client_id) WHERE revoked_at IS NULL;
+      CREATE INDEX oauth_refresh_bruger ON oauth_refresh(user_id) WHERE revoked_at IS NULL;
+    `);
+  },
+
+  function m11(d) {
+    /*
+     * F11 - deling mellem brugere.
+     *
+     * Tabellen har ligget her siden m1; det, der mangler, er ÉT felt: deles
+     * en side, deles det, der ligger UNDER den. Det er sadan et arkiv
+     * bruges - man deler »Drift«, ikke sytten sider én ad gangen - og det er
+     * samme forudsaetning, en udgivelse staar paa (`mode = 'tree'`).
+     *
+     * `tree = 0` findes for den ene side, man vil dele uden sine noter under.
+     *
+     * **Arven regnes af det LEVENDE trae, ikke af raekker.** Alternativet var
+     * at skrive en ACL-raekke pr. underside, og saa skulle den holdes i takt,
+     * hver gang nogen laver en underside, flytter en ind eller flytter en ud.
+     * En udledt tabel, der skal vedligeholdes tre steder, driver fra det, den
+     * er udledt af - og en adgangsfejl af den slags er tavs: den ser rigtig
+     * ud, lige til den ikke er det. Prisen er malt (DESIGN.md maaling 5).
+     */
+    d.exec("ALTER TABLE note_acl ADD COLUMN tree INTEGER NOT NULL DEFAULT 1");
+  },
+
+  function m12(d) {
+    /*
+     * Soegeindekset havde en `user_id` - og efter F11 laeste INGEN den.
+     *
+     * Den var afgraensningen paa den rangerede soegning, indtil deling kom
+     * til: indekset baerer EJERENS id, saa den linje kunne aldrig finde en
+     * note, nogen havde delt med mig - mens noedbremsen (LIKE paa teksten)
+     * godt kunne. Filteret maatte derfor vaek, og `SYNLIG` overtog, hvor den
+     * hoerer hjemme.
+     *
+     * Tilbage stod en kolonne, der HED `user_id` i et soegeindeks uden at
+     * afgraense noget. Det er den farligste slags rest: den naeste, der laeser
+     * skemaet, vil tro, at indekset er pr. bruger, og bygge videre paa en
+     * spaerring, der ikke findes. Fundet ved at sabotere dens vedligeholdelse
+     * og faa **nul roede tests** - og en sabotage uden roede betyder, at der
+     * mangler en test ELLER at det, man saboterede, ikke betyder noget.
+     *
+     * Kolonnen fjernes derfor, og en formregel holder den vaek. Prisen er én
+     * genopbygning af indekset ved opgraderingen.
+     */
+    d.exec(`
+      DROP TABLE note_fts;
+      CREATE VIRTUAL TABLE note_fts USING fts5(
+        title, headings, body, meta, folded,
+        note_id UNINDEXED,
+        tokenize = "unicode61 remove_diacritics 2"
+      );
+    `);
+    // Indholdet skrives igen ved opstart - se kaldet til genopbygIndeks().
+  },
+
+  function m13(d) {
+    /*
+     * F12 - det, GitHub har svaret.
+     *
+     * Tabellen findes af ÉN grund, den samme som `doda_tasks`: **der maa ikke
+     * gaa et kald pr. optegning.** En note med fem indlejringer ville ellers
+     * blive fem rundture, hver gang siden tegnes - og paa wikien kan en
+     * fremmed genindlaese saa tit han vil. Uden cachen ville en delt side
+     * vaere en maade at bruge Andreas' GitHub-kvote op paa.
+     *
+     * `noegle` baerer sha'en for en frossen fil, saa den raekke kan staa for
+     * evigt: indholdet kan ikke laves om. En sag eller en gren har ingen sha
+     * i noeglen og faar et udloeb plus `etag`, saa en genopfriskning kan
+     * svare 304 - som hverken koster kvote eller baandbredde.
+     *
+     * **Ingen user_id.** Indholdet er det samme, uanset hvem der spurgte, og
+     * en cache pr. bruger ville hente det samme fem gange. Adgangen ligger
+     * ikke her: den ligger i, om man kan naa den NOTE, adressen staar i - og
+     * i, at et privat repo kun kan hentes af den, hvis token kan se det.
+     * Sammenlign m12: en `user_id` i en tabel, der ikke afgraenser, lyder som
+     * en spaerring uden at vaere en.
+     */
+    d.exec(`
+      CREATE TABLE github_cache (
+        noegle    TEXT PRIMARY KEY,
+        data      TEXT NOT NULL,
+        etag      TEXT NOT NULL DEFAULT '',
+        hentet_at INTEGER NOT NULL
+      );
+      CREATE INDEX github_cache_tid ON github_cache(hentet_at);
+    `);
+  },
+
+  function m14(d) {
+    /*
+     * F13 - favoritter og »senest besoegte«.
+     *
+     * ── note_visits.seq er et LOEBENUMMER, og `at` er til at VISE ─────────
+     *
+     * Foerste udgave sorterede paa tidsstemplet, og to noter aabnet i samme
+     * sekund gav uafgjort: raekkefoelgen blev vilkaarlig, og »senest
+     * besoegte« viste den forkerte oeverst. Det er samme faelde, som
+     * `naesteSeq` allerede findes for - et tidsstempel i en sorteringskolonne
+     * SER rigtigt ud, fordi tidsstempler sorterer kronologisk, lige indtil to
+     * ting sker inden for samme oploesning.
+     *
+     * Fundet af en test, der aabnede to noter efter hinanden. Med et menneske
+     * ved tastaturet ville den have virket hver gang.
+     *
+     * Begge er **pr. BRUGER, ikke pr. note** - og det er ikke en detalje.
+     * Sagu er flerbruger, og en note kan vaere delt: et flag paa noten ville
+     * betyde, at min stjerne dukkede op hos kollegaen, og at hans besoeg
+     * skubbede min egen liste rundt. »Senest besoegte« er per definition
+     * mit eget spor.
+     *
+     * `note_visits` har ÉN raekke pr. (bruger, note) - ikke én pr. besoeg.
+     * En logbog ville vokse uden graenser og skulle ryddes; det her er en
+     * liste over hvor jeg var, og den skal kun kunne svare paa »hvad aabnede
+     * jeg sidst«. Prisen er, at man ikke kan taelle besoeg - og det er der
+     * heller ingen, der skal.
+     */
+    d.exec(`
+      CREATE TABLE favorites (
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        note_id    TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        seq        INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, note_id)
+      );
+      CREATE INDEX favorites_bruger ON favorites(user_id, seq);
+
+      CREATE TABLE note_visits (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        seq     INTEGER NOT NULL DEFAULT 0,
+        at      INTEGER NOT NULL,
+        PRIMARY KEY (user_id, note_id)
+      );
+      CREATE INDEX note_visits_tid ON note_visits(user_id, seq DESC);
+    `);
+  },
 ];
 
 /*
@@ -762,7 +976,17 @@ function sendJson(res, status, body, extraHeaders) {
  * er ikke noget, nogen kan forgrene paa (RUNE-ERFARINGER, doda v18).
  */
 function apiFejl(res, status, kode, besked) {
-  sendJson(res, status, { error: kode, message: besked });
+  /*
+   * En 401 SKAL baere `WWW-Authenticate`.
+   *
+   * Uden den ved en klient ikke, at der findes en maade at godkende sig paa -
+   * og proever i ring i stedet for at spoerge om en noegle. Det er samme
+   * header, F10's connector-opdagelse haenger paa: svarer `/mcp` 401 uden
+   * den, opgiver klienten forbindelsen, **uden at noget ser i stykker ud**
+   * (RUNE-ERFARINGER §9a, faelde 1).
+   */
+  sendJson(res, status, { error: kode, message: besked },
+    status === 401 ? { 'WWW-Authenticate': 'Bearer' } : undefined);
 }
 
 // Noten kan vaere paa hundredtusindvis af tegn markdown; 2 MB er for lidt.
@@ -815,6 +1039,29 @@ function readJsonBody(req, tilgivende, tilladArray) {
       if (type.includes('application/x-www-form-urlencoded')) {
         const felter = {};
         for (const [n, v] of new URLSearchParams(raw)) felter[n] = v;
+        /*
+         * Er det slet ikke en formular, ER kroppen teksten.
+         *
+         * `curl --data 'noget tekst'` saetter form-typen af sig selv, og saa
+         * blev hele saetningen til et TOMT felt med et mystisk navn - og
+         * fangsten svarede »send noget tekst«, selv om teksten var der.
+         * Fundet ved at koere som en rigtig klient; min egen test sendte slet
+         * ingen Content-Type og gik derfor fri.
+         *
+         * Kendetegnet er, at der ikke er ét eneste `=` i kroppen - altsaa
+         * praecis ét felt UDEN vaerdi. Reglen hed foer »ingen text/title/note
+         * blandt felterne«, og den aad F10's samtykkeformular: den har syv
+         * rigtige felter, men ingen af de tre navne, saa hele indsendelsen
+         * blev til én tekststreng, og »Allow« svarede 400.
+         *
+         * Kun i tilgivende tilstand, altsaa kun naar kaldet er godkendt med en
+         * NOEGLE: der er ingen ambient legitimation at misbruge.
+         */
+        const navne = Object.keys(felter);
+        if (tilgivende && navne.length === 1 && felter[navne[0]] === '' && !raw.includes('=')) {
+          resolve({ text: raw });
+          return;
+        }
         resolve(felter);
         return;
       }
@@ -948,9 +1195,26 @@ function serveStatic(req, res, urlPath) {
 
 /* En mistet telefon maa ikke kunne laese hele arkivet: en capture-noegle kan
    KUN oprette - den kan ikke se noget som helst. */
+/*
+ * Hvad en noegle MAA - og hvorfor `link` findes.
+ *
+ * `capture` kan oprette og se ingenting; `read` kan se og oprette ingenting.
+ * Det er den rigtige opdeling for en telefon eller en genvej, men den kan
+ * ikke udtrykke det, en SOESTER-APP har brug for: doda skal kunne SOEGE i
+ * noterne (for at haenge den rigtige note paa en opgave) og OPRETTE én
+ * (`*` i fangstfeltet) - og ikke andet.
+ *
+ * Uden `link` maatte doda have en `full`-noegle, og saa ville en integration,
+ * der kun skal skrive links, ogsaa kunne slette hele arkivet. Rettigheden
+ * skal passe til opgaven, ikke til den naermeste kasse, der er stor nok.
+ *
+ * `write` er stadig forbeholdt `full`: en soesterapp maa lave en note, ikke
+ * lave om paa en (SAGU-PLAN F8's accept).
+ */
 const SCOPE_TILLADER = {
   capture: new Set(['capture']),
   read: new Set(['read']),
+  link: new Set(['capture', 'read']),
   full: new Set(['capture', 'read', 'write']),
 };
 const SCOPES = Object.keys(SCOPE_TILLADER);
@@ -1087,13 +1351,71 @@ function registreringAaben() {
  * adgangslag ikke kan eftermonteres.
  */
 
-/** SQL-fragmentet, der afgoer om `userId` overhovedet maa SE noten. */
-const SYNLIG = `(n.user_id = ? OR EXISTS (
-  SELECT 1 FROM note_acl a WHERE a.note_id = n.id AND a.user_id = ?))`;
+/*
+ * ── Arven ─────────────────────────────────────────────────────────────────
+ *
+ * Deles en side, deles det, der ligger under den. Fragmentet gaar derfor OP
+ * gennem foraeldrene og spoerger, om nogen af dem er delt med `tree = 1`.
+ *
+ * **MAALING 5 (DESIGN.md): hvad koster det?** SQLite tillader en korreleret
+ * `WITH RECURSIVE` inde i `EXISTS`, og prisen er maalt paa 4.840 noter:
+ *
+ *   - **for EJEREN: 0,13 ms - praecis det samme som uden arven.** `n.user_id
+ *     = ?` staar foerst i OR'en og kortslutter den, saa gennemloebet aldrig
+ *     koeres. Det er den vej, alle Andreas' egne kald gaar.
+ *   - for den, noten er delt MED, og et fuldt scan: 8,8 ms. Vaerste tilfaelde,
+ *     og stadig under et blink.
+ *
+ * Derfor er der ingen hurtig sti og ingen materialiseret tabel: **OR'ens
+ * kortslutning ER den hurtige sti.**
+ *
+ * Loftet paa 64 er en spaerre mod en cyklus i data, ikke mod dybde - samme
+ * grund som i `undertrae()`. Uden det ville en ring i traeet haenge et
+ * opslag, og fejlen ville se ud som en langsom database.
+ */
+const ARVET = (led, alias) => `EXISTS (
+  WITH RECURSIVE op(id, parent_id, dybde) AS (
+    SELECT id, parent_id, 0 FROM notes WHERE id = ${alias}.id
+    UNION ALL
+    SELECT x.id, x.parent_id, op.dybde + 1 FROM notes x JOIN op ON x.id = op.parent_id
+     WHERE op.dybde < 64
+  )
+  SELECT 1 FROM op JOIN note_acl a ON a.note_id = op.id
+   WHERE a.user_id = ? AND (a.tree = 1 OR op.id = ${alias}.id)${led})`;
+
+/*
+ * Fragmenterne tager et ALIAS, saa de kan bruges paa en anden taffel end `n`.
+ *
+ * »Delt med mig«-listen skal spoerge om FORAELDEREN er synlig for at kunne
+ * vise kun toppen af det, jeg har faaet - og en halv kopi af reglen dér ville
+ * vaere en regel til. Der er kun én adgangsregel i appen; den kan bare pege
+ * paa forskellige raekker.
+ */
+const synligFor = (alias) => `(${alias}.user_id = ? OR ${ARVET('', alias)})`;
+
+/**
+ * SQL-fragmentet, der afgoer om `userId` overhovedet maa SE noten.
+ *
+ * Baade dette og `SKRIVBAR` tager **noejagtig to parametre** - `userId` to
+ * gange, i den raekkefoelge - praecis som foer arven kom til. Det er med
+ * vilje: der er over tyve kaldsteder, og et fragment, der pludselig kraever
+ * tre, ville skulle rettes hvert eneste sted.
+ */
+const SYNLIG = synligFor('n');
 
 /** ... og om han maa AENDRE den. Kun ejer eller en write-ACL. */
-const SKRIVBAR = `(n.user_id = ? OR EXISTS (
-  SELECT 1 FROM note_acl a WHERE a.note_id = n.id AND a.user_id = ? AND a.level = 'write'))`;
+const SKRIVBAR = `(n.user_id = ? OR ${ARVET(" AND a.level = 'write'", 'n')})`;
+
+/**
+ * ... og om han EJER den.
+ *
+ * Tre ting kan kun ejeren: **slette, udgive og dele videre** - plus at give
+ * noten fra sig. `write` betyder »skriv i den«, ikke »bestem over den«: en
+ * kollega, der maa rette i en side, skal ikke kunne laegge hele undertraeet
+ * paa det aabne net eller smide det i papirkurven. Ejeren ville opdage det
+ * bagefter, og »bagefter« er for sent for noget, der har vaeret offentligt.
+ */
+const EJET = '(n.user_id = ?)';
 
 const NOTE_LISTE_FELTER = `n.id, n.user_id, n.notebook_id, n.parent_id, n.title, n.icon,
   n.seq, n.full_width, n.archived_at, n.created_at, n.updated_at, n.updated_by`;
@@ -1124,13 +1446,26 @@ function hentNote(userId, id) {
   // importen begyndte at saette maerker - indtil da var listen tom i begge
   // tilfaelde. En funktion, der returnerer samme slags objekt ad to veje,
   // skal give samme FORM begge veje (RUNE-ERFARINGER, doda F5).
-  return medMaerker([formNote(r, true)])[0];
+  return medMaerker([formNote(r, true, userId)])[0];
 }
 
 function hentNoter(userId, filter) {
   const f = filter || {};
   const hvor = [`n.deleted_at IS ${f.slettede ? 'NOT NULL' : 'NULL'}`, SYNLIG];
   const arg = [userId, userId];
+  /*
+   * **»All notes« er MINE noter.**
+   *
+   * `SYNLIG` staar der stadig - den er reglen, og den maa ikke fjernes fra en
+   * dataadgang - men listerne i sidebaren er mit eget arkiv. En delt side
+   * ligger i EJERENS notesbog og ville ellers dukke op midt i mine egne uden
+   * en bog at hoere til. Det, andre har delt, har sin egen visning
+   * (`deltMedMig`), hvor der ogsaa staar hvem det kom fra (F11).
+   */
+  if (!f.medDelte) {
+    hvor.push('n.user_id = ?');
+    arg.push(userId);
+  }
   if (f.notebook !== undefined) {
     if (f.notebook === null) hvor.push('n.notebook_id IS NULL');
     else { hvor.push('n.notebook_id = ?'); arg.push(f.notebook); }
@@ -1147,11 +1482,11 @@ function hentNoter(userId, filter) {
      WHERE ${hvor.join(' AND ')}
      ORDER BY n.seq, n.updated_at DESC
      LIMIT ${graense}`).all(userId, ...arg);
-  return medFilantal(medMaerker(raekker.map((r) => formNote(r, false))));
+  return medFilantal(medMaerker(raekker.map((r) => formNote(r, false, userId))));
 }
 
 /** Rækken som API'et ser den. `medKrop` styrer om body_md kommer med. */
-function formNote(r, medKrop) {
+function formNote(r, medKrop, laeser) {
   const ud = {
     id: r.id,
     notebookId: r.notebook_id,
@@ -1173,6 +1508,29 @@ function formNote(r, medKrop) {
     mine: !!r.er_ejer,
     tags: [],
   };
+  /*
+   * Er den ikke min, skal det STAA der - med hvem den kom fra, og hvad jeg
+   * maa. En redigeringsflade, der ser ud som ens egen, men afviser gemningen,
+   * er vaerre end en, der siger det paa forhaand (F11).
+   */
+  if (medKrop && laeser) {
+    // Stjernen er LAESERENS, ikke notens - to brugere kan have hver sin.
+    ud.favorite = !!db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND note_id = ?')
+      .get(laeser, r.id);
+  }
+  if (medKrop && r.er_ejer) {
+    // Er den delt med nogen? Knappen i vaerktoejsraekken skal kunne tegnes med
+    // det samme - én taeller frem for en rundtur mere pr. aabnet note
+    // (RUNE-ERFARINGER, doda v27: taeld de blokerende rundture).
+    ud.sharedWith = db.prepare('SELECT COUNT(*) AS n FROM note_acl WHERE note_id = ?').get(r.id).n;
+  }
+  if (!r.er_ejer && laeser) {
+    const e = db.prepare('SELECT username FROM users WHERE id = ?').get(r.user_id);
+    ud.owner = e ? e.username : null;
+    ud.level = db.prepare(`
+      SELECT 1 FROM notes n WHERE n.id = ? AND ${SKRIVBAR}`).get(r.id, laeser, laeser)
+      ? 'write' : 'read';
+  }
   if (medKrop) {
     ud.body = r.body_md;
     ud.extId = r.ext_id || null;
@@ -1180,9 +1538,18 @@ function formNote(r, medKrop) {
       .all(r.id).map((p) => ({ key: p.key, value: p.value }));
     // Sider, der peger HERTIL. Det er dét, der goer et arkiv til et net frem
     // for en bunke - og det maa aldrig kraeve en gennemsoegning af al tekst.
+    /*
+     * Kun de sider, JEG maa se.
+     *
+     * Uden filteret ville en note, en anden bruger har delt med mig, vise
+     * titlerne paa hans oevrige sider, saa snart én af dem linkede hertil -
+     * og en titel er tit hele indholdet (»Opsigelse, Jens«). Hullet var
+     * usynligt med én konto, og det er praecis den slags, F11 aabner.
+     */
     ud.backlinks = db.prepare(`
       SELECT n.id, n.title FROM note_links l JOIN notes n ON n.id = l.from_id
-       WHERE l.to_id = ? AND n.deleted_at IS NULL ORDER BY n.title`).all(r.id);
+       WHERE l.to_id = ? AND n.deleted_at IS NULL AND ${SYNLIG}
+       ORDER BY n.title`).all(r.id, laeser, laeser);
     ud.childCount = db.prepare(`
       SELECT COUNT(*) AS n FROM notes WHERE parent_id = ? AND deleted_at IS NULL`).get(r.id).n;
     /*
@@ -1242,22 +1609,39 @@ function opretNote(userId, felter) {
    * bog kunne udgives (fundet af testen, 2026-08-21).
    */
   let bog = f.notebookId || null;
-  if (!bog && f.parentId) {
-    const p = db.prepare('SELECT notebook_id FROM notes WHERE id = ? AND user_id = ?')
-      .get(f.parentId, userId);
-    if (p) bog = p.notebook_id;
+  /*
+   * En underside arver sin foraelders notesbog OG sin foraelders EJER.
+   *
+   * Ejeren er det, F11 lagde til. Laver en kollega en underside i et trae,
+   * jeg har delt med ham, skal siden hoere til traeet - ellers staar den i
+   * MIT trae uden at jeg kan se den (min `SYNLIG` matcher ikke hans note), og
+   * arven ville give ham adgang til en side, jeg ikke ejer. Et undertrae har
+   * ÉN ejer, praecis som det ligger i ÉN notesbog.
+   *
+   * `updated_by` bliver ved med at vaere den, der skrev. Det er dét felt, der
+   * svarer paa »hvem rørte den sidst«.
+   */
+  let ejer = userId;
+  if (f.parentId) {
+    const p = db.prepare(`SELECT n.user_id, n.notebook_id FROM notes n
+                           WHERE n.id = ? AND n.deleted_at IS NULL AND ${SKRIVBAR}`)
+      .get(f.parentId, userId, userId);
+    if (p) {
+      ejer = p.user_id;
+      if (!bog) bog = p.notebook_id;
+    }
   }
   db.prepare(`INSERT INTO notes
       (id, user_id, notebook_id, parent_id, title, body_md, icon, seq, ext_id,
        created_at, updated_at, updated_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, userId,
+    .run(id, ejer,
       bog,
       f.parentId || null,
       str(f.title, 400),
       typeof f.body === 'string' ? f.body : '',
       str(f.icon, 16),
-      naesteSeq('notes', 'user_id = ?', userId),
+      naesteSeq('notes', 'user_id = ?', ejer),
       f.extId ? str(f.extId, 64) : null,
       t, t, userId);
   gemVersion(id, userId);
@@ -1341,7 +1725,22 @@ function gemNote(userId, id, felter) {
  *
  * @returns {string[]} navnene, som de nu staar paa noten.
  */
-function saetMaerker(userId, noteId, navne) {
+/**
+ * Maerkerne paa en note hoerer til notens EJER - ikke til den, der skriver.
+ *
+ * `tags` har en `user_id`, og maerkesiden viser mine egne. Skrev en kollega
+ * `#drift` i en side, jeg havde delt med ham, ville maerket blive oprettet
+ * under HANS konto og haenges paa MIN note: det ville staa paa noten for os
+ * begge, men kun i hans maerkeliste - og min egen `tag:drift` ville ikke
+ * finde min egen side. Ejeren slaas derfor op paa noten (F11).
+ */
+function ejerenAf(noteId) {
+  const r = db.prepare('SELECT user_id FROM notes WHERE id = ?').get(noteId);
+  return r ? r.user_id : null;
+}
+
+function saetMaerker(kalder, noteId, navne) {
+  const userId = ejerenAf(noteId) || kalder;
   const rene = [];
   for (const raa of Array.isArray(navne) ? navne.slice(0, 50) : []) {
     // Et maerke er ÉT ord uden mellemrum - ellers kan `#drift` i en tekst
@@ -1416,7 +1815,7 @@ function undertrae(userId, id, medSlettede) {
  */
 function flytNote(userId, id, maal) {
   const note = db.prepare(`
-    SELECT n.id, n.notebook_id FROM notes n
+    SELECT n.id, n.user_id, n.notebook_id FROM notes n
      WHERE n.id = ? AND n.deleted_at IS NULL AND ${SKRIVBAR}`).get(id, userId, userId);
   if (!note) return { fejl: 'not_found' };
 
@@ -1427,9 +1826,20 @@ function flytNote(userId, id, maal) {
     let p = nyForaelder;
     for (let i = 0; i < 64 && p; i++) {
       if (p === id) return { fejl: 'cycle' };
-      const r = db.prepare(`SELECT n.parent_id FROM notes n WHERE n.id = ? AND ${SYNLIG}`)
+      const r = db.prepare(`SELECT n.parent_id, n.user_id FROM notes n WHERE n.id = ? AND ${SYNLIG}`)
         .get(p, userId, userId);
       if (!r) return { fejl: 'not_found' };
+      /*
+       * **Et trae har ÉN ejer.**
+       *
+       * Uden det kunne en note traekkes fra mit arkiv ind under en side, en
+       * kollega havde delt med mig - og saa ville MIN note pludselig arve HANS
+       * deling, altsaa give adgang til noget, ingen havde delt. Den anden vej
+       * er lige saa slem: hans side traukket ind i mit trae ville forsvinde
+       * fra hans egen sidebar. Flytninger holder sig inden for én ejer, og
+       * »giv noten videre« er sin egen handling.
+       */
+      if (i === 0 && r.user_id !== note.user_id) return { fejl: 'anden_ejer' };
       p = r.parent_id;
     }
   }
@@ -1493,9 +1903,17 @@ function duplikerNote(userId, id, medBoern) {
 
 /** Sletter en note OG dens undersider - men markerer, hvem der tog dem med. */
 function sletUndertrae(userId, id) {
+  /*
+   * `EJET`, ikke `SKRIVBAR`.
+   *
+   * At maatte skrive i en side er ikke det samme som at maatte smide den ud.
+   * En kollega, der retter i en delt side, skal ikke kunne tage hele
+   * undertraeet med i papirkurven - ejeren ville opdage det bagefter, og han
+   * ville ikke vide hvorfor. Det gaelder ogsaa `write`-niveauet (F11).
+   */
   const raekke = db.prepare(`
-    SELECT n.id FROM notes n WHERE n.id = ? AND n.deleted_at IS NULL AND ${SKRIVBAR}`)
-    .get(id, userId, userId);
+    SELECT n.id FROM notes n WHERE n.id = ? AND n.deleted_at IS NULL AND ${EJET}`)
+    .get(id, userId);
   if (!raekke) return { fejl: 'not_found' };
   const ider = undertrae(userId, id);
   const t = now();
@@ -1615,6 +2033,245 @@ function gemVersion(noteId, userId) {
 
 /* ------------------------------------------------------------ notesboeger */
 
+/* ============================== favoritter og spor (F13) ============== */
+
+/*
+ * To lister, der begge er MINE.
+ *
+ * De laeses gennem `hentNoter`-agtige opslag med `SYNLIG`, saa en note, jeg
+ * har mistet adgangen til, forsvinder af sig selv - baade fra stjernerne og
+ * fra sporet. Raekken bliver liggende; det er billigere end at rydde op ved
+ * hver tilbagekaldelse, og den kan ikke ses (F11).
+ */
+
+function hentFavoritter(userId) {
+  const raekker = db.prepare(`
+    SELECT ${NOTE_LISTE_FELTER}, (n.user_id = ?) AS er_ejer, f.seq AS fav_seq
+      FROM favorites f JOIN notes n ON n.id = f.note_id
+     WHERE f.user_id = ? AND n.deleted_at IS NULL AND ${SYNLIG}
+     ORDER BY f.seq, f.created_at
+     LIMIT 100`).all(userId, userId, userId, userId);
+  return raekker.map((r) => formNote(r, false, userId));
+}
+
+function saetFavorit(userId, noteId, paa) {
+  if (!hentNote(userId, noteId)) return { fejl: [404, 'not_found', 'No such note.'] };
+  if (paa) {
+    const seq = db.prepare('SELECT COALESCE(MAX(seq), -1) + 1 AS n FROM favorites WHERE user_id = ?')
+      .get(userId).n;
+    db.prepare(`INSERT INTO favorites (user_id, note_id, seq, created_at) VALUES (?,?,?,?)
+                ON CONFLICT(user_id, note_id) DO NOTHING`).run(userId, noteId, seq, now());
+  } else {
+    db.prepare('DELETE FROM favorites WHERE user_id = ? AND note_id = ?').run(userId, noteId);
+  }
+  return { favorite: !!paa };
+}
+
+/**
+ * Sporet. ÉN raekke pr. note - ikke én pr. besoeg.
+ *
+ * Kaldes hver gang en note aabnes, saa den skal vaere billig: én UPSERT paa
+ * en primaernoegle. Og den maa ALDRIG kunne faelde selve aabningen - derfor
+ * kaldes den uden for det svar, der betyder noget.
+ */
+function noterBesoeg(userId, noteId) {
+  try {
+    const seq = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM note_visits WHERE user_id = ?')
+      .get(userId).n;
+    db.prepare(`INSERT INTO note_visits (user_id, note_id, seq, at) VALUES (?,?,?,?)
+                ON CONFLICT(user_id, note_id) DO UPDATE SET seq = excluded.seq, at = excluded.at`)
+      .run(userId, noteId, seq, now());
+  } catch (err) { logError(`kunne ikke notere besoeg: ${err.message}`); }
+}
+
+function senesteNoter(userId, graense) {
+  const raekker = db.prepare(`
+    SELECT ${NOTE_LISTE_FELTER}, (n.user_id = ?) AS er_ejer, v.at AS besoegt
+      FROM note_visits v JOIN notes n ON n.id = v.note_id
+     WHERE v.user_id = ? AND n.deleted_at IS NULL AND ${SYNLIG}
+     ORDER BY v.seq DESC
+     LIMIT ?`).all(userId, userId, userId, userId, Math.min(Number(graense) || 8, 50));
+  return raekker.map((r) => Object.assign(formNote(r, false, userId), { visitedAt: r.besoegt }));
+}
+
+/** Maerkerne, i navneorden. Brugt af /state og af MCP'ens list_tags. */
+function hentMaerker(userId) {
+  return db.prepare('SELECT id, name FROM tags WHERE user_id = ? ORDER BY name').all(userId);
+}
+
+/* ==================================================== deling (F11) ====== */
+
+/*
+ * Deling mellem konti.
+ *
+ * ── Hvad en deling ER ─────────────────────────────────────────────────────
+ *
+ * Én raekke i `note_acl`: en note, en bruger, et niveau (`read`/`write`) og
+ * `tree` - om det, der ligger under siden, foelger med. Alt andet regnes ud
+ * af det levende trae af `SYNLIG`/`SKRIVBAR`, saa der er intet at holde i
+ * takt, naar nogen laver en underside eller flytter en.
+ *
+ * ── Hvad en deling IKKE er ────────────────────────────────────────────────
+ *
+ * `write` betyder »skriv i den«, ikke »bestem over den«. **Fire ting kan kun
+ * ejeren:** slette, udgive, dele videre og give noten fra sig. Ellers ville
+ * en kollega, der maa rette i en side, kunne laegge hele undertraeet paa det
+ * aabne net eller i papirkurven - og ejeren ville opdage det bagefter.
+ */
+
+/** Alle konti. Kun for en indlogget bruger - aldrig gennem en noegle. */
+function hentPersoner(udenId) {
+  return db.prepare(`SELECT id, username, is_admin FROM users
+                      WHERE id != ? ORDER BY username`).all(udenId)
+    .map((u) => ({ id: u.id, username: u.username, isAdmin: !!u.is_admin }));
+}
+
+/** Hvem noten er delt med. Ejeren spoerger; de andre faar deres eget niveau. */
+function hentAdgang(userId, noteId) {
+  const note = db.prepare('SELECT id, user_id FROM notes WHERE id = ? AND deleted_at IS NULL').get(noteId);
+  if (!note || !hentNote(userId, noteId)) return null;
+  const ejer = db.prepare('SELECT id, username FROM users WHERE id = ?').get(note.user_id);
+  const mit = db.prepare('SELECT level, tree FROM note_acl WHERE note_id = ? AND user_id = ?')
+    .get(noteId, userId);
+  return {
+    owner: ejer ? { id: ejer.id, username: ejer.username } : null,
+    mine: note.user_id === userId,
+    myLevel: note.user_id === userId ? 'owner' : (mit ? mit.level : null),
+    /*
+     * Listen er EJERENS.
+     *
+     * En kollega, noten er delt med, faar en tom liste - ikke fordi den er
+     * hemmelig, men fordi den ikke er hans at rette i, og en liste, man ikke
+     * kan aendre, ligner en, der er gaaet i stykker. Han kan se, hvem der
+     * ejer siden, og det er dét, han skal bruge.
+     */
+    people: note.user_id === userId ? db.prepare(`
+      SELECT a.user_id, a.level, a.tree, a.created_at, u.username
+        FROM note_acl a JOIN users u ON u.id = a.user_id
+       WHERE a.note_id = ? ORDER BY u.username`).all(noteId)
+      .map((a) => ({
+        userId: a.user_id, username: a.username, level: a.level,
+        tree: !!a.tree, createdAt: a.created_at,
+      })) : [],
+  };
+}
+
+/**
+ * Del en note med en anden konto.
+ *
+ * @returns {{delt}|{fejl: [status, kode, besked]}}
+ */
+function delNote(userId, noteId, o) {
+  if (!ejerAf(userId, noteId)) {
+    // Samme 404 som en note, der ikke findes: en 403 ville bekraefte, at
+    // siden er der, for enhver der gaetter et id.
+    return { fejl: [404, 'not_found', 'No such note.'] };
+  }
+  const navn = str(o.username, 80);
+  const modtager = db.prepare('SELECT id, username FROM users WHERE lower(username) = lower(?)').get(navn);
+  if (!modtager) return { fejl: [404, 'no_such_user', `There is no account called “${navn}”.`] };
+  if (modtager.id === userId) {
+    return { fejl: [400, 'already_yours', 'That page is already yours.'] };
+  }
+  const level = o.level === 'write' ? 'write' : 'read';
+  // Undertraeet foelger med som udgangspunkt - det er sadan et arkiv deles.
+  const tree = o.tree === false ? 0 : 1;
+  db.prepare(`INSERT INTO note_acl (note_id, user_id, level, tree, created_at) VALUES (?,?,?,?,?)
+              ON CONFLICT(note_id, user_id) DO UPDATE SET level = excluded.level, tree = excluded.tree`)
+    .run(noteId, modtager.id, level, tree, now());
+  audit('note-delt', userId, noteId, `${modtager.username}:${level}${tree ? '+trae' : ''}`);
+  return { delt: { userId: modtager.id, username: modtager.username, level, tree: !!tree } };
+}
+
+/** Tag delingen tilbage. Virker ved NAESTE kald - der er ingen cache. */
+function fjernDeling(userId, noteId, modtagerId) {
+  if (!ejerAf(userId, noteId)) return { fejl: [404, 'not_found', 'No such note.'] };
+  const r = db.prepare('DELETE FROM note_acl WHERE note_id = ? AND user_id = ?').run(noteId, modtagerId);
+  if (!r.changes) return { fejl: [404, 'not_found', 'That person does not have access.'] };
+  audit('deling-fjernet', userId, noteId, modtagerId);
+  return { ok: true };
+}
+
+/**
+ * Giv noten - og alt under den - videre til en anden konto.
+ *
+ * Tre ting sker, og alle tre er noedvendige:
+ *
+ *  1. **Hele undertraeet skifter ejer.** Et trae har ÉN ejer; skiftede kun
+ *     toppen, ville undersiderne blive haengende hos den gamle ejer og
+ *     forsvinde fra den nye sidebar.
+ *  2. **Notesbogen ryddes, og noten bliver en rod.** `notebook_id` peger paa
+ *     en bog, den GAMLE ejer ejer - den nye har den ikke, og en note i en
+ *     fremmed bog kan ikke tegnes noget sted.
+ *  3. **Den gamle ejer beholder `write`-adgang.** Ellers ville »giv videre«
+ *     vaere det samme som at miste siden, og det er ikke det, nogen mener.
+ *     Han kan fjerne sig selv bagefter; det er hans valg, ikke en bivirkning.
+ */
+function givVidere(userId, noteId, navnRaa) {
+  if (!ejerAf(userId, noteId)) return { fejl: [404, 'not_found', 'No such note.'] };
+  const navn = str(navnRaa, 80);
+  const ny = db.prepare('SELECT id, username FROM users WHERE lower(username) = lower(?)').get(navn);
+  if (!ny) return { fejl: [404, 'no_such_user', `There is no account called “${navn}”.`] };
+  if (ny.id === userId) return { fejl: [400, 'already_yours', 'That page is already yours.'] };
+
+  const ider = undertrae(userId, noteId);
+  const t = now();
+  db.exec('BEGIN');
+  try {
+    for (const b of ider) {
+      db.prepare('UPDATE notes SET user_id = ?, notebook_id = NULL, updated_at = ? WHERE id = ?')
+        .run(ny.id, t, b);
+      // Den nye ejer maa ikke staa som »delt med« paa sin egen side.
+      db.prepare('DELETE FROM note_acl WHERE note_id = ? AND user_id = ?').run(b, ny.id);
+    }
+    db.prepare('UPDATE notes SET parent_id = NULL WHERE id = ?').run(noteId);
+    db.prepare(`INSERT INTO note_acl (note_id, user_id, level, tree, created_at) VALUES (?,?,?,?,?)
+                ON CONFLICT(note_id, user_id) DO UPDATE SET level = 'write', tree = 1`)
+      .run(noteId, userId, 'write', 1, t);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  audit('note-givet-videre', userId, noteId, ny.username);
+  return { ok: true, antal: ider.length, newOwner: { id: ny.id, username: ny.username } };
+}
+
+/** Det, ANDRE har delt med mig. Aldrig mine egne - de staar under All notes. */
+function deltMedMig(userId) {
+  const raekker = db.prepare(`
+    SELECT ${NOTE_LISTE_FELTER}, 0 AS er_ejer, u.username AS ejernavn,
+           /*
+            * Raekken staar altid paa noten SELV her.
+            *
+            * Listen viser kun toppen af det, jeg har faaet (se nedenfor), og
+            * en note, hvis adgang kom fra en forfader, ville have den
+            * forfader med i listen i stedet. Derfor ingen gennemloebning.
+            */
+           (SELECT a.level FROM note_acl a
+             WHERE a.user_id = ? AND a.note_id = n.id) AS niveau
+      FROM notes n JOIN users u ON u.id = n.user_id
+     WHERE n.deleted_at IS NULL AND n.user_id != ? AND ${SYNLIG}
+       /*
+        * Kun TOPPEN af det, der er delt.
+        *
+        * Uden det ville en delt bog paa halvtreds sider fylde listen med
+        * halvtreds raekker, som alle sammen ligger under den samme forside.
+        * En side hoerer med i listen, hvis dens foraelder IKKE ogsaa er
+        * synlig for mig - saa er den roden af det, jeg har faaet.
+        */
+       AND NOT EXISTS (
+         SELECT 1 FROM notes p
+          WHERE p.id = n.parent_id AND p.deleted_at IS NULL AND ${synligFor('p')}
+       )
+     ORDER BY n.updated_at DESC
+     LIMIT 500`).all(userId, userId, userId, userId, userId, userId);
+  return medFilantal(medMaerker(raekker.map((r) => Object.assign(formNote(r, false, userId), {
+    owner: r.ejernavn,
+    level: r.niveau || 'read',
+  }))));
+}
+
 function hentNotesboeger(userId) {
   /*
    * `published` med i ét opslag - ikke ét pr. bog.
@@ -1695,10 +2352,14 @@ function indekser(noteId) {
   const props = db.prepare('SELECT key, value FROM note_props WHERE note_id = ?')
     .all(noteId).map((p) => `${p.key} ${p.value}`);
   const meta = maerker.concat(props).join(' ');
-  db.prepare(`INSERT INTO note_fts (title, headings, body, meta, folded, note_id, user_id)
-              VALUES (?,?,?,?,?,?,?)`)
+  /*
+   * Ingen `user_id` her. Indekset afgraenser ingenting - `SYNLIG` gør det, paa
+   * `notes`, hvor ejerskabet faktisk staar (m12).
+   */
+  db.prepare(`INSERT INTO note_fts (title, headings, body, meta, folded, note_id)
+              VALUES (?,?,?,?,?,?)`)
     .run(n.title, overskrifter, n.body_md, meta,
-      foldDansk(`${n.title}\n${overskrifter}\n${n.body_md}\n${meta}`), n.id, n.user_id);
+      foldDansk(`${n.title}\n${overskrifter}\n${n.body_md}\n${meta}`), n.id);
 }
 
 /** Genopbygger hele indekset. Bruges efter import (F5) og ved skemaskift. */
@@ -1898,14 +2559,23 @@ function soegNoter(userId, raa, limit, ekstra) {
 
   const udtryk = ftsUdtrykFor(t);
   if (udtryk) {
+    /*
+     * Der staar IKKE et filter paa `fts.user_id` i den her forespoergsel.
+     *
+     * Indekset baerer sin EJERS id, saa den linje kunne aldrig finde en note,
+     * nogen havde delt med mig - mens fallback-grenen nedenfor godt kunne.
+     * Soegningen ville altsaa finde en delt note PRAECIS naar indekset ikke
+     * ramte, og ellers ikke: en fejl, der ligner et daarligt soegeord.
+     * `SYNLIG` staar i `basis` og gaelder `n`, hvor den hoerer hjemme (F11).
+     */
     raekker = db.prepare(`
       SELECT n.id,
              snippet(note_fts, 2, '<<', '>>', '…', 14) AS uddrag,
              bm25(note_fts, 10.0, 5.0, 1.0, 3.0, 1.0) AS rang
         FROM note_fts fts JOIN notes n ON n.id = fts.note_id
-       WHERE note_fts MATCH ? AND fts.user_id = ? AND ${basis.join(' AND ')}
+       WHERE note_fts MATCH ? AND ${basis.join(' AND ')}
        ORDER BY rang
-       LIMIT ?`).all(udtryk, userId, ...basisArg, graense);
+       LIMIT ?`).all(udtryk, ...basisArg, graense);
   }
 
   if (!raekker.length && t.tekst) {
@@ -2028,6 +2698,119 @@ function notesbogNavnFor(id) {
   if (!id) return null;
   const b = db.prepare('SELECT name FROM notebooks WHERE id = ?').get(id);
   return b ? b.name : null;
+}
+
+/* ============================================ fangst og API (F9) ======== */
+
+/*
+ * Doeren for en genvej paa en telefon.
+ *
+ * En iOS-genvej har ét tekstfelt og ingen taalmodighed. Den kan ikke bygge
+ * JSON, den kan ikke laese en fejlkode, og den kan ikke spoerge om noget. Alt
+ * herunder er skrevet ud fra det (dodas F2-moenster):
+ *
+ *  - kroppen maa vaere JSON, formulardata, REN TEKST eller `?text=` i adressen,
+ *  - svaret har en faerdig `message`-linje, genvejen kan vise ordret,
+ *  - og `capture`-scopet kan skrive noget NYT og se ingenting. En mistet
+ *    telefon maa ikke kunne laese arkivet.
+ */
+
+/**
+ * Dagens note - ÉN regel, som baade appen og API'et spoerger.
+ *
+ * Datoen laa foer i frontenden (lokal tid) OG i `/state` (UTC), og de to var
+ * uenige de foerste timer af doegnet i dansk tid. Ingen brugte tallet endnu,
+ * saa det var en fejl, der ventede. Nu bor reglen ét sted - og en klient kan
+ * sende sin EGEN dato, fordi telefonen ved bedre end serveren, hvornaar det
+ * er i dag hos brugeren.
+ */
+function iDagISO(raa) {
+  const s = str(raa, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dagensNote(userId, dato, opret) {
+  const titel = iDagISO(dato);
+  const fundet = db.prepare(`SELECT id FROM notes
+                              WHERE user_id = ? AND title = ? AND deleted_at IS NULL
+                              ORDER BY created_at LIMIT 1`).get(userId, titel);
+  if (fundet) return hentNote(userId, fundet.id);
+  if (!opret) return null;
+  const pen = new Date(`${titel}T12:00:00`).toLocaleDateString('en-GB',
+    { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return opretNote(userId, { title: titel, body: `# ${pen}\n\n` });
+}
+
+/**
+ * Teksten fra en genvej -> en note.
+ *
+ * **Foerste linje er titlen, resten er noten.** Det er den regel, resten af
+ * familien allerede bruger (MsGraphBud -> doda), og den er det eneste, en
+ * bruger kan gaette paa uden at laese en vejledning.
+ *
+ * `#maerke` i titlen tolkes af den SAMME regel som i appen - der maa ikke
+ * findes en saerlig API-vej ind i dataene (RUNE-ERFARINGER §9a).
+ */
+function fangstFelter(raa) {
+  const tekst = String(raa || '').replace(/\r\n/g, '\n').trim();
+  if (!tekst) return null;
+  const brud = tekst.indexOf('\n');
+  const titel = (brud === -1 ? tekst : tekst.slice(0, brud)).trim().slice(0, 200);
+  const resten = brud === -1 ? '' : tekst.slice(brud + 1).replace(/^\n+/, '');
+  return { titel, krop: resten };
+}
+
+/**
+ * Selve fangsten. ÉN funktion, som baade tekst-vejen og billed-vejen bruger.
+ *
+ * `to=today` foejer til dagens note i stedet for at lave en ny. Det er den
+ * ene ting, en genvej oftest vil: samle dagens smaating ét sted, uden at
+ * arkivet vokser med en note pr. indfald.
+ */
+function fangst(userId, tekst, opt) {
+  const o = opt || {};
+  const felter = fangstFelter(tekst);
+  if (!felter) return { fejl: ['no_text', 'Send some text to capture.'] };
+
+  // Samme regel som i titelfeltet: `#drift` bliver et rigtigt maerke.
+  const { tekst: renTitel, maerker: fundne } = maerker.pluk(felter.titel);
+
+  if (o.tilDagens) {
+    const dag = dagensNote(userId, o.dato, true);
+    if (!dag || dag.fejl) return { fejl: ['no_note', 'Could not open today\'s note.'] };
+    const linje = felter.krop ? `${renTitel}\n\n${felter.krop}` : renTitel;
+    const ny = `${String(dag.body || '').replace(/\s+$/, '')}\n\n${linje}\n`;
+    const svar = gemNote(userId, dag.id, { body: ny });
+    if (svar.fejl) return { fejl: ['not_found', 'Could not write to today\'s note.'] };
+    if (fundne.length) saetMaerker(userId, dag.id, fundne);
+    return { note: svar.note, tilfoejet: true, titel: renTitel };
+  }
+
+  const note = opretNote(userId, {
+    title: renTitel || 'Untitled',
+    body: felter.krop,
+    notebookId: o.notesbog || undefined,
+  });
+  if (note && note.fejl) return { fejl: ['bad_request', note.fejl] };
+  if (fundne.length) saetMaerker(userId, note.id, fundne);
+  return { note: hentNote(userId, note.id), titel: renTitel };
+}
+
+/**
+ * Notesbogen, en genvej peger paa - ved id ELLER ved navn.
+ *
+ * En genvej kan ikke slaa et id op. At kraeve ét ville betyde, at man skulle
+ * hente det med et andet kald foerst, og saa er »ét felt og en knap« vaek.
+ */
+function findNotesbog(userId, raa) {
+  const v = str(raa, 200);
+  if (!v) return null;
+  const r = db.prepare(`SELECT id FROM notebooks
+                         WHERE user_id = ? AND deleted_at IS NULL
+                           AND (id = ? OR lower(name) = lower(?)) LIMIT 1`).get(userId, v, v);
+  return r ? r.id : null;
 }
 
 /* ============================================ kommentarer (F7) ========== */
@@ -2362,7 +3145,7 @@ const ROUTES = {
         // (RUNE-ERFARINGER, tovo v8).
         pendingComments: antalVentende(u.id),
       },
-      tags: db.prepare('SELECT id, name FROM tags WHERE user_id = ? ORDER BY name').all(u.id),
+      tags: hentMaerker(u.id),
       storage: { used: brugtPlads(u.id), quota: MAX_SAMLET, maxFile: MAX_FIL },
       // Tom betyder "brug den vaert, du selv staar paa" - se offentligVaert().
       publicUrl: offentligUrl(),
@@ -2442,13 +3225,25 @@ const ROUTES = {
     const auth = godkend(req, res, 'read');
     if (!auth) return;
     const u = auth.user;
+    /*
+     * **Sidebaren er MIT arkiv.**
+     *
+     * `SYNLIG` staar der stadig - reglen maa ikke fjernes fra en dataadgang -
+     * men traeet tegnes af notesboeger, og en delt side ligger i EJERENS bog.
+     * Uden ejer-filteret dukkede alices »Drift« op under bobs egne
+     * notesboeger, som om den var hans: fundet ved at logge ind som bruger
+     * nummer to og KIGGE, ikke af en test (F11).
+     *
+     * Det, andre har delt, staar under »Shared with me« - med hvem det kom
+     * fra, hvilket sidebaren ikke har plads til at sige.
+     */
     const noter = db.prepare(`
       SELECT n.id, n.notebook_id, n.parent_id, n.title, n.icon, n.seq, n.archived_at,
              n.updated_at, (n.user_id = ?) AS er_ejer,
              (SELECT COUNT(*) FROM notes c WHERE c.parent_id = n.id AND c.deleted_at IS NULL) AS boern
         FROM notes n
-       WHERE n.deleted_at IS NULL AND ${SYNLIG}
-       ORDER BY n.seq, n.title`).all(u.id, u.id, u.id);
+       WHERE n.deleted_at IS NULL AND n.user_id = ? AND ${SYNLIG}
+       ORDER BY n.seq, n.title`).all(u.id, u.id, u.id, u.id);
     sendJson(res, 200, {
       notebooks: hentNotesboeger(u.id),
       notes: noter.map((n) => ({
@@ -2587,64 +3382,227 @@ const ROUTES = {
     const auth = godkend(req, res, 'write');
     if (!auth) return;
     const body = await readJsonBody(req, auth.viaToken);
-    const noteId = body.noteId ? str(body.noteId, 32) : null;
-    const bogId = body.notebookId ? str(body.notebookId, 32) : null;
-    if (!noteId === !bogId) {
-      apiFejl(res, 400, 'bad_request', 'Send either a noteId or a notebookId — not both, not neither.');
-      return;
-    }
-    if (noteId) {
-      // SKRIVBAR, ikke SYNLIG: en note, man kun maa laese, maa man ikke udgive.
-      const note = db.prepare(`SELECT n.id FROM notes n
-                                WHERE n.id = ? AND n.deleted_at IS NULL AND ${SKRIVBAR}`)
-        .get(noteId, auth.user.id, auth.user.id);
-      if (!note) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
-      if (db.prepare('SELECT 1 FROM shares WHERE note_id = ? AND revoked_at IS NULL').get(noteId)) {
-        apiFejl(res, 409, 'already_published', 'That note is already published. Change the existing one.');
+    const svar = opretUdgivelse(auth.user.id, body);
+    if (svar.fejl) { apiFejl(res, svar.fejl[0], svar.fejl[1], svar.fejl[2]); return; }
+    sendJson(res, 200, { share: svar.share });
+  },
+
+  /* --- fangst og genveje (F9) ----------------------------------------- */
+
+  /*
+   * Doeren for en genvej. Tilgivende med vilje.
+   *
+   * Teksten maa komme som JSON, som formulardata, som REN krop eller som
+   * `?text=` i adressen - en iOS-genvej med ét felt skal bare virke. Kravet
+   * om `application/json` er en CSRF-barriere, og CSRF forudsaetter en
+   * AMBIENT legitimation; en Bearer-noegle sendes aktivt, saa der er intet at
+   * forfalske (RUNE-ERFARINGER, doda F2). Derfor slaekkes kravet praecis dér.
+   */
+  'POST /api/v1/capture': async (req, res, ctx) => {
+    const auth = godkend(req, res, 'capture');
+    if (!auth) return;
+    const u = auth.user;
+
+    /*
+     * Et BILLEDE fra delingsmenuen.
+     *
+     * Genvejen sender filen som krop; navnet staar i adressen. Den lander som
+     * en vedhaeftning paa noten - og det er med vilje muligt med `capture`:
+     * at laegge noget nyt ind er ikke det samme som at maatte rette i alt,
+     * hvad der ligger. Den almindelige fil-rute kraever stadig `write`, fordi
+     * den kan haenge en fil paa en HVILKEN SOM HELST note.
+     */
+    const type = String(req.headers['content-type'] || '').split(';')[0].toLowerCase();
+    if (type.startsWith('image/')) {
+      const tilbage = MAX_SAMLET - brugtPlads(u.id);
+      if (tilbage <= 0) {
+        apiFejl(res, 413, 'quota_full', 'Your file storage is full. Delete something first.');
         return;
       }
-    } else {
-      // En notesbog er altid ejerens egen - der er ingen ACL paa boeger.
-      const bog = db.prepare(`SELECT id FROM notebooks
-                               WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
-        .get(bogId, auth.user.id);
-      if (!bog) { apiFejl(res, 404, 'not_found', 'No such notebook.'); return; }
-      if (db.prepare('SELECT 1 FROM shares WHERE notebook_id = ? AND revoked_at IS NULL').get(bogId)) {
-        apiFejl(res, 409, 'already_published', 'That notebook is already published. Change the existing one.');
-        return;
+      sikreDir(FILES_DIR);
+      const filId = newId();
+      const maal = filSti(filId);
+      try {
+        const { size, sha } = await modtagStroem(req, maal, Math.min(MAX_FIL, tilbage));
+        if (!size) {
+          fs.unlink(maal, () => {});
+          apiFejl(res, 400, 'empty_file', 'The image was empty.');
+          return;
+        }
+        const navn = renseFilnavn(ctx.query.get('name') || 'image');
+        db.prepare(`INSERT INTO attachments (id, user_id, note_id, name, mime, size, sha, created_at)
+                    VALUES (?,?,?,?,?,?,?,?)`)
+          .run(filId, u.id, null, navn, type, size, sha, now());
+        const tekst = str(ctx.query.get('text'), 500) || navn;
+        const svar = fangst(u.id, `${tekst}\n\n![${navn}](sagu:${filId})`, {
+          tilDagens: str(ctx.query.get('to'), 20) === 'today',
+          dato: ctx.query.get('date'),
+          notesbog: findNotesbog(u.id, ctx.query.get('notebook')),
+        });
+        if (svar.fejl) { apiFejl(res, 400, svar.fejl[0], svar.fejl[1]); return; }
+        db.prepare('UPDATE attachments SET note_id = ? WHERE id = ?').run(svar.note.id, filId);
+        sendJson(res, 200, {
+          note: { id: svar.note.id, title: svar.note.title },
+          message: svar.tilfoejet ? `Added the image to today's note.` : `Saved “${svar.note.title}”.`,
+        });
+      } catch (err) {
+        // Svar FOERST, luk bagefter - ellers ser klienten "connection reset"
+        // i stedet for vores 413 (doda F7).
+        const status = err.status || 400;
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', Connection: 'close' });
+        res.end(JSON.stringify({
+          error: status === 413 ? 'too_large' : 'upload_failed',
+          message: err.message,
+        }));
+        res.on('finish', () => req.destroy());
       }
-    }
-    const mode = body.mode === 'single' ? 'single' : 'tree';
-    const slug = body.slug === undefined || body.slug === null || body.slug === ''
-      ? null : renSlug(body.slug);
-    if (body.slug && !slug) {
-      apiFejl(res, 400, 'bad_slug',
-        'A web address may hold letters a–z, digits and hyphens — nothing else.');
       return;
     }
-    if (slug && slugTaget(slug, null)) {
-      apiFejl(res, 409, 'slug_taken', 'That address is already in use. Pick another one.');
+
+    const body = await readJsonBody(req, true);
+    const tekst = [body.text, body.title, body.note, ctx.query.get('text')]
+      .find((x) => typeof x === 'string' && x.trim()) || '';
+    const svar = fangst(u.id, tekst, {
+      tilDagens: String(body.to || ctx.query.get('to') || '') === 'today',
+      dato: body.date || ctx.query.get('date'),
+      notesbog: findNotesbog(u.id, body.notebook || ctx.query.get('notebook')),
+    });
+    if (svar.fejl) { apiFejl(res, 400, svar.fejl[0], svar.fejl[1]); return; }
+    if (auth.viaToken) audit('fangst-via-api', u.id, auth.token.name, svar.note.id);
+    sendJson(res, 200, {
+      note: { id: svar.note.id, title: svar.note.title },
+      // Én faerdig linje, genvejen kan vise ORDRET. Uden den skal en genvej
+      // bygge en saetning af felter, og det kan den daarligt.
+      message: svar.tilfoejet
+        ? `Added to today's note: ${svar.titel}`
+        : `Saved “${svar.note.title}”.`,
+    });
+  },
+
+  /*
+   * Hvad der er aendret siden sidst - til en genvej, der holder en kopi.
+   *
+   * De SLETTEDE skal med. En liste over det, der findes, kan ikke fortaelle,
+   * at noget er forsvundet, og en klient, der kun ser tilfoejelser, samler
+   * paa spoegelser (dodas F9).
+   */
+  'GET /api/v1/changes': (req, res, ctx) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const raa = String(ctx.query.get('since') || '0');
+    const since = /^\d+$/.test(raa) ? Number(raa) : Math.floor(Date.parse(raa) / 1000);
+    if (!Number.isFinite(since)) {
+      apiFejl(res, 400, 'bad_since', 'The "since" value must be a unix timestamp or an ISO date.');
       return;
     }
-    const kodeord = typeof body.password === 'string' && body.password ? body.password : null;
-    if (kodeord && kodeord.length < 6) {
-      apiFejl(res, 400, 'bad_password', 'A wiki password must be at least 6 characters.');
+    const graense = Math.min(Number(ctx.query.get('limit')) || 200, 500);
+    const raekker = db.prepare(`
+      SELECT ${NOTE_LISTE_FELTER}, n.deleted_at, (n.user_id = ?) AS er_ejer
+        FROM notes n
+       WHERE n.updated_at > ? AND ${SYNLIG}
+       ORDER BY n.updated_at LIMIT ?`).all(auth.user.id, since, auth.user.id, auth.user.id, graense);
+    const levende = raekker.filter((r) => !r.deleted_at);
+    sendJson(res, 200, {
+      now: now(),
+      notes: medMaerker(levende.map((r) => formNote(r, false))),
+      deleted: raekker.filter((r) => r.deleted_at).map((r) => r.id),
+    });
+  },
+
+  /* --- doda (F8) ------------------------------------------------------ */
+
+  /*
+   * Forbindelsen. Noeglen forlader ALDRIG serveren.
+   *
+   * Frontenden faar `connected: true` og adressen - aldrig vaerdien. Det er
+   * §6b's regel, og den gaelder ogsaa en soesterapp: en hemmelighed, der kan
+   * hentes tilbage, er en hemmelighed, der kan laekke gennem enhver skaerm.
+   */
+  'GET /api/v1/doda': (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const o = doda.opsaetning(auth.user.id);
+    sendJson(res, 200, {
+      url: o.url,
+      connected: o.connected,
+      tasks: db.prepare('SELECT COUNT(*) AS n FROM doda_tasks WHERE user_id = ?').get(auth.user.id).n,
+    });
+  },
+
+  /*
+   * Gem forbindelsen - men PROEV den foerst.
+   *
+   * Raekkefoelgen er hele pointen: gem, afproev, rul tilbage ved fejl. Ellers
+   * ligger et forkert token og LIGNER en virkende forbindelse, indtil
+   * brugeren proever at bruge den (RUNE-ERFARINGER, doda v16).
+   */
+  'POST /api/v1/doda': async (req, res) => {
+    const user = requireUser(req, res);          // en noegle maa ikke saette en noegle
+    if (!user) return;
+    const body = await readJsonBody(req);
+    const url = rensOffentligUrl(body.url);
+    if (!url) {
+      apiFejl(res, 400, 'bad_url',
+        'The doda address must be a plain web address like https://doda.example.com.');
       return;
     }
-    const id = newId();
-    db.prepare(`INSERT INTO shares
-        (id, user_id, note_id, notebook_id, mode, slug, token, password_hash, allow_comments,
-         allow_search, allow_index, expires_at, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, auth.user.id, noteId, bogId, mode, slug,
-        crypto.randomBytes(24).toString('hex'),
-        kodeord ? hashPassword(kodeord) : null,
-        body.allowComments ? 1 : 0,
-        body.allowSearch === false ? 0 : 1,
-        body.allowIndex ? 1 : 0,
-        tidsstempel(body.expiresAt), now());
-    audit('udgivet', auth.user.id, noteId || bogId, bogId ? 'notebook' : mode);
-    sendJson(res, 200, { share: formUdgivelse(hentUdgivelseRaekke(auth.user.id, id)) });
+    const noegle = typeof body.key === 'string' ? body.key.trim() : '';
+    // Tom noegle = behold den, der staar. Ellers kunne man ikke rette
+    // adressen uden ogsaa at skulle finde noeglen frem igen.
+    const gammelUrl = getSetting(user.id, 'doda_url', '');
+    const gammelKey = getSetting(user.id, 'doda_key', '');
+    if (!noegle && !gammelKey) {
+      apiFejl(res, 400, 'no_key', 'Paste a doda API key the first time you connect.');
+      return;
+    }
+    setSetting(user.id, 'doda_url', url);
+    if (noegle) setSetting(user.id, 'doda_key', noegle);
+
+    const proevet = await doda.proev(user.id);
+    if (!proevet.ok) {
+      // Rul tilbage. En gemt, ubrugelig forbindelse er vaerre end ingen.
+      setSetting(user.id, 'doda_url', gammelUrl);
+      setSetting(user.id, 'doda_key', gammelKey);
+      apiFejl(res, 400, proevet.kode || 'doda_error', proevet.besked);
+      return;
+    }
+    audit('doda-forbundet', user.id, url, proevet.begraenset ? 'kun capture' : 'fuld');
+    sendJson(res, 200, { connected: true, url, message: proevet.besked, limited: !!proevet.begraenset });
+  },
+
+  /*
+   * En opgave UDEN en note.
+   *
+   * `+` i soegefeltet skal virke fra enhver skaerm - noget falder én ind,
+   * mens man staar et helt andet sted. Den fritstaaende opgave gemmes ikke i
+   * `doda_tasks`: der er ingen note at vise den paa, og en raekke uden et
+   * sted at staa er en raekke, ingen ser igen.
+   */
+  'POST /api/v1/doda/tasks': async (req, res) => {
+    const auth = godkend(req, res, 'write');
+    if (!auth) return;
+    const body = await readJsonBody(req, auth.viaToken);
+    const tekst = str(body.text, 500).trim();
+    if (!tekst) { apiFejl(res, 400, 'no_text', 'Write what the task should say.'); return; }
+    const svar = await doda.opretOpgave(auth.user.id, tekst, {});
+    if (!svar.ok) {
+      apiFejl(res, svar.kode === 'not_connected' ? 409 : 502, svar.kode, svar.besked);
+      return;
+    }
+    audit('doda-opgave', auth.user.id, null, svar.item.id);
+    sendJson(res, 200, { message: svar.besked });
+  },
+
+  'DELETE /api/v1/doda': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    // Adressen og noeglen ryddes; de SENDTE opgaver bliver staaende. De er en
+    // kendsgerning om noten - at rydde dem ville vaere at aendre historikken,
+    // fordi man skiftede en indstilling (samme regel som en fjernet fil, F4).
+    setSetting(user.id, 'doda_url', '');
+    setSetting(user.id, 'doda_key', '');
+    audit('doda-frakoblet', user.id, null, '');
+    sendJson(res, 200, { connected: false });
   },
 
   /* --- adgangsnoegler ------------------------------------------------ */
@@ -2659,6 +3617,170 @@ const ROUTES = {
          WHERE user_id = ? AND revoked_at IS NULL AND client_id IS NULL
          ORDER BY created_at DESC`).all(user.id),
     });
+  },
+
+  /* --- favoritter og spor (F13) ---------------------------------------- */
+
+  'GET /api/v1/favorites': (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    sendJson(res, 200, { notes: hentFavoritter(auth.user.id) });
+  },
+
+  'GET /api/v1/recent': (req, res, ctx) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    sendJson(res, 200, { notes: senesteNoter(auth.user.id, ctx.query.get('limit')) });
+  },
+
+  /* --- GitHub i noter (F12) -------------------------------------------- */
+
+  /*
+   * **Fryser adressen.** Kaldes ÉN gang, ved indsaettelsen.
+   *
+   * Grenen slaas op, og svaret er den samme adresse med en sha i stedet.
+   * Frontenden skriver linjen om i noten, saa **teksten** baerer sha'en -
+   * ikke en tabel ved siden af. Saa er markdown stadig sandheden, og
+   * indlejringen overlever en eksport, en gendannelse og en note kopieret
+   * over i en anden app.
+   */
+  'POST /api/v1/github/freeze': async (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const body = await readJsonBody(req, auth.viaToken);
+    const info = ghShared.tolk(body.url);
+    if (!info) { apiFejl(res, 400, 'not_github', 'That is not a GitHub file, issue or pull request address.'); return; }
+    if (info.slags !== 'fil') {
+      // En sag har ingen sha at fryse - den ER foranderlig, og det er
+      // meningen: en note om en aaben sag skal vise, at den er lukket nu.
+      sendJson(res, 200, { url: body.url, frozen: false });
+      return;
+    }
+    if (!rateAllow(`gh:${auth.user.id}`, 300, 3600)) {
+      apiFejl(res, 429, 'rate_limited', 'Too many GitHub lookups. Wait a moment.');
+      return;
+    }
+    const r = await github.sha(auth.user.id, info);
+    if (r.fejl) { apiFejl(res, 400, r.fejl[0], r.fejl[1]); return; }
+    sendJson(res, 200, { url: ghShared.medRef(info, r.sha), frozen: true, sha: r.sha });
+  },
+
+  /*
+   * **Viser adressen.** Kaldes ved hver optegning - og rammer cachen.
+   *
+   * Derfor er der ingen skrivning her og ingen tung sti: en frossen fil
+   * besvares af databasen alene.
+   */
+  'GET /api/v1/github': async (req, res, ctx) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const info = ghShared.tolk(ctx.query.get('url'));
+    if (!info) { apiFejl(res, 400, 'not_github', 'That is not a GitHub address Sagu can show.'); return; }
+    if (!rateAllow(`gh:${auth.user.id}`, 300, 3600)) {
+      apiFejl(res, 429, 'rate_limited', 'Too many GitHub lookups. Wait a moment.');
+      return;
+    }
+    const r = await github.hent(auth.user.id, info);
+    if (r.fejl) { apiFejl(res, 400, r.fejl[0], r.fejl[1]); return; }
+    sendJson(res, 200, { embed: r.data, source: r.fra, warning: r.advarsel || null });
+  },
+
+  /*
+   * Status paa GitHub-forbindelsen. Aldrig selve tokenet - kun om der ER et
+   * (RUNE-ERFARINGER §6b: en hemmelighed forlader ikke serveren).
+   */
+  'GET /api/v1/github/status': (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    sendJson(res, 200, {
+      connected: !!getSetting(auth.user.id, 'github_token', ''),
+      login: getSetting(auth.user.id, 'github_login', ''),
+      cached: db.prepare('SELECT COUNT(*) AS n FROM github_cache').get().n,
+    });
+  },
+
+  /*
+   * Tokenet. Personligt, hemmeligt, og **proevet foer det gemmes**.
+   *
+   * Samme form som doda-broen: et gemt, ubrugeligt token er vaerre end ingen,
+   * fordi fejlen foerst viser sig naeste gang man indsaetter en adresse - og
+   * saa ligner det, at indlejringen er i stykker.
+   *
+   * `requireUser`, ikke `godkend`: **en noegle maa ikke saette en noegle.**
+   */
+  'POST /api/v1/github/token': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const body = await readJsonBody(req);
+    const nyt = typeof body.token === 'string' ? body.token.trim() : '';
+    const gammelt = getSetting(user.id, 'github_token', '');
+
+    if (!nyt) {
+      // Tom = kobl fra. Cachen bliver staaende: den er ikke hemmelig, og
+      // et frossent uddrag, man allerede har set, skal ikke forsvinde.
+      setSetting(user.id, 'github_token', '');
+      setSetting(user.id, 'github_login', '');
+      audit('github-frakoblet', user.id, null, null);
+      sendJson(res, 200, { connected: false });
+      return;
+    }
+
+    setSetting(user.id, 'github_token', nyt);
+    const proevet = await github.kald(user.id, '/user');
+    if (proevet.fejl) {
+      setSetting(user.id, 'github_token', gammelt);
+      apiFejl(res, 400, proevet.fejl[0], proevet.fejl[1]);
+      return;
+    }
+    const navn = proevet.krop && proevet.krop.login ? String(proevet.krop.login).slice(0, 80) : '';
+    // Kontonavnet er ikke hemmeligt, og det er dét, der goer forbindelsen
+    // genkendelig i indstillingerne: »forbundet« uden et navn kan man ikke
+    // se, om er den rigtige konto.
+    setSetting(user.id, 'github_login', navn);
+    audit('github-forbundet', user.id, navn, null);
+    sendJson(res, 200, { connected: true, login: navn });
+  },
+
+  /* --- deling mellem konti (F11) --------------------------------------- */
+
+  /*
+   * Kontiene, man kan dele med.
+   *
+   * **Kun med en session** - aldrig gennem en noegle. En liste over hvem der
+   * findes paa serveren er ikke hemmelig for den, der allerede har en konto
+   * her, men den hoerer ikke til det, en integration eller en genvej skal
+   * kunne trakke ud. Uden listen maatte man taste et brugernavn praecist, og
+   * saa ville svaret »der findes ingen konto med det navn« vaere det eneste
+   * sted, man kunne aftaste dem alligevel.
+   */
+  'GET /api/v1/people': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    sendJson(res, 200, { people: hentPersoner(user.id) });
+  },
+
+  /** Det, ANDRE har delt med mig. Kun toppen af hvert delt trae. */
+  'GET /api/v1/shared': (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    sendJson(res, 200, { notes: deltMedMig(auth.user.id) });
+  },
+
+  /*
+   * Forbundne apps (F10).
+   *
+   * Ligger ved siden af noeglerne, fordi det er den samme slags spoergsmaal:
+   * hvad kan naa mine noter, og hvordan lukker jeg det? Forskellen er, at en
+   * connector ikke har en noegle, brugeren selv har lavet - den har et token,
+   * den fik gennem samtykkesiden, og et refresh-token, der kan lave nye.
+   * Derfor er de to lister, og derfor filtrerer noeglelisten paa
+   * `client_id IS NULL`: ellers ville et OAuth-token staa som en noegle, man
+   * ikke kan huske at have lavet.
+   */
+  'GET /api/v1/connections': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    sendJson(res, 200, { connections: hentForbindelser(user.id) });
   },
 
   'POST /api/v1/keys': async (req, res) => {
@@ -2860,8 +3982,15 @@ const ROUTES = {
     }
     const loft = Math.min(MAX_FIL, tilbage);
     const noteId = ctx.query.get('note') || null;
-    // En fil kan kun haenges paa en note, man selv maa skrive i.
-    if (noteId && !hentNote(u.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+    /*
+     * En fil kan kun haenges paa en note, man maa SKRIVE i.
+     *
+     * Her stod `hentNote()`, altsaa laese-adgang - kommentaren sagde »skrive
+     * i«, koden spurgte om noget andet. Med én bruger var de to det samme;
+     * fra F11 er de det ikke, og forskellen ville vaere, at en kollega med
+     * laese-adgang kunne haenge filer paa en fremmed side.
+     */
+    if (noteId && !maaSkrive(u.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
 
     sikreDir(FILES_DIR);
     const id = newId();
@@ -2911,13 +4040,23 @@ const ROUTES = {
     const auth = godkend(req, res, 'read');
     if (!auth) return;
     const noteId = ctx.query.get('note');
-    const hvor = noteId ? 'AND note_id = ?' : '';
-    const arg = noteId ? [noteId] : [];
+    /*
+     * Uden `?note=` er listen MIN - det er filarkivet i indstillingerne, og
+     * det maales mod min egen kvote. MED `?note=` er den notens, og saa
+     * afgoer noten adgangen: ellers ville en delt sides vedhaeftningsrude
+     * staa tom, mens billederne stod i teksten (F11).
+     */
+    if (noteId && !hentNote(auth.user.id, noteId)) {
+      apiFejl(res, 404, 'not_found', 'No such note.');
+      return;
+    }
+    const hvor = noteId ? 'note_id = ?' : 'user_id = ?';
+    const arg = [noteId || auth.user.id];
     sendJson(res, 200, {
       files: db.prepare(`
         SELECT id, note_id, name, mime, size, width, height, created_at FROM attachments
-         WHERE user_id = ? AND deleted_at IS NULL ${hvor} ORDER BY created_at DESC LIMIT 500`)
-        .all(auth.user.id, ...arg)
+         WHERE ${hvor} AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500`)
+        .all(...arg)
         .map((f) => Object.assign(f, { url: `/api/v1/files/${f.id}`, inline: INLINE_MIME.has(f.mime) })),
       used: brugtPlads(auth.user.id),
       quota: MAX_SAMLET,
@@ -2994,6 +4133,69 @@ const ROUTES = {
 /* Ruter med et id i stien. Regexen skal vaere ANKRET - uden ^ og $ ville
    /api/v1/notes/abc/andet ogsaa matche. */
 const MOENSTRE = [
+  /* ------------------------------------------------------ doda (F8) */
+  {
+    metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/tasks$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const noteId = ctx.params[0];
+      if (!hentNote(auth.user.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      // Opfriskningen sker her - ÉN gang i kvarteret, naar noten aabnes. Ikke
+      // pr. optegning, og ikke pr. opgave.
+      const frisk = await opfriskDodaOpgaver(auth.user.id, ctx.query.get('refresh') === '1');
+      sendJson(res, 200, {
+        tasks: dodaOpgaverFor(auth.user.id, noteId),
+        connected: doda.opsaetning(auth.user.id).connected,
+        // Fejlen fra doda sendes MED, i stedet for at faelde kaldet: raekkerne
+        // er stadig rigtige, de er bare ikke friske.
+        staleReason: frisk.fejl || null,
+      });
+    },
+  },
+  {
+    metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/tasks$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'write');
+      if (!auth) return;
+      const noteId = ctx.params[0];
+      const note = hentNote(auth.user.id, noteId);
+      if (!note) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      const body = await readJsonBody(req, auth.viaToken);
+      const tekst = str(body.text, 500).trim();
+      if (!tekst) { apiFejl(res, 400, 'no_text', 'Write what the task should say.'); return; }
+
+      const svar = await doda.opretOpgave(auth.user.id, tekst, {
+        linkUrl: noteAdresse(req, noteId),
+        linkTitle: note.title || 'Untitled',
+      });
+      if (!svar.ok) {
+        /*
+         * En fejlet forbindelse er IKKE en fejlet gemning.
+         *
+         * Statuskoden skal kunne skelnes af frontenden, saa den kan vise en
+         * chip med en paen besked frem for »kunne ikke gemme« - accepten i
+         * SAGU-PLAN F8 handler om netop det.
+         */
+        apiFejl(res, svar.kode === 'not_connected' ? 409 : 502, svar.kode, svar.besked);
+        return;
+      }
+      const id = newId();
+      db.prepare(`INSERT INTO doda_tasks (id, user_id, note_id, doda_id, title, status, line, created_at, checked_at)
+                  VALUES (?,?,?,?,?,?,?,?,?)
+                  ON CONFLICT(user_id, doda_id) DO NOTHING`)
+        .run(id, auth.user.id, noteId, String(svar.item.id),
+          str(renOpgaveTitel(svar.item.title, noteId), 300),
+          str(svar.item.status, 40) || 'open',
+          Number.isInteger(body.line) ? body.line : null, now(), now());
+      audit('doda-opgave', auth.user.id, noteId, svar.item.id);
+      sendJson(res, 200, {
+        tasks: dodaOpgaverFor(auth.user.id, noteId),
+        message: svar.besked,
+      });
+    },
+  },
+
   /* ------------------------------------------------ kommentarer (F7) */
   {
     metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/comments$/,
@@ -3088,6 +4290,47 @@ const MOENSTRE = [
       // 404 baade naar noten ikke findes, og naar den er en andens. Man maa
       // ikke kunne aftaste, hvilke id'er der er i brug.
       if (!note) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      /*
+       * Sporet (F13). Her, fordi det er HER en note bliver aabnet - uanset om
+       * det var fra sidebaren, fra en soegning, fra et [[link]] eller fra en
+       * genvej. Lagde man det i frontenden, ville den femte vej ind mangle.
+       *
+       * `viaToken` udelades: en iOS-genvej, der henter en note som markdown,
+       * og en MCP-klient, der laeser den for at svare paa noget, er ikke mig,
+       * der »var her«. Sporet skal svare paa hvor JEG var.
+       */
+      if (!auth.viaToken) noterBesoeg(auth.user.id, note.id);
+      /*
+       * `?format=md` giver noten som REN MARKDOWN.
+       *
+       * En genvej vil have teksten, ikke et JSON-objekt at grave i - og
+       * markdown ER sandheden i databasen, saa der er intet at konvertere.
+       * Det er hele udbyttet af beslutning 1 (DESIGN.md §1).
+       */
+      if (String(ctx.query.get('format') || '') === 'md') {
+        /*
+         * Har noten sin EGEN overskrift, staar den uroert.
+         *
+         * Foerste udgave klippede den af og satte titlen ind i stedet - og saa
+         * blev dagens note til »# 2026-08-21« i stedet for »# Friday, 21
+         * August 2026«, som brugeren faktisk havde staaende. At skrive om paa
+         * nogens tekst er vaerre end at gentage en titel (Sagu F4).
+         *
+         * Uden en overskrift saettes titlen foran, saa teksten kan staa alene
+         * i en mail uden at begynde midt i noget.
+         */
+        const krop = String(note.body || '');
+        const tekst = /^#{1,6}\s/.test(krop.trimStart()) ? krop : `# ${note.title}\n\n${krop}`;
+        const buf = Buffer.from(tekst, 'utf8');
+        res.writeHead(200, {
+          'Content-Type': 'text/markdown; charset=utf-8',
+          'Content-Length': buf.length,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        res.end(buf);
+        return;
+      }
       sendJson(res, 200, { note });
     },
   },
@@ -3136,6 +4379,12 @@ const MOENSTRE = [
       if (svar.fejl === 'cycle') {
         apiFejl(res, 400, 'would_loop',
           'A note cannot be moved inside one of its own subpages — that would make a loop.');
+        return;
+      }
+      if (svar.fejl === 'anden_ejer') {
+        apiFejl(res, 400, 'other_owner',
+          'That page belongs to someone else. A page and its subpages always have one owner — '
+          + 'copy it instead, or ask the owner to hand it over.');
         return;
       }
       sendJson(res, 200, { note: svar.note });
@@ -3263,7 +4512,9 @@ const MOENSTRE = [
     kald: (req, res, ctx) => {
       const auth = godkend(req, res, 'write');
       if (!auth) return;
-      const f = hentFil(auth.user.id, ctx.params[0]);
+      // Skarpere end GET'ens: en note, man kun maa laese, maa man ikke rydde
+      // op i. Samme 404 begge veje - en 403 ville bekraefte, at filen findes.
+      const f = hentFilTilSkrivning(auth.user.id, ctx.params[0]);
       if (!f) { apiFejl(res, 404, 'not_found', 'No such file.'); return; }
       db.prepare('UPDATE attachments SET deleted_at = ? WHERE id = ?').run(now(), f.id);
       // Selve filen ryddes af sweep() efter fristen - saa kan en fortrudt
@@ -3364,6 +4615,102 @@ const MOENSTRE = [
         .run(now(), ctx.params[0], auth.user.id);
       if (!r.changes) { apiFejl(res, 404, 'not_found', 'No such publication.'); return; }
       audit('udgivelse-tilbagekaldt', auth.user.id, ctx.params[0], null);
+      sendJson(res, 200, { ok: true });
+    },
+  },
+  {
+    /*
+     * Stjernen. `PUT`/`DELETE` paa den samme adresse, ikke et felt paa noten:
+     * en favorit er MIN, ikke notens - og en delt note maa ikke faa min
+     * stjerne til at dukke op hos ejeren (F13).
+     */
+    metode: 'PUT', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/favorite$/,
+    kald: (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const r = saetFavorit(auth.user.id, ctx.params[0], true);
+      if (r.fejl) { apiFejl(res, r.fejl[0], r.fejl[1], r.fejl[2]); return; }
+      sendJson(res, 200, r);
+    },
+  },
+  {
+    metode: 'DELETE', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/favorite$/,
+    kald: (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const r = saetFavorit(auth.user.id, ctx.params[0], false);
+      if (r.fejl) { apiFejl(res, r.fejl[0], r.fejl[1], r.fejl[2]); return; }
+      sendJson(res, 200, r);
+    },
+  },
+  {
+    /* --- hvem har adgang til den her side? (F11) --- */
+    metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/access$/,
+    kald: (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const d = hentAdgang(auth.user.id, ctx.params[0]);
+      if (!d) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      sendJson(res, 200, d);
+    },
+  },
+  {
+    metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/access$/,
+    kald: async (req, res, ctx) => {
+      /*
+       * Deling kraever en SESSION, ikke bare en skrive-noegle.
+       *
+       * Det er samme skel som noegler og kodeord: en noegle maa aendre
+       * INDHOLD, ikke hvem der kan naa det. Ellers kunne en laekket
+       * `full`-noegle give en fremmed konto varig adgang til arkivet - og det
+       * ville se ud som en helt almindelig deling bagefter.
+       */
+      const user = requireUser(req, res);
+      if (!user) return;
+      const body = await readJsonBody(req);
+      const svar = delNote(user.id, ctx.params[0], body);
+      if (svar.fejl) { apiFejl(res, svar.fejl[0], svar.fejl[1], svar.fejl[2]); return; }
+      sendJson(res, 200, svar);
+    },
+  },
+  {
+    metode: 'DELETE', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/access\/([a-f0-9]{32})$/,
+    kald: (req, res, ctx) => {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const svar = fjernDeling(user.id, ctx.params[0], ctx.params[1]);
+      if (svar.fejl) { apiFejl(res, svar.fejl[0], svar.fejl[1], svar.fejl[2]); return; }
+      sendJson(res, 200, { ok: true });
+    },
+  },
+  {
+    /* --- giv siden videre. Ejerens egen handling, og kun hans. --- */
+    metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/owner$/,
+    kald: async (req, res, ctx) => {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const body = await readJsonBody(req);
+      const svar = givVidere(user.id, ctx.params[0], body.username);
+      if (svar.fejl) { apiFejl(res, svar.fejl[0], svar.fejl[1], svar.fejl[2]); return; }
+      sendJson(res, 200, svar);
+    },
+  },
+  {
+    /*
+     * Tilbagekald en forbindelse.
+     *
+     * BEGGE dele skal dø: access-tokenet virker ellers til det udloeber (op
+     * til 8 timer), og refresh-tokenet ville kunne lave et nyt bagefter. Et
+     * "tilbagekaldt" der virker otte timer endnu, er ikke et tilbagekald.
+     */
+    metode: 'DELETE', re: /^\/api\/v1\/connections\/(sagu-client-[a-f0-9]{24})$/,
+    kald: (req, res, ctx) => {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const klient = db.prepare('SELECT name FROM oauth_clients WHERE id = ?').get(ctx.params[0]);
+      const n = tilbagekaldKlient(user.id, ctx.params[0]);
+      if (!n) { apiFejl(res, 404, 'not_found', 'No such connection.'); return; }
+      audit('oauth-forbindelse-tilbagekaldt', user.id, klient ? klient.name : ctx.params[0], null);
       sendJson(res, 200, { ok: true });
     },
   },
@@ -3495,10 +4842,51 @@ function brugtPlads(userId) {
     .get(userId).n;
 }
 
+/**
+ * Filen, `userId` maa SE.
+ *
+ * Enten sin egen - eller en, der haenger paa en note, han maa se. Uden det
+ * sidste ville en delt side vise huller, hvor billederne skulle vaere: teksten
+ * kom med, filerne gjorde ikke, og intet fejlede hoejt. Det er derfor
+ * accepten i SAGU-PLAN naevner vedhaeftningerne ved navn.
+ *
+ * En LOES fil - en uden note - foelger stadig kun sin ejer. Der er ikke noget
+ * at arve adgang fra.
+ */
 function hentFil(userId, id) {
-  // user_id i opslaget - som alt andet. En fil foelger sin ejer.
-  return db.prepare(`
-    SELECT * FROM attachments WHERE id = ? AND user_id = ? AND deleted_at IS NULL`).get(id, userId) || null;
+  const f = db.prepare('SELECT * FROM attachments WHERE id = ? AND deleted_at IS NULL').get(id);
+  if (!f) return null;
+  if (f.user_id === userId) return f;
+  if (!f.note_id) return null;
+  return hentNote(userId, f.note_id) ? f : null;
+}
+
+/**
+ * ... og filen, han maa BYTTE eller fjerne.
+ *
+ * Skarpere end `hentFil`: en note, man kun maa laese, maa man heller ikke
+ * rydde op i. En fil uden note er ejerens alene.
+ */
+function hentFilTilSkrivning(userId, id) {
+  const f = db.prepare('SELECT * FROM attachments WHERE id = ? AND deleted_at IS NULL').get(id);
+  if (!f) return null;
+  if (f.user_id === userId) return f;
+  if (!f.note_id) return null;
+  return maaSkrive(userId, f.note_id) ? f : null;
+}
+
+/** Ét sted: maa `userId` aendre den her note? */
+function maaSkrive(userId, noteId) {
+  return !!db.prepare(`
+    SELECT 1 FROM notes n
+     WHERE n.id = ? AND n.deleted_at IS NULL AND ${SKRIVBAR}`).get(noteId, userId, userId);
+}
+
+/** ... og EJER han den? Kun ejeren sletter, udgiver, deler og giver videre. */
+function ejerAf(userId, noteId) {
+  return !!db.prepare(`
+    SELECT 1 FROM notes n
+     WHERE n.id = ? AND n.deleted_at IS NULL AND ${EJET}`).get(noteId, userId);
 }
 
 /** Antal pr. note i ÉT opslag - aldrig en forespoergsel pr. raekke. */
@@ -4059,6 +5447,94 @@ function hentUdgivelseRaekke(userId, id) {
  * `hasPassword` frem for hashen: en hemmelighed forlader aldrig serveren, og
  * frontenden har kun brug for at vide, om kontakten er slaaet til.
  */
+/**
+ * En udgivelse bliver til ÉT sted.
+ *
+ * Ruten er tynd med vilje: MCP'ens `publish_note` (F10) skal traeffe de samme
+ * spaerringer som knappen i appen - SKRIVBAR frem for SYNLIG, »allerede
+ * udgivet«, slug-reglen, kodeordslaengden. To kopier ville betyde, at den ene
+ * glemte en af dem, og det er den slags glemsel, der lige praecis rammer
+ * noget, der ligger PAA NETTET.
+ *
+ * @returns {{share}|{fejl: [status, kode, besked]}}
+ */
+function opretUdgivelse(userId, o) {
+  const noteId = o.noteId ? str(o.noteId, 32) : null;
+  const bogId = o.notebookId ? str(o.notebookId, 32) : null;
+  if (!noteId === !bogId) {
+    return { fejl: [400, 'bad_request', 'Send either a noteId or a notebookId — not both, not neither.'] };
+  }
+  if (noteId) {
+    /*
+     * `EJET` - ikke engang `write` raekker her.
+     *
+     * At udgive er at laegge noget paa det AABNE net. Den beslutning hoerer
+     * til den, siden tilhoerer; en kollega med skriveadgang kan rette i
+     * teksten, men ikke bestemme, at hele undertraeet skal kunne laeses af
+     * enhver med et link. Stod der `SKRIVBAR`, ville ejeren opdage det
+     * bagefter - og »bagefter« er for sent for noget, der har vaeret
+     * offentligt (F11).
+     */
+    const note = db.prepare(`SELECT n.id FROM notes n
+                              WHERE n.id = ? AND n.deleted_at IS NULL AND ${EJET}`)
+      .get(noteId, userId);
+    if (!note) { return { fejl: [404, 'not_found', 'No such note.'] }; }
+    if (db.prepare('SELECT 1 FROM shares WHERE note_id = ? AND revoked_at IS NULL').get(noteId)) {
+      return { fejl: [409, 'already_published', 'That note is already published. Change the existing one.'] };
+    }
+  } else {
+    // En notesbog er altid ejerens egen - der er ingen ACL paa boeger.
+    const bog = db.prepare(`SELECT id FROM notebooks
+                             WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
+      .get(bogId, userId);
+    if (!bog) { return { fejl: [404, 'not_found', 'No such notebook.'] }; }
+    if (db.prepare('SELECT 1 FROM shares WHERE notebook_id = ? AND revoked_at IS NULL').get(bogId)) {
+      return { fejl: [409, 'already_published', 'That notebook is already published. Change the existing one.'] };
+    }
+  }
+  const mode = o.mode === 'single' ? 'single' : 'tree';
+  const slug = o.slug === undefined || o.slug === null || o.slug === ''
+    ? null : renSlug(o.slug);
+  if (o.slug && !slug) {
+    return { fejl: [400, 'bad_slug', 'A web address may hold letters a–z, digits and hyphens — nothing else.'] };
+  }
+  if (slug && slugTaget(slug, null)) {
+    return { fejl: [409, 'slug_taken', 'That address is already in use. Pick another one.'] };
+  }
+  const kodeord = typeof o.password === 'string' && o.password ? o.password : null;
+  if (kodeord && kodeord.length < 6) {
+    return { fejl: [400, 'bad_password', 'A wiki password must be at least 6 characters.'] };
+  }
+  const id = newId();
+  db.prepare(`INSERT INTO shares
+      (id, user_id, note_id, notebook_id, mode, slug, token, password_hash, allow_comments,
+       allow_search, allow_index, expires_at, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, userId, noteId, bogId, mode, slug,
+      crypto.randomBytes(24).toString('hex'),
+      kodeord ? hashPassword(kodeord) : null,
+      o.allowComments ? 1 : 0,
+      o.allowSearch === false ? 0 : 1,
+      o.allowIndex ? 1 : 0,
+      tidsstempel(o.expiresAt), now());
+  audit('udgivet', userId, noteId || bogId, bogId ? 'notebook' : mode);
+  return { share: formUdgivelse(hentUdgivelseRaekke(userId, id)) };
+}
+
+/**
+ * Udgiv en NOTE med undersider - det, MCP'en tilbyder.
+ *
+ * Adressen skrives med `offentligUrl()`, saa en model faar det link, Andreas
+ * ville have kopieret selv. Er feltet ikke sat, kan serveren ikke vide, hvad
+ * den hedder udefra, og stien er det aerlige svar.
+ */
+function udgivNote(userId, noteId, slug) {
+  const r = opretUdgivelse(userId, { noteId, mode: 'tree', slug });
+  if (r.fejl) return { fejl: r.fejl };
+  const base = offentligUrl();
+  return Object.assign({}, r.share, { url: base ? base + r.share.path : r.share.path });
+}
+
 function formUdgivelse(r) {
   if (!r) return null;
   return {
@@ -4127,6 +5603,26 @@ const wiki = wikiModul.opret({
    * Den samme rangering, det samme uddrag, det samme afsnits-anker - og den
    * kan derfor ikke komme til at finde en note, der ikke er delt.
    */
+  /*
+   * GitHub-indlejringen paa wikien - **kun fra cachen** (F12).
+   *
+   * Aldrig et kald. Siden er offentlig, og en fremmed, der genindlaeser
+   * hurtigt nok, ville ellers bruge ejerens GitHub-kvote op - med ejerens
+   * token, altsaa mod hans private repoer. Er svaret ikke hentet endnu, er
+   * linjen bare det link, den var; naeste gang ejeren selv aabner noten,
+   * fyldes cachen, og saa staar kortet der ogsaa her.
+   */
+  githubKort(url) {
+    const info = ghShared.tolk(url);
+    if (!info) return null;
+    const gemt = db.prepare('SELECT data FROM github_cache WHERE noegle = ?')
+      .get(ghShared.cacheNoegle(info));
+    if (!gemt) return null;
+    let e;
+    try { e = JSON.parse(gemt.data); } catch { return null; }
+    return e.slags === 'fil' ? wikiGhFil(e, info) : wikiGhSag(e);
+  },
+
   soegIUdgivelse(share, q, ider) {
     return soegNoter(share.user_id, q, 30, { ider, scope: share.id });
   },
@@ -4165,6 +5661,161 @@ const wiki = wikiModul.opret({
     } catch (err) { logError(`visningstaeller: ${err.message}`); }
   },
 });
+
+/* ====================================================== doda (F8) ======= */
+
+const doda = dodaModul.opret({
+  hentIndstilling: getSetting,
+  logError,
+});
+
+/* ================================================== github (F12) ======= */
+
+/*
+ * Kortene, som WIKIEN tegner dem.
+ *
+ * Samme indhold som i appen, men uden en eneste knap: der er ingen app-JS
+ * paa en offentlig side, og en kopier-knap, der ikke virker, er vaerre end
+ * ingen. Escapes gennem markdown-modulets egne - der er ÉN escape-regel i
+ * appen, og den bor dér.
+ */
+function wikiGhFil(e, info) {
+  const esc = markdown.esc;
+  const attr = markdown.attr;
+  const linjer = String(e.tekst || '').split('\n');
+  return `<div class="gh-kort">
+      <div class="gh-hoved">
+        <a class="gh-navn" href="${attr(e.url || ghShared.medRef(info, e.sha))}"
+          target="_blank" rel="noopener noreferrer nofollow">${esc(e.ejer)}/${esc(e.repo)} · ${esc(e.sti)}</a>
+        <span class="gh-sha">${esc(String(e.sha || '').slice(0, 7))}</span>
+      </div>
+      <div class="gh-kode"><table><tbody>${linjer.map((l, i) => `<tr>
+        <td class="gh-nr">${e.foersteLinje + i}</td><td class="gh-l">${esc(l) || '&nbsp;'}</td>
+      </tr>`).join('')}</tbody></table></div>
+      <div class="gh-fod meta">${e.linjer} of ${e.ialt} lines${e.afkortet ? ' — cut off here' : ''}</div>
+    </div>`;
+}
+
+function wikiGhSag(e) {
+  const esc = markdown.esc;
+  const attr = markdown.attr;
+  const ORD = { open: 'Open', closed: 'Closed', merged: 'Merged' };
+  return `<div class="gh-kort">
+      <div class="gh-hoved">
+        <a class="gh-navn" href="${attr(e.url)}" target="_blank"
+          rel="noopener noreferrer nofollow">${esc(e.titel || 'Untitled')}</a>
+        <span class="gh-status gh-${attr(e.tilstand)}">${esc(ORD[e.tilstand] || 'Open')}</span>
+      </div>
+      <div class="gh-fod meta">${esc(e.ejer)}/${esc(e.repo)}#${e.nummer}${
+  e.forfatter ? ` · ${esc(e.forfatter)}` : ''}</div>
+    </div>`;
+}
+
+const github = require('./github.js').opret({
+  hentIndstilling: getSetting,
+  logError,
+  nu: now,
+  hentCache: (noegle) => db.prepare('SELECT data, etag, hentet_at FROM github_cache WHERE noegle = ?')
+    .get(noegle) || null,
+  gemCache(noegle, data, etag) {
+    db.prepare(`INSERT INTO github_cache (noegle, data, etag, hentet_at) VALUES (?,?,?,?)
+                ON CONFLICT(noegle) DO UPDATE SET data = excluded.data, etag = excluded.etag,
+                                                  hentet_at = excluded.hentet_at`)
+      .run(noegle, data, etag, now());
+  },
+  // Et 304 betyder »det, du har, er rigtigt«. Stempl det friskt, ellers
+  // koster den samme uaendrede sag et kald hvert kvarter.
+  roerCache: (noegle) => db.prepare('UPDATE github_cache SET hentet_at = ? WHERE noegle = ?')
+    .run(now(), noegle),
+});
+
+/**
+ * Opgaverne, en note har sendt - opfrisket hoejst én gang i kvarteret.
+ *
+ * ÉT kald til doda for ALLE brugerens opgaver (`/changes?since=`), ikke ét
+ * pr. opgave. Vandmaerket staar i settings, saa det overlever en genstart -
+ * og dodas eget `now` bruges, saa de to ure ikke skal vaere enige.
+ *
+ * Fejler kaldet, sker der INGENTING: raekkerne staar der stadig med det, de
+ * sidst vidste. En bro, der bliver tom, naar den anden ende er nede, ligner
+ * en bro, der har mistet noget.
+ */
+async function opfriskDodaOpgaver(userId, tving) {
+  const raekker = db.prepare('SELECT id, doda_id, note_id, checked_at FROM doda_tasks WHERE user_id = ?')
+    .all(userId);
+  if (!raekker.length) return { opfrisket: false };
+  const aeldst = Math.min(...raekker.map((r) => r.checked_at || 0));
+  if (!tving && now() - aeldst < dodaModul.FRISK_I) return { opfrisket: false };
+
+  const since = Number(getSetting(userId, 'doda_since', '0')) || 0;
+  const r = await doda.aendringer(userId, since);
+  if (!r.ok) return { opfrisket: false, fejl: r.besked, kode: r.kode };
+
+  const kendte = new Map(raekker.map((x) => [x.doda_id, x.id]));
+  const opdater = db.prepare('UPDATE doda_tasks SET title = ?, status = ?, checked_at = ? WHERE id = ?');
+  const t = now();
+  for (const item of (r.data.items || [])) {
+    const id = kendte.get(String(item.id));
+    if (!id) continue;
+    const raekke = raekker.find((x) => x.id === id);
+    opdater.run(str(renOpgaveTitel(item.title, raekke ? raekke.note_id : ''), 300),
+      str(item.status, 40) || 'open', t, id);
+  }
+  // En opgave, der er SLETTET i doda, skal kunne ses som slettet - ikke
+  // blive staaende som aaben for evigt.
+  const slettet = db.prepare("UPDATE doda_tasks SET status = 'deleted', checked_at = ? WHERE id = ?");
+  for (const id of (r.data.deleted || [])) {
+    const eget = kendte.get(String(id));
+    if (eget) slettet.run(t, eget);
+  }
+  // Stempl ALLE raekker, ogsaa dem der ikke var med i svaret: de er uaendrede,
+  // og uden stemplet ville de udloese et nyt kald ved hvert opslag.
+  db.prepare('UPDATE doda_tasks SET checked_at = ? WHERE user_id = ?').run(t, userId);
+  setSetting(userId, 'doda_since', String(r.data.now || t));
+  return { opfrisket: true };
+}
+
+function dodaOpgaverFor(userId, noteId) {
+  return db.prepare(`SELECT id, doda_id, title, status, line, created_at, checked_at
+                       FROM doda_tasks WHERE user_id = ? AND note_id = ?
+                      ORDER BY created_at`).all(userId, noteId)
+    .map((r) => ({
+      id: r.id,
+      dodaId: r.doda_id,
+      title: r.title,
+      status: r.status,
+      line: r.line,
+      createdAt: r.created_at,
+      checkedAt: r.checked_at,
+    }));
+}
+
+/** Notens adresse, som den skal SES udefra (§15's offentlige adresse). */
+function noteAdresse(req, noteId) {
+  return `${offentligVaert(req)}/#note-${noteId}`;
+}
+
+/**
+ * Titlen UDEN den adresse, Sagu selv haengte paa.
+ *
+ * dodas fangst laegger hele linjen i titlen - det er dens maade, og
+ * MsGraphBud goer det samme i drift. Men i Sagus egen liste er adressen ren
+ * stoej: den peger tilbage paa den note, raekken allerede staar paa.
+ *
+ * Kun VORES eget link fjernes, og kun naar det peger paa DENNE note. Skriver
+ * nogen doeber opgaven om i doda, staar den nye titel uroert - det er hans
+ * ord, ikke maskineri (RUNE-ERFARINGER, MsGraphBud v7: »linkets tekst betyder
+ * noget; adressen er maskineri«).
+ */
+function renOpgaveTitel(raa, noteId) {
+  if (!noteId) return String(raa || '').trim();
+  // Adressen staar paa sin egen linje (se doda.js), men en modtager, der
+  // laegger hele teksten i titlen, giver den tilbage i ét stykke. Begge
+  // former fjernes - og KUN naar adressen peger paa DENNE note.
+  return String(raa || '')
+    .replace(new RegExp(`\\s*(?:\\n|[—-]\\s*)\\S*#note-${noteId}\\b`), '')
+    .trim();
+}
 
 /* ==================================================== import (F5) ======= */
 
@@ -4316,6 +5967,460 @@ const imp = importModul.opret({
   },
 });
 
+/* ========================================== mcp + connector (F10) ======= */
+
+/**
+ * Godkender UDEN at sende et svar.
+ *
+ * MCP formulerer sin egen 401 - den skal baere `WWW-Authenticate` med
+ * `resource_metadata`, og det er en anden form end API'ets JSON-fejl. Derfor
+ * kan `godkend()` ikke bruges her: den svarer selv.
+ *
+ * Returnerer det, `app/mcp.js` har brug for og intet mere: hvem noeglen
+ * tilhoerer, og hvad den maa. Vaerktoejerne kalder Sagus egne funktioner med
+ * `userId`, saa `user_id`-filteret ligger praecis samme sted som ellers.
+ */
+function godkendMcp(req) {
+  const auth = String(req.headers.authorization || '');
+  const bearer = auth.match(/^Bearer\s+(\S+)$/i);
+  const raa = bearer ? bearer[1] : String(req.headers['x-api-key'] || '');
+  if (!raa) return null;
+  const token = findToken(raa);
+  if (!token) {
+    logSecurity(`mcp-noegle-afvist ip=${clientIp(req)}`);
+    return null;
+  }
+  if (!rateAllow(`api:${token.id}`, 600, 3600)) return null;
+  // Noeglen baerer sin bruger. En noegle uden en levende bruger er ingen
+  // noegle - konti kan slettes, mens et token stadig ligger i en klient.
+  const bruger = db.prepare('SELECT id FROM users WHERE id = ?').get(token.user_id);
+  if (!bruger) return null;
+  stemplBrug(token);
+  return { token, userId: token.user_id, scope: token.scope, viaToken: true };
+}
+
+/** Samme scope-matrix som API'et. ÉT sted, ellers driver de fra hinanden. */
+function maaScope(auth, kraevet) {
+  const s = auth && auth.scope;
+  return !!(SCOPE_TILLADER[s] && SCOPE_TILLADER[s].has(kraevet));
+}
+
+/**
+ * 401-headeren, hele connector-opdagelsen haenger paa.
+ *
+ * `resource_metadata` peger paa RFC 9728-dokumentet; uden den kan claude.ai
+ * ikke finde autorisationsserveren og opgiver forbindelsen **uden at noget
+ * ser i stykker ud** (RUNE-ERFARINGER §9a, faelde 1). Adressen dannes af
+ * kaldets egen vaert - ikke af `public_url`: opdagelsen skal pege paa den
+ * server, klienten rent faktisk taler med.
+ */
+function oauthUdfordring(req) {
+  const b = vaert(req);
+  return `Bearer realm="${APP_NAME}", resource_metadata="${b}/.well-known/oauth-protected-resource"`;
+}
+
+const mcp = require('./mcp.js').opret({
+  appName: APP_NAME,
+  // Getter, ikke vaerdi: `computeInlineHash()` laeser versionen ud af
+  // index.html ved OPSTART, altsaa efter det her modul er lavet. En vaerdi
+  // her ville fryse serverInfo paa 1 for altid.
+  version: () => APP_VERSION_FIL,
+  maa: maaScope,
+  godkendMcp,
+  oauthUdfordring,
+  readJsonBody,
+  logError,
+  fangst,
+  findNotesbog,
+  soegNoter,
+  hentNote,
+  gemNote,
+  hentNotesboeger,
+  hentMaerker,
+  opretKommentar,
+  udgivNote,
+});
+
+/* ------------------------------------------------------------- oauth */
+
+/* Motoren staar i app/oauth.js og kender hverken database eller http.
+   Herunder er kun det, den ikke kan vide noget om: tabellerne, samtykke-
+   siden og ruterne. */
+
+const oauth = require('./oauth.js').opret({
+  gemKlient(k) {
+    db.prepare('INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?,?,?,?)')
+      .run(k.id, k.name, k.redirect_uris, now());
+    audit('oauth-klient-registreret', null, k.name, null);
+  },
+
+  hentKlient(id) {
+    return db.prepare('SELECT id, name, redirect_uris FROM oauth_clients WHERE id = ?')
+      .get(String(id || '')) || null;
+  },
+
+  /**
+   * Access- og refresh-token i ét.
+   *
+   * Access-tokenet gaar gennem `opretToken` og ender i `tokens` - praecis som
+   * en haandlavet noegle, bare med et `client_id` og et udloeb. Saa er der ÉN
+   * vej ind i API'et, og `findToken` er det ene sted, en noegle kan vise sig
+   * ugyldig.
+   */
+  udstedTokens(clientId, scope, userId) {
+    const klient = db.prepare('SELECT name FROM oauth_clients WHERE id = ?').get(clientId);
+    const t = now();
+    const adgang = opretToken(userId, klient ? klient.name : 'OAuth client', scope,
+      { clientId, expiresAt: t + oauth.ADGANG_LEVETID });
+    const refresh = `sagur_${crypto.randomBytes(32).toString('base64url')}`;
+    db.prepare(`INSERT INTO oauth_refresh (hash, token_id, client_id, scope, user_id, created_at)
+                VALUES (?,?,?,?,?,?)`)
+      .run(hashToken(refresh), adgang.id, clientId, scope, userId, t);
+    return {
+      access_token: adgang.key,
+      token_type: 'Bearer',
+      expires_in: oauth.ADGANG_LEVETID,
+      refresh_token: refresh,
+      scope,
+    };
+  },
+
+  findRefresh(raa) {
+    if (typeof raa !== 'string' || !raa.startsWith('sagur_')) return null;
+    return db.prepare(`
+      SELECT hash, token_id, client_id, scope, user_id FROM oauth_refresh
+       WHERE hash = ? AND revoked_at IS NULL`).get(hashToken(raa)) || null;
+  },
+
+  tilbagekaldRefresh(raa) {
+    db.prepare('UPDATE oauth_refresh SET revoked_at = ? WHERE hash = ? AND revoked_at IS NULL')
+      .run(now(), hashToken(String(raa || '')));
+  },
+});
+
+/**
+ * Alt, en klient har faaet HOS DENNE BRUGER: access-tokens OG refresh-tokens.
+ *
+ * `user_id` staar i begge WHERE'er, ogsaa selv om man kun kan naa hertil med
+ * sin egen session. Sagu er flerbruger, og den samme claude.ai-klientraekke
+ * kan have tokens hos to forskellige brugere: uden filteret ville en
+ * tilbagekaldelse rive den anden brugers forbindelse med.
+ */
+function tilbagekaldKlient(userId, clientId) {
+  const t = now();
+  const a = db.prepare(`UPDATE tokens SET revoked_at = ?
+                         WHERE client_id = ? AND user_id = ? AND revoked_at IS NULL`)
+    .run(t, clientId, userId);
+  const b = db.prepare(`UPDATE oauth_refresh SET revoked_at = ?
+                         WHERE client_id = ? AND user_id = ? AND revoked_at IS NULL`)
+    .run(t, clientId, userId);
+  return a.changes + b.changes;
+}
+
+/**
+ * Kun klienter, brugeren rent faktisk har godkendt.
+ *
+ * En registrering er ikke en forbindelse: claude.ai registrerer sig paa ny
+ * ved hvert forsoeg, ogsaa dem, der bliver afbrudt, og de forsoeg har ingen
+ * tokens. Uden EXISTS-tjekket ville listen fyldes med raekker, der baade er
+ * uinteressante og ser tilbagekaldte ud.
+ */
+function hentForbindelser(userId) {
+  return db.prepare(`
+    SELECT c.id, c.name, c.created_at,
+           (SELECT MAX(t.last_used_at) FROM tokens t
+             WHERE t.client_id = c.id AND t.user_id = ?) AS last_used_at,
+           (SELECT COUNT(*) FROM tokens t
+             WHERE t.client_id = c.id AND t.user_id = ?
+               AND t.revoked_at IS NULL AND t.expires_at > ?) AS active,
+           (SELECT COUNT(*) FROM oauth_refresh r
+             WHERE r.client_id = c.id AND r.user_id = ? AND r.revoked_at IS NULL) AS refreshes,
+           (SELECT t.scope FROM tokens t
+             WHERE t.client_id = c.id AND t.user_id = ?
+             ORDER BY t.created_at DESC LIMIT 1) AS scope
+      FROM oauth_clients c
+     WHERE EXISTS (SELECT 1 FROM tokens t WHERE t.client_id = c.id AND t.user_id = ?)
+     ORDER BY c.created_at DESC`).all(userId, userId, now(), userId, userId, userId);
+}
+
+/**
+ * Samtykkesiden.
+ *
+ * Ren HTML med en almindelig `<form method="post">` - ingen JavaScript. CSP'en
+ * tillader ikke inline scripts uden hash, og en side med to knapper har ingen
+ * grund til at have brug for dem. Tema-scriptet er den ENE undtagelse: det er
+ * ordret det samme som i index.html og har derfor allerede sin hash.
+ */
+function oauthSide(indhold) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>${markdown.esc(APP_NAME)}</title>
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<script data-theme-init>${INLINE_SCRIPT_TEXT}</script>
+<link rel="stylesheet" href="/style.css?v=${APP_VERSION_FIL}">
+</head>
+<body>
+<div class="gate"><div class="card">${indhold}</div></div>
+</body>
+</html>`;
+}
+
+/**
+ * @param {string} [formAction]  Ekstra oprindelse i CSP'ens `form-action`.
+ *
+ * `form-action` haandhaeves ogsaa paa den OMDIRIGERING, indsendelsen foerer
+ * til - ikke kun paa formularens egen adresse. Samtykkesiden POSTer til sig
+ * selv, men svarer 302 til klientens `redirect_uri`, og med bare `'self'`
+ * blokerer browseren hele indsendelsen. Fejlen peger paa `/oauth/authorize`,
+ * saa det ser ud, som om knappen ikke virker: intet sker, ingen navigation,
+ * ingen serverlog (RUNE-ERFARINGER §9a, faelde 4).
+ *
+ * Derfor tilfoejes praecis den ene oprindelse, klienten er REGISTRERET med -
+ * ikke `https:` i al almindelighed.
+ */
+function sendOauthHtml(res, status, html, formAction) {
+  securityHeaders(res);
+  if (formAction) {
+    res.setHeader('Content-Security-Policy',
+      String(res.getHeader('Content-Security-Policy'))
+        .replace("form-action 'self'", `form-action 'self' ${formAction}`));
+  }
+  res.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': Buffer.byteLength(html),
+    'Cache-Control': 'no-store',
+  });
+  res.end(html);
+}
+
+function oauthFejlside(res, besked) {
+  sendOauthHtml(res, 400, oauthSide(`
+    <h2 style="margin:0 0 10px">Connection refused</h2>
+    <p class="lead">${markdown.esc(besked)}</p>
+    <p class="gate-note">Nothing was granted. You can close this window.</p>`));
+}
+
+/**
+ * Skjult felt, der binder samtykke-formularen til netop denne session.
+ *
+ * SameSite=Lax goer allerede en cross-site POST cookieloes, men det her er den
+ * eneste cookie-godkendte rute i appen, der ikke laeser en JSON-krop - og
+ * naar en sikkerhedsregel bor i én faelles funktion, skal de ruter, der IKKE
+ * gaar gennem den, have deres egen.
+ */
+function samtykkeBevis(req) {
+  const s = parseCookies(req.headers.cookie)[SESSION_COOKIE] || '';
+  return crypto.createHmac('sha256', s).update('oauth-consent').digest('hex');
+}
+
+const OAUTH_FELTER = ['client_id', 'redirect_uri', 'response_type', 'scope',
+  'state', 'code_challenge', 'code_challenge_method'];
+
+function samtykkeHtml(req, q, o) {
+  const skjulte = OAUTH_FELTER
+    .map((n) => `<input type="hidden" name="${n}" value="${markdown.attr(q.get(n) || '')}">`).join('\n');
+  const hvad = o.scope === 'read'
+    ? 'read your notes, notebooks and tags'
+    : 'read <em>and change</em> your notes, notebooks and tags, and publish pages on the open web';
+  return oauthSide(`
+    <div class="brand">${markdown.esc(APP_NAME)}</div>
+    <p class="lead" style="text-align:center;margin:18px 0 22px">
+      <strong>${markdown.esc(o.klient.name)}</strong> wants to connect to your ${markdown.esc(APP_NAME)}.</p>
+    <p class="lead" style="margin:0 0 6px">If you allow it, it can ${hvad}.</p>
+    <p class="lead" style="margin:0 0 22px">It can never change your password, create access
+      keys, or revoke connections — those need this browser. It reaches your notes and
+      nobody else's.</p>
+    <form method="post" action="/oauth/authorize">
+      ${skjulte}
+      <input type="hidden" name="bevis" value="${samtykkeBevis(req)}">
+      <button class="btn primary" type="submit" name="godkend" value="ja" style="width:100%">Allow</button>
+      <button class="btn" type="submit" name="godkend" value="nej" style="width:100%;margin-top:8px">Cancel</button>
+    </form>
+    <p class="gate-note">You can revoke this again under Settings → Connected apps.
+      Signed in as <strong>${markdown.esc(o.bruger)}</strong>.</p>`);
+}
+
+/*
+ * CORS.
+ *
+ * De her fire endepunkter er offentlige opdagelses- og udvekslingspunkter
+ * uden ambient legitimation: der er ingen cookie at misbruge, og en klient i
+ * en browser skal kunne naa dem.
+ *
+ * `Cross-Origin-Resource-Policy: same-origin` fra `securityHeaders` ville
+ * spaerre svaret ALLIGEVEL - browseren kaster det efter CORS-tjekket. Derfor
+ * saetter de her ruter deres egen header og gaar udenom (§9a, faelde 3).
+ */
+function oauthCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, MCP-Protocol-Version');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Max-Age', '3600');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+}
+
+async function haandterOauth(req, res, urlPath, query) {
+  const metode = req.method;
+
+  if (metode === 'OPTIONS') {
+    oauthCors(res);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  /* --- opdagelse. Begge stier serveres: RFC 9728 haenger ressourcens sti paa
+     (/.well-known/oauth-protected-resource/mcp), mens flere klienter proever
+     den nogne form foerst. To linjer her sparer en tavs opdagelsesfejl. --- */
+  if (/^\/\.well-known\/oauth-protected-resource(\/.*)?$/.test(urlPath)) {
+    oauthCors(res);
+    sendJson(res, 200, oauth.beskyttetRessource(req));
+    return;
+  }
+  if (/^\/\.well-known\/oauth-authorization-server(\/.*)?$/.test(urlPath)) {
+    oauthCors(res);
+    sendJson(res, 200, oauth.serverMetadata(req));
+    return;
+  }
+
+  /* --- dynamisk klientregistrering (RFC 7591) --- */
+  if (urlPath === '/oauth/register' && metode === 'POST') {
+    oauthCors(res);
+    /*
+     * 60 i timen. En klient registrerer sig ved HVERT forsoeg, ogsaa dem, der
+     * bliver afbrudt, saa graensen skal ligge langt over almindelig fumlen:
+     * rammes den, findes klienten aldrig, og brugeren faar »unknown client«
+     * paa samtykkesiden - en fejl, der peger et helt andet sted hen end
+     * aarsagen.
+     */
+    if (!rateAllow(`oauth-register:${clientIp(req)}`, 60, 3600)) {
+      sendJson(res, 429, { error: 'temporarily_unavailable', error_description: 'Too many registrations. Try again later.' });
+      return;
+    }
+    // tilgivende: der er ingen cookie i spil, saa JSON-kravet (en
+    // CSRF-barriere) giver ingen mening her.
+    const krop = await readJsonBody(req, true);
+    const r = oauth.registrer(krop);
+    if (r.fejl) {
+      sendJson(res, 400, { error: 'invalid_redirect_uri', error_description: r.fejl });
+      return;
+    }
+    sendJson(res, 201, r.klient);
+    return;
+  }
+
+  /* --- samtykke --- */
+  if (urlPath === '/oauth/authorize' && (metode === 'GET' || metode === 'POST')) {
+    const bruger = sessionUser(req);
+    if (!bruger) {
+      if (metode !== 'GET') { oauthFejlside(res, 'Your session expired while approving. Start the connection again.'); return; }
+      // Log ind foerst, og kom saa tilbage hertil. Frontenden sender KUN
+      // videre til stier, der begynder med /oauth/authorize - aldrig til et
+      // fremmed sted (aaben viderestilling).
+      res.writeHead(302, { Location: `/?next=${encodeURIComponent(req.url)}`, 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+
+    const felter = metode === 'GET' ? query : new URLSearchParams();
+    if (metode === 'POST') {
+      const krop = await readJsonBody(req, true);
+      for (const n of OAUTH_FELTER) felter.set(n, String(krop[n] || ''));
+      // Laengden sammenlignes paa BUFFERE, ikke paa strenge: timingSafeEqual
+      // kaster ved forskellig laengde, og et flerbyte-tegn ville give to
+      // strenge af samme laengde, men to buffere af forskellig.
+      const forventet = Buffer.from(samtykkeBevis(req));
+      const givet = Buffer.from(String(krop.bevis || ''));
+      if (givet.length !== forventet.length || !crypto.timingSafeEqual(givet, forventet)) {
+        logSecurity(`oauth-samtykke-afvist ip=${clientIp(req)}`);
+        oauthFejlside(res, 'That approval did not come from this browser session.');
+        return;
+      }
+      if (String(krop.godkend || '') !== 'ja') {
+        // Afvisningen meldes tilbage til klienten, som protokollen kraever -
+        // ellers staar den og venter paa en kode, der aldrig kommer.
+        const o = oauth.tjekAutorisation(felter);
+        if (o.fejl || !o.redirect) { oauthFejlside(res, 'Connection cancelled.'); return; }
+        const url = new URL(o.redirect);
+        url.searchParams.set('error', 'access_denied');
+        if (o.state) url.searchParams.set('state', o.state);
+        audit('oauth-afvist', bruger.id, o.klient.name, clientIp(req));
+        res.writeHead(302, { Location: url.toString(), 'Cache-Control': 'no-store' });
+        res.end();
+        return;
+      }
+    }
+
+    const o = oauth.tjekAutorisation(felter);
+    if (o.fejl) { oauthFejlside(res, o.fejl); return; }
+
+    if (metode === 'GET') {
+      // Oprindelsen kommer fra en redirect_uri, der ALLEREDE er valideret mod
+      // klientens registrerede liste - ikke fra det, browseren sendte.
+      let maal = '';
+      try { maal = new URL(o.redirect).origin; } catch { /* kan ikke ske efter tjekket */ }
+      sendOauthHtml(res, 200,
+        samtykkeHtml(req, felter, Object.assign({ bruger: bruger.username }, o)), maal);
+      return;
+    }
+
+    const url = oauth.giveTilladelse(o, bruger.id);
+    audit('oauth-godkendt', bruger.id, o.klient.name, o.scope);
+    logSecurity(`oauth-godkendt klient=${o.klient.name}`);
+    res.writeHead(302, { Location: url, 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
+
+  /* --- token --- */
+  if (urlPath === '/oauth/token' && metode === 'POST') {
+    oauthCors(res);
+    if (!rateAllow(`oauth-token:${clientIp(req)}`, 120, 3600)) {
+      sendJson(res, 429, { error: 'temporarily_unavailable', error_description: 'Too many token requests.' });
+      return;
+    }
+    // OAuth-klienter sender application/x-www-form-urlencoded.
+    const krop = await readJsonBody(req, true);
+    const art = String(krop.grant_type || '');
+    let r;
+    if (art === 'authorization_code') r = oauth.byttKode(krop);
+    else if (art === 'refresh_token') r = oauth.forny(krop);
+    else { sendJson(res, 400, { error: 'unsupported_grant_type' }); return; }
+
+    if (r.fejl) {
+      logSecurity(`oauth-grant-afvist art=${art} ip=${clientIp(req)}`);
+      sendJson(res, 400, { error: r.fejl, error_description: 'That code or refresh token is not valid any more.' });
+      return;
+    }
+    sendJson(res, 200, r);
+    return;
+  }
+
+  /* --- tilbagekaldelse (RFC 7009). Svarer ALTID 200: et ugyldigt token er
+     allerede tilbagekaldt, og alt andet ville roebe, hvad der findes. --- */
+  if (urlPath === '/oauth/revoke' && metode === 'POST') {
+    oauthCors(res);
+    const krop = await readJsonBody(req, true);
+    const t = String(krop.token || '');
+    if (t.startsWith('sagur_')) {
+      db.prepare('UPDATE oauth_refresh SET revoked_at = ? WHERE hash = ? AND revoked_at IS NULL')
+        .run(now(), hashToken(t));
+    } else if (t.startsWith('sagu_')) {
+      db.prepare(`UPDATE tokens SET revoked_at = ?
+                   WHERE hash = ? AND client_id IS NOT NULL AND revoked_at IS NULL`)
+        .run(now(), hashToken(t));
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  sendJson(res, 404, { error: 'unknown endpoint' });
+}
+
 /* ------------------------------------------------------------ server */
 
 const server = http.createServer(async (req, res) => {
@@ -4331,6 +6436,29 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    /*
+     * MCP staar FOER alt andet - ogsaa foer /api/.
+     *
+     * Den har sin egen godkendelse (`godkendMcp`), sin egen 401 med
+     * `WWW-Authenticate`, sit eget Origin-tjek mod DNS-rebinding og sin egen
+     * fejlform (JSON-RPC, ikke Sagus `{error, message}`). Laegges den ind
+     * under API-routeren, faar den API'ets 401 uden `resource_metadata` - og
+     * saa opgiver claude.ai forbindelsen, uden at noget ser i stykker ud.
+     */
+    if (urlPath === '/mcp') {
+      securityHeaders(res);
+      await mcp.haandter(req, res);
+      return;
+    }
+    /*
+     * OAuth-ruterne staar ogsaa udenfor: de svarer med HTML (samtykkesiden)
+     * og med OAuth's egen fejlform (`{error, error_description}`), og de
+     * skal naas fra en fremmed oprindelse - hvad ingen anden rute i Sagu maa.
+     */
+    if (urlPath.startsWith('/oauth/') || urlPath.startsWith('/.well-known/oauth-')) {
+      await haandterOauth(req, res, urlPath, query);
+      return;
+    }
     if (urlPath.startsWith('/api/')) {
       securityHeaders(res);
       const rute = findRute(req.method, urlPath);
@@ -4458,6 +6586,30 @@ function tjekFts5() {
 }
 
 migrate();
+
+/*
+ * Er indekset tomt, mens der ER noter, bygges det igen.
+ *
+ * Det daekker m12's ombygning (indekset blev kastet vaek og skal fyldes), og
+ * det daekker enhver anden maade at miste det paa. Vagten er tilstanden, ikke
+ * migrationsnummeret: en genopbygning, der kun koeres af ÉN migration, er en
+ * engangshandling, man ikke kan bruge igen - og et tomt soegeindeks er tavst.
+ * Appen svarer bare »intet matcher«.
+ */
+function sikreIndeks() {
+  try {
+    const noter = db.prepare('SELECT COUNT(*) AS n FROM notes WHERE deleted_at IS NULL').get().n;
+    if (!noter) return;
+    if (db.prepare('SELECT COUNT(*) AS n FROM note_fts').get().n) return;
+    const t0 = Date.now();
+    const antal = genopbygIndeks();
+    log(`soegeindekset genopbygget: ${antal} noter paa ${Date.now() - t0} ms`);
+  } catch (err) {
+    logError(`kunne ikke genopbygge soegeindekset: ${err.message}`);
+  }
+}
+sikreIndeks();
+
 sikreDir(FILES_DIR);
 sikreDir(UPLOAD_DIR);
 computeInlineHash();

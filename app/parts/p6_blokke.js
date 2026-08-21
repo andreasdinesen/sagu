@@ -102,6 +102,8 @@ function markerTekst(el) {
 /* ------------------------------------------------------ afkrydsningsfelter */
 
 function bindTjek(host) {
+  // Tredje sted, en redigering kan begynde - se maaRette() (F11).
+  if (!maaRette(editor.note)) return;
   host.querySelectorAll('[data-tjek]').forEach((el) => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();       // maa ikke ogsaa aabne blokken raat

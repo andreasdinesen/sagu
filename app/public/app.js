@@ -1,3 +1,211 @@
+/* ---- shared/github.js ---- */
+/*
+ * Sagu - ÉN regel for hvad en GitHub-adresse er. To køresteder.
+ *
+ * ── Hvorfor delt ──────────────────────────────────────────────────────────
+ *
+ * Tre steder skal kende formen, og de skal kende den ENS:
+ *
+ *   - **browseren**, for at se at det, man lige har indsat, er en GitHub-fil
+ *     og bede serveren om at fryse den,
+ *   - **rendereren**, for at vide at linjen er en indlejring og ikke et link,
+ *   - **serveren**, for at oversaette adressen til et API-kald - og for at
+ *     wikien kan tegne det samme uden app-JS (F6).
+ *
+ * Tre kopier ville betyde tre lidt forskellige regler, og forskellen ville
+ * vise sig som »indlejringen virker i appen, men ikke paa wikien«.
+ *
+ * ── Reglen ────────────────────────────────────────────────────────────────
+ *
+ * Kun tre former genkendes, og de skal fylde **hele linjen**:
+ *
+ *     .../blob/<ref>/<sti>          en fil, valgfrit #L10 eller #L10-L20
+ *     .../issues/<nummer>           en sag
+ *     .../pull/<nummer>             en aendringsanmodning
+ *
+ * Alt andet - repo-roden, `/tree/` (en mappe), gists, en release - er et
+ * almindeligt link. **En indlejring, der ikke kan vise noget nyttigt, skal
+ * ikke se ud som en indlejring**, og et halvtomt kort er vaerre end et link,
+ * der bare virker.
+ */
+
+(function (root, fabrik) {
+  if (typeof module === 'object' && module.exports) module.exports = fabrik();
+  else root.saguGithub = fabrik();
+}(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  /** En 40-tegns sha. Det er DEN, der gør en indlejring frossen. */
+  const ER_SHA = /^[0-9a-f]{40}$/;
+
+  const ejerNavn = (s) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(s);
+  const repoNavn = (s) => /^[A-Za-z0-9._-]{1,100}$/.test(s);
+
+  /**
+   * Adressen -> hvad den peger paa. Ren funktion, intet net.
+   *
+   * @returns {null|{slags:'fil', ejer, repo, ref, frossen, sti, fra, til}
+   *              |{slags:'issue'|'pr', ejer, repo, nummer}}
+   */
+  function tolk(raa) {
+    const s = String(raa || '').trim();
+    if (!s) return null;
+    let u;
+    try { u = new URL(s); } catch { return null; }
+    // Kun github.com selv. En GitHub Enterprise-vaert har sit eget API og
+    // sin egen godkendelse, og at gaette paa den ville sende et token et
+    // sted hen, ingen har peget paa.
+    if (u.protocol !== 'https:' || u.hostname.toLowerCase() !== 'github.com') return null;
+
+    const dele = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    if (dele.length < 3) return null;
+    const [ejer, repo, art] = dele;
+    if (!ejerNavn(ejer) || !repoNavn(repo)) return null;
+
+    if ((art === 'issues' || art === 'pull') && dele.length === 4) {
+      const nummer = Number(dele[3]);
+      if (!Number.isInteger(nummer) || nummer < 1 || nummer > 9_999_999) return null;
+      return { slags: art === 'pull' ? 'pr' : 'issue', ejer, repo, nummer };
+    }
+
+    if (art === 'blob' && dele.length >= 5) {
+      const ref = dele[3];
+      const sti = dele.slice(4).join('/');
+      if (!ref || !sti) return null;
+      /*
+       * Der staar IKKE en `..`-vagt her, og det er malt frem.
+       *
+       * `new URL()` normaliserer stien FOER vi ser den - ogsaa den kodede
+       * form: `/blob/main/a/%2e%2e/b.js` bliver til `/blob/main/b.js`, og
+       * `/blob/main/%2e%2e/etc/passwd` bliver til `/o/r/etc/passwd`, som
+       * falder paa `art !== 'blob'`. En vagt her ville altsaa aldrig kunne
+       * fyre - og en vagt, der ikke kan fyre, er vaerre end ingen: den naeste,
+       * der laeser, tror der er noget at bekymre sig om, og bygger videre paa
+       * en spaerring, der ikke findes (samme laerdom som m12's kolonne).
+       *
+       * Stien naar i oevrigt aldrig vores egen disk. Den bliver til et
+       * GitHub-API-kald og intet andet.
+       */
+      const { fra, til } = linjer(u.hash);
+      return { slags: 'fil', ejer, repo, ref, frossen: ER_SHA.test(ref), sti, fra, til };
+    }
+
+    return null;
+  }
+
+  /**
+   * `#L10` og `#L10-L20`.
+   *
+   * `#L20-L10` vendes om frem for at blive afvist: det er en fumlet
+   * markering, ikke et forsoeg paa noget - og en indlejring, der forsvinder,
+   * fordi man tog linjerne i den forkerte raekkefoelge, ligner en fejl.
+   */
+  function linjer(hash) {
+    const m = String(hash || '').match(/^#L(\d+)(?:-L(\d+))?$/);
+    if (!m) return { fra: null, til: null };
+    let fra = Number(m[1]);
+    let til = m[2] ? Number(m[2]) : fra;
+    if (!fra) return { fra: null, til: null };
+    if (til < fra) { const x = fra; fra = til; til = x; }
+    return { fra, til };
+  }
+
+  /** Er HELE linjen én GitHub-adresse? Det er dét, der gør den til en blok. */
+  function linjeAdresse(linje) {
+    const s = String(linje || '').trim();
+    if (/\s/.test(s)) return null;
+    return tolk(s);
+  }
+
+  /** Adressen igen - med en bestemt ref. Bruges til at fryse og til at opfriske. */
+  function medRef(info, ref) {
+    const sti = info.sti.split('/').map(encodeURIComponent).join('/');
+    const anker = info.fra ? `#L${info.fra}${info.til && info.til !== info.fra ? `-L${info.til}` : ''}` : '';
+    return `https://github.com/${info.ejer}/${info.repo}/blob/${ref}/${sti}${anker}`;
+  }
+
+  /** Adressen, som den skal VISES: ejer/repo, sti og eventuelt linjeinterval. */
+  function navn(info) {
+    if (info.slags !== 'fil') return `${info.ejer}/${info.repo}#${info.nummer}`;
+    const l = info.fra ? `:${info.fra}${info.til !== info.fra ? `-${info.til}` : ''}` : '';
+    return `${info.ejer}/${info.repo} · ${info.sti}${l}`;
+  }
+
+  /**
+   * Noeglen, et svar caches under.
+   *
+   * En FROSSEN fil har en sha i noeglen, saa svaret kan gemmes for evigt: det
+   * kan ikke laves om. En sag eller en gren kan aendre sig, og deres noegle
+   * er derfor uden sha - de skal have et udloeb.
+   */
+  function cacheNoegle(info) {
+    if (info.slags === 'fil') {
+      return `fil:${info.ejer}/${info.repo}@${info.ref}:${info.sti}`;
+    }
+    return `${info.slags}:${info.ejer}/${info.repo}#${info.nummer}`;
+  }
+
+  /** Endelsen -> sproget, kodeblokken maerkes med. Kun til fremhaevning. */
+  function sprogFor(sti) {
+    const m = String(sti || '').match(/\.([A-Za-z0-9]+)$/);
+    if (!m) return '';
+    const e = m[1].toLowerCase();
+    const KENDTE = {
+      js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+      ts: 'typescript', tsx: 'typescript', py: 'python', rb: 'ruby', go: 'go',
+      rs: 'rust', java: 'java', kt: 'kotlin', swift: 'swift', c: 'c', h: 'c',
+      cpp: 'cpp', cc: 'cpp', hpp: 'cpp', cs: 'csharp', php: 'php',
+      sh: 'bash', bash: 'bash', zsh: 'bash', ps1: 'powershell',
+      sql: 'sql', json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'toml',
+      md: 'markdown', html: 'html', css: 'css', scss: 'scss', xml: 'xml',
+      dockerfile: 'dockerfile', ini: 'ini', conf: 'ini',
+    };
+    return KENDTE[e] || '';
+  }
+
+  return { tolk, linjeAdresse, medRef, navn, cacheNoegle, sprogFor, ER_SHA };
+}));
+
+/* ---- shared/maerker.js ---- */
+/*
+ * Sagu - én regel for `#maerke` i en tekst. To koersteder.
+ *
+ * Reglen laa i frontenden, indtil API'et (F9) fik brug for den samme: en
+ * genvej paa en telefon skriver `Ny router #drift`, og maerket skal blive et
+ * rigtigt maerke - praecis som naar man skriver det i titelfeltet. Der maa
+ * ikke findes en saerlig API-vej ind i dataene (RUNE-ERFARINGER §9a), saa
+ * reglen er flyttet hertil frem for kopieret.
+ *
+ * To ting er begge noedvendige, og begge er dyrt laert:
+ *
+ *  - **Markoeren skal staa ved linjestart eller efter et MELLEMRUM.** Ellers
+ *    bliver `https://dr.dk/nyheder#sport` til et maerke (doda F1).
+ *  - **Maerket skal klaebe direkte til tegnet** (`#drift`, ikke `# drift`).
+ *    Saa er der intet at trimme - og det var netop dér, den gamle fejl kom
+ *    fra: man trimmede vaerdien og maalte laengden paa den utrimmede.
+ */
+
+(function (root, fabrik) {
+  if (typeof module === 'object' && module.exports) module.exports = fabrik();
+  else root.saguMaerker = fabrik();
+}(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  function pluk(raa) {
+    const maerker = [];
+    const tekst = String(raa || '')
+      .replace(/(^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{0,59})/gu, (helt, foer, navn) => {
+        maerker.push(navn);
+        return foer;
+      })
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { tekst, maerker };
+  }
+
+  return { pluk };
+}));
+
 /* ---- shared/markdown.js ---- */
 /*
  * Sagu - markdown-renderer. ÉN renderer, tre koersteder.
@@ -394,6 +602,15 @@
    *   editor ved, hvilket afsnit der blev klikket i.
    * @returns {{html: string, overskrifter: Array<{niveau, tekst, id}>}}
    */
+  /*
+   * »Hele afsnittet er ÉN adresse.«
+   *
+   * Bevidst snaever: `https://` og ingen mellemrum. En linje med tekst
+   * omkring adressen er en saetning, ikke en indlejring - og et afsnit paa
+   * to linjer, hvor den ene er en adresse, er heller ikke.
+   */
+  const ER_BAR_URL = /^https:\/\/[^\s<>"']+$/;
+
   function render(md, opt) {
     const o = opt || {};
     const stykker = blokke(md);
@@ -454,6 +671,22 @@
             <thead><tr>${b.hoved.map((c, i) => celle(c, i, 'th')).join('')}</tr></thead>
             <tbody>${b.raekker.map((r) => `<tr>${r.map((c, i) => celle(c, i, 'td')).join('')}</tr>`).join('')}</tbody>
           </table></div>`;
+      } else if (b.slags === 'afsnit' && o.bartLink && ER_BAR_URL.test(b.tekst.trim())) {
+        /*
+         * Et afsnit, der ER én bar adresse, kan blive til noget andet.
+         *
+         * Krogen hedder `bartLink` og ikke `github`, fordi **rendereren maa
+         * ikke kende domaenet**. Den ved kun, at linjen er én adresse og
+         * intet andet - hvad den saa skal blive til, bestemmer vaerten
+         * (F12: en kode-indlejring eller en sags-chip). Samme snit som
+         * `linkUrl` og `billedUrl`.
+         *
+         * Svarer krogen null, er det et helt almindeligt afsnit. En
+         * indlejring, der ikke kan vises, skal falde tilbage til det link,
+         * der stod der - ikke til ingenting.
+         */
+        const saerlig = o.bartLink(b.tekst.trim(), b);
+        html += saerlig || `<p${mrk}>${afsnitHtml(b.tekst, o)}</p>`;
       } else {
         html += `<p${mrk}>${afsnitHtml(b.tekst, o)}</p>`;
       }
@@ -1118,6 +1351,748 @@
   return { tolk, tolkAlder, fold, beskriv, FILTRE, HAS };
 }));
 
+/* ---- p10_deling.js ---- */
+'use strict';
+/*
+ * Sagu - deling mellem konti (F11).
+ *
+ * ── Hvor beslutningen tages ───────────────────────────────────────────────
+ *
+ * Ruden hoerer paa noteskaermen, ved siden af udgivelsen, fordi de to er den
+ * samme slags valg med to forskellige raekkevidder: »kollegaerne paa nettet«
+ * og »Bo, med sin egen konto«. Listen over det, ANDRE har delt med mig, staar
+ * for sig - den er ikke mit arkiv, og den skal ikke blandes ind i det.
+ *
+ * ── Det, ruden skal sige HOEJT ────────────────────────────────────────────
+ *
+ * At dele er at give noget fra sig, saa der maa ikke vaere tvivl om hvad. Tre
+ * ting staar derfor skrevet i selve ruden og ikke kun i koden:
+ *
+ *   - at undersiderne foelger med,
+ *   - at `write` betyder »skriv i den«, ikke »bestem over den«,
+ *   - og at »giv videre« flytter ejerskabet, ikke bare adgangen.
+ *
+ * En rude, der bare siger »Share«, faar folk til at gaette - og et gaet om
+ * hvem der kan se hvad er den slags fejl, man opdager for sent.
+ */
+
+/**
+ * Maa jeg rette i den her note?
+ *
+ * ÉT sted, brugt af de tre steder en redigering kan BEGYNDE: titelfeltet,
+ * det at aabne en blok, og tjekbokse. Spredt ud ville den ene blive glemt -
+ * og en flade, der lader dig skrive og foerst afviser ved gemningen, ligner
+ * en fejl i appen, ikke en spaerring (RUNE-ERFARINGER, tovo v8).
+ *
+ * Serveren afviser uanset hvad; det her er, for at man ikke skal proeve.
+ */
+function maaRette(n) {
+  return !n || n.mine !== false || n.level === 'write';
+}
+
+/** Knappen i notens vaerktoejsraekke. Kun paa MINE noter - kun ejeren deler. */
+function delKnapHtml(n) {
+  if (!n || n.mine === false) return '';
+  const paa = !!n.sharedWith;
+  return `<button class="iconbtn${paa ? ' paa' : ''}" id="delBtn"
+    aria-pressed="${paa ? 'true' : 'false'}"
+    title="${paa ? 'Shared with other accounts' : 'Share with another account'}">${icon('shared', 16)}</button>`;
+}
+
+/**
+ * Baandet over en note, der ikke er min.
+ *
+ * En redigeringsflade, der ser ud som ens egen og saa afviser gemningen, er
+ * vaerre end en, der siger det paa forhaand (RUNE-ERFARINGER, tovo v8: en
+ * spaerring, man foerst moeder NAAR man har skrevet, ligner en fejl i appen).
+ */
+function delingsBaandHtml(n) {
+  if (!n || n.mine !== false) return '';
+  const skriv = n.level === 'write';
+  return `<div class="delt-baand${skriv ? ' kan-skrive' : ''}">
+    ${icon('shared', 16)}
+    <div>
+      <strong>${esc(n.owner || 'Someone')} shared this page with you.</strong>
+      <div class="meta saetning">${skriv
+    ? 'You can edit it and add subpages. Deleting, publishing and sharing it on stay with '
+      + `${esc(n.owner || 'the owner')}.`
+    : 'You can read it. Nothing you type here would be saved.'}</div>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ ruden */
+
+async function visDelPanel() {
+  const n = editor.note;
+  if (!n || n.mine === false) return;
+  const gammel = document.getElementById('delPanel');
+  if (gammel) { gammel.remove(); return; }
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'delPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Share “${esc(n.title || 'Untitled')}”</h2>
+        <button class="iconbtn" id="delLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop" id="delKrop"><p class="meta saetning">Loading…</p></div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#delLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  const krop = host.querySelector('#delKrop');
+  let adgang = null;
+  let folk = [];
+  try {
+    adgang = (await api('GET', `/api/v1/notes/${n.id}/access`));
+    folk = (await api('GET', '/api/v1/people')).people;
+  } catch (ex) {
+    krop.innerHTML = `<p class="meta saetning">${esc(ex.message)}</p>`;
+    return;
+  }
+
+  function tegn() {
+    krop.innerHTML = delKropHtml(adgang, folk);
+    bind();
+    // Knappen skal foelge med med det samme - ellers ser man ikke, at noget
+    // skete, foer siden tegnes forfra.
+    n.sharedWith = adgang.people.length;
+    const knap = document.getElementById('delBtn');
+    if (knap) {
+      knap.classList.toggle('paa', !!adgang.people.length);
+      knap.setAttribute('aria-pressed', adgang.people.length ? 'true' : 'false');
+    }
+  }
+
+  function fejl(besked) {
+    const el = krop.querySelector('#delFejl');
+    if (el) { el.textContent = besked; el.hidden = false; }
+  }
+
+  function bind() {
+    const q = (id) => krop.querySelector(`#${id}`);
+
+    const giv = q('delGiv');
+    if (giv) {
+      giv.addEventListener('click', async () => {
+        const navn = q('delHvem').value;
+        if (!navn) { fejl('Pick who it is for.'); return; }
+        giv.disabled = true;
+        try {
+          await api('POST', `/api/v1/notes/${n.id}/access`, {
+            username: navn,
+            level: q('delNiveau').value,
+            tree: q('delTrae').checked,
+          });
+          adgang = await api('GET', `/api/v1/notes/${n.id}/access`);
+          toast(`Shared with ${navn}.`);
+          tegn();
+        } catch (ex) { fejl(ex.message); giv.disabled = false; }
+      });
+    }
+
+    krop.querySelectorAll('[data-fjern]').forEach((el) => {
+      el.addEventListener('click', async () => {
+        try {
+          await api('DELETE', `/api/v1/notes/${n.id}/access/${el.dataset.fjern}`);
+          adgang = await api('GET', `/api/v1/notes/${n.id}/access`);
+          toast('Access removed. It stops working right away.');
+          tegn();
+        } catch (ex) { fejl(ex.message); }
+      });
+    });
+
+    const over = q('delOverdrag');
+    if (over) {
+      over.addEventListener('click', async () => {
+        const navn = q('delNyEjer').value;
+        if (!navn) { fejl('Pick who should have it.'); return; }
+        /*
+         * Ejerskifte er den ene handling her, der ikke kan fortrydes fra MIN
+         * side bagefter - den nye ejer kan tage min adgang. Derfor et
+         * spoergsmaal, og et der siger hvad der sker.
+         */
+        if (!confirm(`Hand “${n.title || 'Untitled'}” and everything under it to ${navn}?\n\n`
+          + 'They become the owner. You keep write access until they remove it.')) return;
+        over.disabled = true;
+        try {
+          const d = await api('POST', `/api/v1/notes/${n.id}/owner`, { username: navn });
+          toast(`${d.newOwner.username} owns it now — ${d.antal} page${d.antal === 1 ? '' : 's'}.`);
+          luk();
+          await hentTrae();
+          tegnTrae();
+          await aabnNote(n.id);
+        } catch (ex) { fejl(ex.message); over.disabled = false; }
+      });
+    }
+  }
+
+  tegn();
+}
+
+function delKropHtml(adgang, folk) {
+  const brugt = new Set(adgang.people.map((p) => p.username));
+  const ledige = folk.filter((p) => !brugt.has(p.username));
+  return `
+    <p class="delFejl gate-error" id="delFejl" hidden></p>
+
+    ${adgang.people.length ? `<div class="tablewrap"><table class="data">
+      <thead><tr><th>Account</th><th>Can</th><th></th></tr></thead>
+      <tbody>${adgang.people.map((p) => `<tr>
+        <td>${esc(p.username)}</td>
+        <td>${p.level === 'write' ? 'Read and write' : 'Read'}${p.tree ? '' : ' — this page only'}</td>
+        <td style="text-align:right"><button class="btn ghost danger"
+          data-fjern="${esc(p.userId)}">Remove</button></td>
+      </tr>`).join('')}</tbody></table></div>`
+    : '<p class="meta saetning">Nobody else can see this page yet.</p>'}
+
+    ${ledige.length ? `
+      <div class="btnrow" style="margin-top:14px">
+        <select class="input" id="delHvem" style="max-width:180px">
+          ${ledige.map((p) => `<option value="${esc(p.username)}">${esc(p.username)}</option>`).join('')}
+        </select>
+        <select class="input" id="delNiveau" style="max-width:160px">
+          <option value="read">Can read</option>
+          <option value="write">Can write</option>
+        </select>
+        <button class="btn" id="delGiv">Share</button>
+      </div>
+      <label class="switch"><input type="checkbox" id="delTrae" checked>
+        <span>Include the subpages — pages added later come along too</span></label>
+      <p class="meta saetning"><strong>Can write</strong> means they can edit the text and add
+      subpages. Deleting, publishing on the web, sharing it on and handing it over stay
+      with you — those are not things someone should be able to do to your archive by
+      accident.</p>`
+    : `<p class="meta saetning">${folk.length
+      ? 'Everyone with an account already has access.'
+      : 'There are no other accounts yet. An administrator can open sign-up in Settings.'}</p>`}
+
+    ${folk.length ? `
+      <h3 style="margin-top:22px">Hand it over</h3>
+      <p class="meta saetning">Gives this page <em>and everything under it</em> to someone
+      else. It leaves your notebooks and lands in theirs; you keep write access until they
+      remove it.</p>
+      <div class="btnrow">
+        <select class="input" id="delNyEjer" style="max-width:180px">
+          ${folk.map((p) => `<option value="${esc(p.username)}">${esc(p.username)}</option>`).join('')}
+        </select>
+        <button class="btn ghost danger" id="delOverdrag">Hand over</button>
+      </div>` : ''}`;
+}
+
+/* ------------------------------------------------------- delt med mig */
+
+async function sideDelt() {
+  let noter = [];
+  try { noter = (await api('GET', '/api/v1/shared')).notes; } catch (ex) {
+    return `<div class="card"><p class="lead">${esc(ex.message)}</p></div>`;
+  }
+  if (!noter.length) {
+    return `<div class="card empty">
+      <h2>Nothing yet</h2>
+      <p class="meta saetning">When somebody with an account here shares a page with you,
+      it shows up in this list — with the pages under it.</p>
+    </div>`;
+  }
+  return `<div class="card">
+    <div class="tablewrap"><table class="data">
+      <thead><tr><th>Page</th><th>From</th><th>You can</th><th class="num">Changed</th></tr></thead>
+      <tbody>${noter.map((n) => `<tr>
+        <td><button class="linkbtn" data-aabn="${esc(n.id)}">${n.icon ? `${esc(n.icon)} ` : ''}${
+  esc(n.title || 'Untitled')}</button></td>
+        <td>${esc(n.owner || '')}</td>
+        <td>${n.level === 'write' ? 'read and write' : 'read'}</td>
+        <td class="num">${esc(visTid(n.updatedAt))}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <p class="meta saetning">Only the top of each shared tree is listed — the pages under it
+    open from there, the same way your own do.</p>
+  </div>`;
+}
+
+function bindDelt() {
+  document.querySelectorAll('[data-aabn]').forEach((el) => {
+    el.addEventListener('click', () => aabnNote(el.dataset.aabn));
+  });
+}
+
+/* ---- p11_github.js ---- */
+'use strict';
+/*
+ * Sagu - GitHub i noter (F12).
+ *
+ * ── To ting, og de er ikke ens ────────────────────────────────────────────
+ *
+ * En **fil** er noget, man skriver en note OM: den skal stå stille. Adressen
+ * fryses til en commit-sha ved indsættelsen, og der er en opdatér-knap, hvis
+ * man vil have det nye. Ellers ville noten forklare en kode, der ikke findes
+ * mere, uden at noget fejlede.
+ *
+ * En **sag** eller en **PR** er det modsatte: den skal netop vise, hvordan
+ * det står NU. En note, der siger »afventer #42«, skal kunne fortælle, at
+ * #42 blev lukket i mandags.
+ *
+ * ── Hvorfor der er en pladsholder ─────────────────────────────────────────
+ *
+ * Rendereren kender ikke GitHub — den ved kun, at afsnittet er én bar adresse
+ * (`bartLink`-krogen). Kortet tegnes derfor som en tom ramme, og indholdet
+ * hentes bagefter. Det er med vilje: **optegningen må aldrig vente på et
+ * netværkskald**, og en note med fem indlejringer skal tegne lige så hurtigt
+ * som en uden (samme regel som doda-broen, DESIGN.md §16).
+ */
+
+/**
+ * Rendererens krog. Ren HTML, ingen hentning - den sker bagefter.
+ *
+ * Svarer null, når linjen ikke er en GitHub-adresse, vi kan vise noget om.
+ * Så bliver den et helt almindeligt afsnit med et link, præcis som før.
+ */
+function ghKrog(url, blok) {
+  const info = saguGithub.linjeAdresse(url);
+  if (!info) return null;
+  const mrk = blok ? ` data-blok="${blok.fra}" data-til="${blok.til}"` : '';
+  return `<div class="gh-kort gh-venter" data-gh="${esc(url)}"${mrk}>
+      <div class="gh-hoved">
+        <span class="gh-mark">${icon('github', 15)}</span>
+        <span class="gh-navn">${esc(saguGithub.navn(info))}</span>
+      </div>
+      <div class="gh-krop"><p class="meta saetning">Loading from GitHub…</p></div>
+    </div>`;
+}
+
+/**
+ * Fylder de tomme rammer. Kaldes EFTER optegningen.
+ *
+ * Én ad gangen med vilje: fem parallelle kald til GitHub ville ramme
+ * kvotegrænsen hurtigere, og der er ingen, der kan læse fem kodeblokke på én
+ * gang alligevel.
+ */
+async function fyldGhIndlejringer(host) {
+  const rammer = [...(host || document).querySelectorAll('.gh-kort.gh-venter')];
+  for (const ramme of rammer) {
+    ramme.classList.remove('gh-venter');
+    await fyldEn(ramme);
+  }
+}
+
+async function fyldEn(ramme) {
+  const url = ramme.dataset.gh;
+  const krop = ramme.querySelector('.gh-krop');
+  try {
+    const d = await api('GET', `/api/v1/github?url=${encodeURIComponent(url)}`);
+    ramme.innerHTML = ghKortHtml(d.embed, url, d.warning);
+    bindGhKort(ramme);
+  } catch (ex) {
+    /*
+     * En fejl må ikke tage linket med sig.
+     *
+     * Man skal kunne komme til adressen ALLIGEVEL - det var trods alt den,
+     * der stod der. Et kort, der bliver til en fejlbesked og ikke andet,
+     * har taget noget fra noten.
+     */
+    krop.innerHTML = `<p class="gh-fejl">${esc(ex.message)}</p>
+      <p class="meta saetning"><a href="${attrEsc(url)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></p>`;
+    ramme.classList.add('gh-daarlig');
+  }
+}
+
+const attrEsc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ------------------------------------------------------------- kortene */
+
+function ghKortHtml(e, url, advarsel) {
+  return e.slags === 'fil' ? ghFilHtml(e, url, advarsel) : ghSagHtml(e, url, advarsel);
+}
+
+function ghFilHtml(e, url, advarsel) {
+  const linjer = e.tekst.split('\n');
+  /*
+   * Chippen skal sige SANDHEDEN om, hvad man kigger paa.
+   *
+   * En note skrevet gennem API'et eller MCP'en er aldrig kommet forbi
+   * editoren, saa dens adresse kan stadig pege paa en gren. Foer stod der en
+   * chip med »frozen at this commit« og et grennavn i - altsaa en paastand om
+   * det stik modsatte af det, der var tilfaeldet. Nu staar der, hvad der ER,
+   * og knappen tilbyder det, der mangler.
+   */
+  const frossen = saguGithub.ER_SHA.test(String(e.sha || ''));
+  return `<div class="gh-hoved">
+      <span class="gh-mark">${icon('github', 15)}</span>
+      <a class="gh-navn" href="${attrEsc(e.url)}" target="_blank" rel="noopener noreferrer"
+        >${esc(e.ejer)}/${esc(e.repo)} · ${esc(e.sti)}</a>
+      <span class="gh-sha${frossen ? '' : ' gh-levende'}"
+        title="${frossen ? 'Frozen at this commit' : 'Still points at a branch — it can change under you'}"
+        >${frossen ? esc(e.sha.slice(0, 7)) : esc(e.sha)}</span>
+      <span class="gh-tools">
+        <button class="iconbtn" data-gh-kopi title="Copy the code">${icon('copy', 15)}</button>
+        <button class="iconbtn" data-gh-frisk
+          title="${frossen ? 'Fetch the newest version' : 'Freeze it at the commit it points to now'}"
+          >${icon(frossen ? 'opfrisk' : 'laas', 15)}</button>
+      </span>
+    </div>
+    ${advarsel ? `<p class="gh-fejl">${esc(advarsel)} Showing what was cached.</p>` : ''}
+    <div class="gh-kode"><table><tbody>${linjer.map((l, i) => `<tr>
+      <td class="gh-nr">${e.foersteLinje + i}</td><td class="gh-l">${esc(l) || '&nbsp;'}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <div class="gh-fod meta">
+      ${e.linjer} of ${e.ialt} line${e.ialt === 1 ? '' : 's'}${e.afkortet ? ' — cut off here' : ''}
+    </div>`;
+}
+
+function ghSagHtml(e, url, advarsel) {
+  const TILSTAND = {
+    open: ['Open', 'gh-open'],
+    closed: ['Closed', 'gh-closed'],
+    merged: ['Merged', 'gh-merged'],
+  };
+  const [ord, klasse] = TILSTAND[e.tilstand] || TILSTAND.open;
+  return `<div class="gh-hoved">
+      <span class="gh-mark">${icon('github', 15)}</span>
+      <a class="gh-navn" href="${attrEsc(e.url)}" target="_blank" rel="noopener noreferrer"
+        >${esc(e.titel || 'Untitled')}</a>
+      <span class="gh-status ${klasse}">${e.udkast && e.tilstand === 'open' ? 'Draft' : ord}</span>
+    </div>
+    ${advarsel ? `<p class="gh-fejl">${esc(advarsel)} Showing what was cached.</p>` : ''}
+    <div class="gh-fod meta">
+      ${esc(e.ejer)}/${esc(e.repo)}#${e.nummer}${e.forfatter ? ` · ${esc(e.forfatter)}` : ''}${
+  e.kommentarer ? ` · ${e.kommentarer} comment${e.kommentarer === 1 ? '' : 's'}` : ''}
+      ${e.maerker.length ? e.maerker.map((m) => `<span class="gh-maerke">${esc(m)}</span>`).join('') : ''}
+    </div>`;
+}
+
+function bindGhKort(ramme) {
+  /*
+   * Et klik i kortet maa ikke aabne redigeringsfeltet.
+   *
+   * Kroppen har ÉN delegeret klik-handler, der aabner den raa blok - det er
+   * dét, den hybride editor er. Uden den her linje gjorde et tryk paa
+   * »kopiér« begge dele: koden blev kopieret, OG teksten blev til et
+   * tekstfelt, saa kortet forsvandt under fingeren. Samme vagt som
+   * tjekboksene har (`bindTjek`).
+   */
+  ramme.addEventListener('click', (e) => {
+    if (e.target.closest('button, a')) e.stopPropagation();
+  });
+
+  const kopi = ramme.querySelector('[data-gh-kopi]');
+  if (kopi) {
+    kopi.addEventListener('click', async () => {
+      const tekst = [...ramme.querySelectorAll('.gh-l')].map((td) => td.textContent).join('\n');
+      try {
+        await navigator.clipboard.writeText(tekst);
+        toast('Code copied.');
+      } catch { toast('The browser would not let me copy.'); }
+    });
+  }
+
+  const frisk = ramme.querySelector('[data-gh-frisk]');
+  if (frisk) {
+    frisk.addEventListener('click', async () => {
+      /*
+       * »Opdatér« er et VALG, og det skriver i noten.
+       *
+       * Den nye sha skal stå i teksten - ellers ville kortet vise noget
+       * andet end den adresse, der er skrevet ned, og næste optegning ville
+       * falde tilbage til den gamle. Markdown er sandheden.
+       */
+      const gammel = ramme.dataset.gh;
+      const info = saguGithub.linjeAdresse(gammel);
+      if (!info || !maaRette(editor.note)) { toast('Only the owner can update this.'); return; }
+      frisk.disabled = true;
+      try {
+        // Peger den stadig paa en gren, er handlingen »frys den« - og saa er
+        // det GRENEN, der skal slaas op, ikke HEAD.
+        if (!info.frossen) {
+          const d0 = await api('POST', '/api/v1/github/freeze', { url: gammel });
+          editor.note.body = editor.note.body.split('\n')
+            .map((l) => (l.trim() === gammel ? d0.url : l)).join('\n');
+          markerBeskidt();
+          await gemNu();
+          tegnKrop();
+          toast('Frozen at the current commit.');
+          return;
+        }
+        /*
+         * `HEAD` er repoets EGEN standardgren, hvad den saa end hedder.
+         *
+         * Adressen i noten er frossen, saa grennavnet staar der ikke laengere.
+         * At gaette paa `main` ville fejle paa alt aeldre, og at gemme
+         * grennavnet ved siden af ville vaere en tabel, der kan komme i
+         * utakt med teksten.
+         */
+        const d = await api('POST', '/api/v1/github/freeze', { url: saguGithub.medRef(info, 'HEAD') });
+        if (d.url === gammel) { toast('Already the newest version.'); frisk.disabled = false; return; }
+        editor.note.body = editor.note.body.split('\n')
+          .map((l) => (l.trim() === gammel ? d.url : l)).join('\n');
+        markerBeskidt();
+        await gemNu();
+        tegnKrop();
+      } catch (ex) { toast(ex.message); frisk.disabled = false; }
+    });
+  }
+}
+
+/* --------------------------------------------------------- indsættelse */
+
+/**
+ * Fryser de GitHub-adresser, der lige er skrevet ind.
+ *
+ * Kaldes når en blok lukkes — ét sted, så det virker uanset om linjen blev
+ * skrevet, indsat eller sat ind med genvejen. Adressen skrives om i noten,
+ * så **teksten** bærer sha'en; ingen tabel ved siden af, og indlejringen
+ * overlever både en eksport og en note kopieret over i en anden app.
+ *
+ * Fejler opslaget, sker der INGENTING. Linjen bliver stående som den er, og
+ * kortet viser fejlen bagefter — en gemning må ikke kunne mislykkes, fordi
+ * GitHub har en dårlig dag.
+ */
+async function frysGhAdresser() {
+  const n = editor.note;
+  if (!n || !maaRette(n)) return false;
+  const linjer = n.body.split('\n');
+  let aendret = false;
+
+  for (let i = 0; i < linjer.length; i++) {
+    const raa = linjer[i].trim();
+    const info = saguGithub.linjeAdresse(raa);
+    // Kun filer på en GREN. En sag skal netop ikke fryses, og en fil, der
+    // allerede har sin sha, er der ikke noget at gøre ved.
+    if (!info || info.slags !== 'fil' || info.frossen) continue;
+    try {
+      const d = await api('POST', '/api/v1/github/freeze', { url: raa });
+      if (d.frozen && d.url !== raa) { linjer[i] = d.url; aendret = true; }
+    } catch { /* linjen bliver staaende - kortet siger hvorfor */ }
+  }
+
+  if (!aendret) return false;
+  n.body = linjer.join('\n');
+  markerBeskidt();
+  await gemNu();
+  return true;
+}
+
+/* ---- p12_polering.js ---- */
+'use strict';
+/*
+ * Sagu - genveje, favoritter og spor (F13).
+ *
+ * ── Genvejene står ÉT sted, og oversigten er GENERERET ────────────────────
+ *
+ * `GENVEJE` er både det, tastaturet gør, og det, hjælpen viser. Det er ikke
+ * bekvemmelighed: en genvejsoversigt, der er skrevet af, er en liste over
+ * hvad appen plejede at kunne. Loggen har »en hjælpetekst er en
+ * kravspecifikation« stående fire gange (doda v9/v35/v38, Sagu F9), og kuren
+ * er hver gang den samme — ikke mere omhu, men ét sted.
+ *
+ * Her kan de ikke drive fra hinanden, fordi de ER det samme bord.
+ *
+ * ── Favoritter og spor er MINE ────────────────────────────────────────────
+ *
+ * Begge hænger på brugeren, ikke på noten. Sagu er flerbruger, og en note kan
+ * være delt: et flag på noten ville betyde, at min stjerne dukkede op hos
+ * kollegaen, og at hans besøg skubbede rundt på min egen liste.
+ */
+
+/**
+ * Tasten -> hvad den gør, og hvad der står om den.
+ *
+ * `naar` afgør, om genvejen overhovedet gælder lige nu — så oversigten kan
+ * vise, hvad der virker HER, og ikke en liste, hvor halvdelen ikke gør noget.
+ */
+const GENVEJE = [
+  {
+    tast: '?', vis: '?', hvad: 'Show this list',
+    gør: () => visGenvejsPanel(),
+  },
+  {
+    tast: '/', vis: '/', hvad: 'Jump to the search field',
+    gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
+  },
+  {
+    tast: 'n', vis: 'N', hvad: 'New note',
+    gør: () => opretOgAaben({}),
+  },
+  {
+    tast: 't', vis: 'T', hvad: 'Today’s note',
+    gør: () => aabnDagensNote(),
+  },
+  {
+    tast: 'e', vis: 'E', hvad: 'Edit the last paragraph',
+    naar: () => state.view === 'note' && maaRette(editor.note),
+    gør: () => aabnSidste(),
+  },
+  {
+    tast: 'f', vis: 'F', hvad: 'Focus mode — just the note',
+    naar: () => state.view === 'note',
+    gør: () => saetFokus(!erIFokus()),
+  },
+  {
+    tast: 's', vis: 'S', hvad: 'Star this note',
+    naar: () => state.view === 'note' && !!editor.note,
+    gør: () => skiftFavorit(),
+  },
+  {
+    tast: 'g', vis: 'G', hvad: 'Back to all notes',
+    gør: () => gaaTil('notes'),
+  },
+  {
+    tast: 'Escape', vis: 'Esc', hvad: 'Close what is open',
+    // Escape håndteres af den enkelte rude, som skal lukkes — hver rude
+    // kender sin egen lukning. Den står her, fordi den skal STÅ i
+    // oversigten: en genvej, folk bruger hele tiden, må ikke mangle på
+    // listen, bare fordi den er implementeret et andet sted.
+    kunVist: true,
+  },
+];
+
+/** Gælder genvejen lige nu? */
+const genvejGaelder = (g) => !g.kunVist && (!g.naar || g.naar());
+
+/*
+ * Én global tastehåndtering, og den er bevidst forsigtig.
+ *
+ * Vagten spørger om BÅDE `activeElement` og hændelsens `target`: en
+ * optimistisk opdatering kan nå at fjerne det fokuserede element, og så ser
+ * et værn, der kun kigger på `activeElement`, ingenting (doda v29).
+ *
+ * Og genvejene er enkelttaster UDEN modifikator med vilje — `Cmd`/`Ctrl`
+ * hører browseren til, og at stjæle dem er at ødelægge noget, der virkede.
+ */
+document.addEventListener('keydown', (e) => {
+  if (!state.user) return;
+  const iFelt = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  if (iFelt(e.target) || iFelt(document.activeElement)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  const g = GENVEJE.find((x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase()));
+  if (!g || !genvejGaelder(g)) return;
+  e.preventDefault();
+  try { g.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }
+});
+
+/* ------------------------------------------------------- oversigten */
+
+function visGenvejsPanel() {
+  const gammel = document.getElementById('genvejPanel');
+  if (gammel) { gammel.remove(); return; }
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'genvejPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Keyboard shortcuts</h2>
+        <button class="iconbtn" id="genvejLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <div class="tablewrap"><table class="data"><tbody>
+          ${GENVEJE.map((g) => `<tr class="${g.kunVist || genvejGaelder(g) ? '' : 'genvej-doed'}">
+            <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
+            <td>${esc(g.hvad)}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+        <p class="meta saetning">Greyed-out shortcuts do something on other screens.
+        None of them use ⌘ or Ctrl — those belong to the browser.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#genvejLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+}
+
+/* -------------------------------------------------------- favoritter */
+
+function favoritKnapHtml(n) {
+  if (!n) return '';
+  const paa = !!n.favorite;
+  return `<button class="iconbtn${paa ? ' paa' : ''}" id="favBtn"
+    aria-pressed="${paa ? 'true' : 'false'}"
+    title="${paa ? 'Remove from favourites (S)' : 'Add to favourites (S)'}">${icon(paa ? 'stjerneFuld' : 'stjerne', 16)}</button>`;
+}
+
+async function skiftFavorit() {
+  const n = editor.note;
+  if (!n) return;
+  const nyt = !n.favorite;
+  try {
+    await api(nyt ? 'PUT' : 'DELETE', `/api/v1/notes/${n.id}/favorite`);
+    n.favorite = nyt;
+    const knap = document.getElementById('favBtn');
+    if (knap) {
+      knap.classList.toggle('paa', nyt);
+      knap.setAttribute('aria-pressed', nyt ? 'true' : 'false');
+      knap.innerHTML = icon(nyt ? 'stjerneFuld' : 'stjerne', 16);
+      knap.title = nyt ? 'Remove from favourites (S)' : 'Add to favourites (S)';
+    }
+    toast(nyt ? 'Starred.' : 'Removed from favourites.');
+    await hentGenveje();
+    tegnGenveje();
+  } catch (ex) { toast(ex.message); }
+}
+
+/* ------------------------------------- favoritter og spor i sidebaren */
+
+const sidebarListe = { favoritter: [], seneste: [] };
+
+/**
+ * Hentes ÉN gang ved opstart og efter en ændring - ikke ved hver optegning.
+ *
+ * To lister mere pr. sidevisning ville være to blokerende rundture mere, og
+ * de er ingen af dem det, man kom efter (RUNE-ERFARINGER, doda v27).
+ */
+async function hentGenveje() {
+  try {
+    const [f, s] = await Promise.all([
+      api('GET', '/api/v1/favorites'),
+      api('GET', '/api/v1/recent?limit=6'),
+    ]);
+    sidebarListe.favoritter = f.notes;
+    // Den note, jeg står på LIGE NU, hører ikke til på »senest besøgte«.
+    // Den er ikke et sted, jeg var - den er der, jeg er.
+    sidebarListe.seneste = s.notes.filter((n) => !editor.note || n.id !== editor.note.id);
+  } catch { /* listerne er en tilgift, ikke en forudsaetning */ }
+}
+
+function genvejeHtml() {
+  const liste = (titel, noter) => (noter.length ? `
+    <nav class="nav genvejsliste">
+      <div class="nav-titel">${esc(titel)}</div>
+      ${noter.map((n) => `<button class="nav-item" data-genvej="${esc(n.id)}"
+        ${editor.note && editor.note.id === n.id ? 'aria-current="page"' : ''}>
+        ${n.icon ? `<span class="nav-emoji">${esc(n.icon)}</span>` : icon('notes')}
+        <span>${esc(n.title || 'Untitled')}</span>
+      </button>`).join('')}
+    </nav>` : '');
+
+  return liste('Favourites', sidebarListe.favoritter)
+    + liste('Recent', sidebarListe.seneste);
+}
+
+function bindGenveje() {
+  document.querySelectorAll('[data-genvej]').forEach((el) => {
+    el.addEventListener('click', () => aabnNote(el.dataset.genvej));
+  });
+}
+
+/** Tegner KUN sit eget element. En fuld optegning ville lukke en åben blok. */
+function tegnGenveje() {
+  const host = document.getElementById('navGenveje');
+  if (!host) return;
+  host.innerHTML = genvejeHtml();
+  bindGenveje();
+}
+
 /* ---- p1_core.js ---- */
 'use strict';
 /* Sagu - kerne: opstart, tema, login, app-skal.
@@ -1126,7 +2101,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -1183,15 +2158,9 @@ function nyId() {
  *    trimmede vaerdien og maalte laengden paa den utrimmede.
  */
 function plukMaerker(raa) {
-  const maerker = [];
-  const tekst = String(raa || '')
-    .replace(/(^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{0,59})/gu, (helt, foer, navn) => {
-      maerker.push(navn);
-      return foer;
-    })
-    .replace(/\s+/g, ' ')
-    .trim();
-  return { tekst, maerker };
+  // Reglen bor i `app/shared/maerker.js`, saa serveren og browseren tolker
+  // `#maerke` ENS. Wrapperen bliver staaende, saa kaldstederne er uroerte.
+  return saguMaerker.pluk(raa);
 }
 
 function esc(s) {
@@ -1325,6 +2294,15 @@ const ICONS = {
   kalender: '<path d="M4.5 6.5h15v13h-15z"/><path d="M4.5 10h15M9 4.5v3M15 4.5v3"/>',
   skabelon: '<path d="M4.5 5.5h15v13h-15z"/><path d="M4.5 9.5h15M9.5 9.5v9"/>',
   klips: '<path d="M17 8.5l-6.6 6.6a2.5 2.5 0 003.5 3.5l6.6-6.6a4.5 4.5 0 00-6.4-6.4l-6.6 6.6a6.5 6.5 0 009.2 9.2l5.8-5.8"/>',
+  // F12. Tegnet er GitHubs kat, forenklet til den samme stregtykkelse som
+  // resten - et fremmed logo hentet fra et CDN ville baade bryde CSP'en og
+  // se ud som et fremmedlegeme.
+  github: '<path d="M9.5 20.5c-4 1.2-4-2.2-5.5-2.7m11 5.2v-3.4c0-1 .1-1.4-.5-2 2.6-.3 5-1.3 5-5.6a4.3 4.3 0 00-1.2-3 4 4 0 00-.1-3s-1-.3-3.2 1.2a11 11 0 00-5.8 0C7 5.7 6 6 6 6a4 4 0 00-.1 3 4.3 4.3 0 00-1.2 3c0 4.3 2.4 5.3 5 5.6-.6.6-.6 1.2-.5 2v3.4"/>',
+  opfrisk: '<path d="M20 12a8 8 0 11-2.3-5.7"/><path d="M20 4v4.5h-4.5"/>',
+  laas: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/>',
+  stjerne: '<path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
+  tastatur: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h10"/>',
+  stjerneFuld: '<path fill="currentColor" d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
   import: '<path d="M12 3.5v11M8.5 11L12 14.5 15.5 11"/><path d="M4.5 15.5v3a1.5 1.5 0 001.5 1.5h12a1.5 1.5 0 001.5-1.5v-3"/>',
   ind: '<path d="M4 6.5h16M9 12h11M9 17.5h11"/><path d="M4 10l2.5 2L4 14"/>',
   fold: '<path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/>',
@@ -1353,6 +2331,9 @@ const VIEWS = [
   // Settings, ikke i den daglige liste (Andreas, 2026-08-21).
   { id: 'import', label: 'Import & export', icon: 'import', group: 0 },
   { id: 'settings', label: 'Settings', icon: 'settings', group: 0 },
+  // group: 0 - naas fra Settings, hvor noeglerne bor. En opskrift hoerer
+  // ved siden af det, den handler om.
+  { id: 'api', label: 'API & Shortcuts', icon: 'settings', group: 0 },
   // group: 0 = staar IKKE i navigationen. En note naas fra traeet; uden en
   // valgt note er der ingenting at gaa ind til.
   { id: 'note', label: 'Note', icon: 'notes', group: 0 },
@@ -1367,7 +2348,7 @@ const viewById = (id) => VIEWS.find((v) => v.id === id) || VIEWS[0];
  * paa dem - ellers lyser INTET i menuen, og man kan ikke se, hvor man er
  * (RUNE-ERFARINGER §9c).
  */
-const BAG_BRUGEREN = new Set(['settings', 'import']);
+const BAG_BRUGEREN = new Set(['settings', 'import', 'api']);
 
 const BESKRIVELSER = {
   notes: 'Everything you have written, newest first.',
@@ -1378,6 +2359,7 @@ const BESKRIVELSER = {
   trash: 'Deleted notes. They are removed for good after 30 days.',
   import: 'Bring your Notion archive in, and take everything out again whenever you like.',
   settings: 'Appearance, account and access.',
+  api: 'How to reach Sagu from an iPhone shortcut, or from another program.',
 };
 
 /* ------------------------------------------------------------ optegning */
@@ -1439,6 +2421,7 @@ function bindGate() {
       });
       state.user = data.user;
       state.config.needsSetup = false;
+      if (fortsaetTilConnector()) return;
       await hentState();
       render();
     } catch (ex) {
@@ -1463,6 +2446,9 @@ function bindGate() {
       try {
         const d = await loginMedPasskey();
         state.user = d.user;
+        // Ogsaa her: begge veje ind skal kunne fortsaette til samtykkesiden,
+        // ellers virker connectoren kun for den, der taster sit kodeord.
+        if (fortsaetTilConnector()) return;
         await hentState();
         render();
       } catch (ex) {
@@ -1501,6 +2487,7 @@ function shellHtml() {
         <button class="pinbtn" id="pinBtn" aria-label="Hide the menu"
           title="Hide the menu">${icon('pin', 16)}</button></div>
       <div id="navHost">${navHtml()}</div>
+      <div id="navGenveje">${genvejeHtml()}</div>
       <div id="treeHost" class="treehost"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
@@ -1738,6 +2725,11 @@ function visBrugerMenu() {
   const host = document.createElement('div');
   host.className = 'usermenu';
   host.id = 'userMenu';
+  /*
+   * Genvejsoversigten staar HER, fordi en genvej, man ikke kan FINDE, ikke
+   * findes (RUNE-ERFARINGER, tovo v8). Spoergsmaalstegnet er den eneste vej
+   * ind i listen, og det kan man kun taste, hvis man ved, det er der.
+   */
   host.innerHTML = `
     <div class="usermenu-head">
       <div class="usermenu-name">${esc(state.user.username)}</div>
@@ -1745,6 +2737,8 @@ function visBrugerMenu() {
     </div>
     <button class="usermenu-item" data-go="import">${icon('import', 17)}<span>Import &amp; export</span></button>
     <button class="usermenu-item" data-go="settings">${icon('settings', 17)}<span>Settings</span></button>
+    <button class="usermenu-item" data-go="genveje">${icon('tastatur', 17)}<span>Keyboard shortcuts</span>
+      <kbd style="margin-left:auto">?</kbd></button>
     <button class="usermenu-item danger" data-go="logout">${icon('out', 17)}<span>Log out</span></button>`;
   fod.appendChild(host);
 
@@ -1753,6 +2747,7 @@ function visBrugerMenu() {
     el.addEventListener('click', async () => {
       const hvad = el.dataset.go;
       luk();
+      if (hvad === 'genveje') { visGenvejsPanel(); return; }
       if (hvad === 'settings' || hvad === 'import') { gaaTil(hvad); return; }
       await api('POST', '/api/logout', {});
       state.user = null;
@@ -1853,6 +2848,29 @@ window.addEventListener('resize', () => { byggToc(); });
 
 /* --------------------------------------------------------------- start */
 
+/**
+ * Adressen at vende tilbage til, naar man er logget ind.
+ *
+ * Serveren sender `?next=/oauth/authorize?...` hertil, naar en connector beder
+ * om samtykke og der ingen session er. **KUN den ene sti accepteres** - alt
+ * andet ville vaere en aaben viderestilling, og en connector-godkendelse er
+ * praecis det sted, hvor man ikke skal kunne lokkes videre.
+ */
+function oauthNaeste() {
+  try {
+    const n = new URLSearchParams(location.search).get('next') || '';
+    return n.startsWith('/oauth/authorize?') ? n : null;
+  } catch { return null; }
+}
+
+/** Kaldes efter login. Returnerer true, hvis siden er paa vej et andet sted hen. */
+function fortsaetTilConnector() {
+  const n = oauthNaeste();
+  if (!n) return false;
+  location.replace(n);
+  return true;
+}
+
 (async function start() {
   anvendTema(nuvaerendeTema());
   try {
@@ -1860,7 +2878,12 @@ window.addEventListener('resize', () => { byggToc(); });
     document.title = state.config.appName || 'Sagu';
     const me = await api('GET', '/api/me');
     state.user = me.user;
+    // Var jeg allerede logget ind, da connectoren sendte mig herhen, skal jeg
+    // slet ikke se appen - kun samtykkesiden.
+    if (state.user && fortsaetTilConnector()) return;
     if (state.user) await hentState();
+    // Favoritter og spor hentes ÉN gang her - ikke ved hver optegning.
+    if (state.user) await hentGenveje();
   } catch (ex) {
     document.getElementById('root').innerHTML =
       `<div class="gate"><div class="card"><div class="brand">${icon('logo', 26)} Sagu</div>
@@ -1924,7 +2947,11 @@ async function tegnSideIndhold() {
     // Soegesiden har sin EGEN overskrift; den generiske ville staa oven i den.
     if (state.view === 'search') { host.innerHTML = sideSoeg(); bindSoeg(); return; }
     if (state.view === 'trash') { host.innerHTML = hoved + await sideTrash(); bindTrash(); return; }
-    if (state.view === 'shared') { host.innerHTML = hoved + sideKommer('Sharing between accounts', 'F11'); return; }
+    if (state.view === 'shared') {
+      host.innerHTML = hoved + await sideDelt();
+      bindDelt();
+      return;
+    }
     if (state.view === 'tags') { host.innerHTML = hoved + sideTags(); bindTags(); return; }
     if (state.view === 'comments') {
       host.innerHTML = hoved + await sideKommentarer();
@@ -1932,6 +2959,7 @@ async function tegnSideIndhold() {
       return;
     }
     if (state.view === 'import') { host.innerHTML = hoved + sideImport(); bindImport(); return; }
+    if (state.view === 'api') { host.innerHTML = hoved + sideApi(); return; }
     host.innerHTML = hoved + await sideNoter({});
     bindNoteliste();
   } catch (ex) {
@@ -2267,6 +3295,60 @@ async function sideSettings() {
     }
   }
 
+  let dodaDel = '';
+  try {
+    const d = await api('GET', '/api/v1/doda');
+    dodaDel = `
+  <h2>doda</h2>
+  <div class="card">
+    <p class="meta saetning">Sagu and doda are two apps, not one. They are tied together with
+    <strong>links</strong> — a note can send a task, and the task carries a link back.
+    Nothing is synchronised, so neither can quietly overwrite the other.</p>
+    ${d.connected ? `<p class="doda-forbundet">Connected to <strong>${esc(d.url)}</strong>${
+  d.tasks ? ` · ${d.tasks} task${d.tasks === 1 ? '' : 's'} sent from your notes` : ''}</p>` : ''}
+    <label class="field"><span>doda address</span>
+      <input class="input" id="dodaUrl" value="${esc(d.url || '')}"
+        placeholder="https://doda.example.com" autocomplete="off" spellcheck="false"></label>
+    <label class="field" style="margin-top:10px"><span>API key from doda</span>
+      <input class="input" id="dodaKey" type="password" autocomplete="off"
+        placeholder="${d.connected ? 'Saved — leave empty to keep it' : 'doda_…'}"></label>
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="dodaGem">${d.connected ? 'Save and test' : 'Connect'}</button>
+      ${d.connected ? '<button class="btn" id="dodaFjern">Disconnect</button>' : ''}
+    </div>
+    <p class="meta saetning">In doda: Settings → API keys → create a <strong>full</strong> key.
+    A <strong>capture</strong> key also works, but then doda cannot tell Sagu what happened
+    to a task, so status will not be shown. The key is tested before it is saved, and it never
+    leaves this server again.</p>
+  </div>`;
+  } catch { /* vist som tom */ }
+
+  let ghDel = '';
+  try {
+    const g = await api('GET', '/api/v1/github/status');
+    ghDel = `
+  <h2>GitHub</h2>
+  <div class="card">
+    <p class="meta saetning">Paste a GitHub file address on its own line in a note, and it
+    becomes the code — <strong>frozen at the commit it pointed to</strong>, so the note keeps
+    explaining the code it was written about. Issue and pull request addresses become a chip
+    with the title and whether it is still open.</p>
+    ${g.connected ? `<p class="doda-forbundet">Connected as <strong>${esc(g.login || 'GitHub')}</strong></p>` : ''}
+    <label class="field"><span>Personal access token</span>
+      <input class="input" id="ghToken" type="password" autocomplete="off"
+        placeholder="${g.connected ? 'Saved — leave empty to keep it' : 'github_pat_… or ghp_…'}"></label>
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="ghGem">${g.connected ? 'Save and test' : 'Connect'}</button>
+      ${g.connected ? '<button class="btn" id="ghFjern">Disconnect</button>' : ''}
+    </div>
+    <p class="meta saetning">Without a token GitHub allows <strong>60 requests an hour</strong>
+    and answers <strong>404</strong> for anything private — the same answer as »does not
+    exist«, which is why a missing token looks like a missing file. With a token: 5.000 an
+    hour, and your private repositories. A token with <em>read-only</em> access to contents
+    is enough; it is tested before it is saved, and it never leaves this server again.</p>
+  </div>`;
+  } catch { /* vist som tom */ }
+
   return `
   <h2>Appearance</h2>
   <div class="card">
@@ -2338,20 +3420,71 @@ async function sideSettings() {
       </tr>`).join('')}</tbody></table></div>` : ''}
     <div class="btnrow" style="margin-top:14px">
       <input class="input" id="noegleNavn" placeholder="What is it for?" style="max-width:220px">
-      <select class="input" id="noegleScope" style="max-width:140px">
+      <select class="input" id="noegleScope" style="max-width:150px">
         <option value="read">read</option>
         <option value="capture">capture</option>
+        <option value="link">link</option>
         <option value="full">full</option>
       </select>
       <button class="btn" id="noegleNy">Create key</button>
     </div>
     <p id="noegleVaerdi" class="meta saetning" hidden></p>
+    <div class="btnrow" style="margin-top:12px">
+      <button class="btn" id="tilApi">How to use these →</button>
+    </div>
+    <p class="meta saetning"><strong>read</strong> looks but never writes.
+    <strong>capture</strong> writes but never looks — a lost phone must not be able to
+    read the archive. <strong>link</strong> does both, and nothing else: it is what a
+    sister app needs to find the right note and make a new one.
+    <strong>full</strong> can also change and delete.</p>
   </div>
+
+  <h2>Connected apps</h2>
+  <div class="card">
+    <p class="meta saetning">Claude and other MCP clients you have allowed. They asked
+    through a consent page and got a key of their own — you did not have to paste one.
+    Add Sagu in Claude as a custom connector with the address
+    <code>${esc(offentligBase())}/mcp</code>.</p>
+    <div id="forbListe"><p class="meta saetning">Loading…</p></div>
+    <p class="meta saetning">Revoking cuts it off at once: both the key it holds and the
+    one it could have renewed with. It never had permission to change your password,
+    create keys, or revoke connections — those need this browser.</p>
+  </div>
+  ${dodaDel}
+  ${ghDel}
   ${adminDel}`;
 }
 
+/** Forbundne apps - hentes bagefter, som udgivelseslisten. */
+async function forbindelsesListeHtml() {
+  let liste = [];
+  try { liste = (await api('GET', '/api/v1/connections')).connections; } catch { return ''; }
+  if (!liste.length) return '<p class="meta saetning">Nothing is connected yet.</p>';
+  return `<div class="tablewrap"><table class="data">
+    <thead><tr><th>App</th><th>Scope</th><th class="num">Last used</th><th></th></tr></thead>
+    <tbody>${liste.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.scope || '')}</td>
+      <td class="num">${esc(c.last_used_at ? visTid(c.last_used_at) : 'never')}</td>
+      <td style="text-align:right"><button class="btn ghost danger"
+        data-forbslet="${esc(c.id)}">Revoke</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function bindForbindelsesListe() {
+  document.querySelectorAll('[data-forbslet]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Cut this app off? It will have to ask again.')) return;
+      try {
+        await api('DELETE', `/api/v1/connections/${encodeURIComponent(el.dataset.forbslet)}`);
+        toast('Connection revoked.');
+        const host = document.getElementById('forbListe');
+        if (host) { host.innerHTML = await forbindelsesListeHtml(); bindForbindelsesListe(); }
+      } catch (ex) { toast(ex.message); }
+    });
+  });
+}
+
 function bindSettings() {
-  // Listen hentes bagefter og erstatter kun sit eget element: en side, der
+  // Listerne hentes bagefter og erstatter kun deres eget element: en side, der
   // venter paa alle sine kald, foeles langsom, og listen er ikke det, man kom
   // efter (RUNE-ERFARINGER, doda v27).
   (async () => {
@@ -2359,6 +3492,39 @@ function bindSettings() {
     if (!host) return;
     host.innerHTML = await udgivelsesListeHtml();
     bindUdgivelsesListe();
+  })();
+
+  const ghGem = document.getElementById('ghGem');
+  if (ghGem) {
+    ghGem.addEventListener('click', async () => {
+      const felt = document.getElementById('ghToken');
+      ghGem.disabled = true;
+      try {
+        const d = await api('POST', '/api/v1/github/token', { token: felt.value.trim() });
+        toast(d.connected ? `Connected to GitHub as ${d.login}.` : 'Disconnected.');
+        tegnSide();
+      } catch (ex) { toast(ex.message); ghGem.disabled = false; }
+    });
+  }
+
+  const ghFjern = document.getElementById('ghFjern');
+  if (ghFjern) {
+    ghFjern.addEventListener('click', async () => {
+      // Tom streng = kobl fra. Cachen bliver staaende: den er ikke hemmelig,
+      // og et uddrag, man allerede har set, skal ikke forsvinde.
+      try {
+        await api('POST', '/api/v1/github/token', { token: '' });
+        toast('Disconnected from GitHub.');
+        tegnSide();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+
+  (async () => {
+    const host = document.getElementById('forbListe');
+    if (!host) return;
+    host.innerHTML = await forbindelsesListeHtml();
+    bindForbindelsesListe();
   })();
 
   document.querySelectorAll('[data-tema]').forEach((el) => {
@@ -2389,6 +3555,46 @@ function bindSettings() {
       } catch (ex) { toast(ex.message); reg.checked = !reg.checked; }
     });
   }
+
+  const dodaGem = document.getElementById('dodaGem');
+  if (dodaGem) {
+    dodaGem.addEventListener('click', async () => {
+      const url = document.getElementById('dodaUrl').value.trim();
+      const key = document.getElementById('dodaKey').value.trim();
+      dodaGem.disabled = true;
+      dodaGem.textContent = 'Testing…';
+      try {
+        // Serveren proever forbindelsen FOER den gemmer, og ruller tilbage
+        // ved fejl - saa der aldrig ligger et token og LIGNER en virkende
+        // forbindelse (RUNE-ERFARINGER, doda v16).
+        const r = await api('POST', '/api/v1/doda', { url, key });
+        toast(r.message || 'Connected to doda.');
+        await tegnSide();
+      } catch (ex) {
+        toast(ex.message);
+        dodaGem.disabled = false;
+        dodaGem.textContent = 'Connect';
+      }
+    });
+  }
+  const dodaFjern = document.getElementById('dodaFjern');
+  if (dodaFjern) {
+    dodaFjern.addEventListener('click', async () => {
+      // Sig hvad der SKER med det, der allerede findes - ellers toer man ikke
+      // trykke (RUNE-ERFARINGER, doda v35).
+      if (!window.confirm('Disconnect doda? The tasks your notes have already sent stay '
+        + 'where they are, in doda and on the notes.')) return;
+      try {
+        await api('DELETE', '/api/v1/doda');
+        toast('doda disconnected.');
+        await tegnSide();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+
+  // En noegle er ubrugelig uden en opskrift. Herfra er der ét klik til dem.
+  const tilApi = document.getElementById('tilApi');
+  if (tilApi) tilApi.addEventListener('click', () => gaaTil('api'));
 
   const gemUrl = document.getElementById('offentligGem');
   if (gemUrl) {
@@ -3381,10 +4587,21 @@ async function aabnNote(id) {
     // foerste optegning i stedet for at hoppe ind bagefter. En fejl her maa
     // ikke tage noten med sig - den er det, brugeren kom efter.
     try { await hentKommentarer(id); } catch { kom.liste = []; kom.noteId = id; }
+    // Opgaverne hentes SAMMEN med noten - ét kald, ikke ét pr. optegning.
+    // En fejl her maa ikke tage noten med sig.
+    try { await hentDodaOpgaver(id); } catch { dodaState.opgaver = []; dodaState.noteId = id; }
     if (editor.note && editor.note.id !== id) return;
     opdaterNav();
     tegnTrae();
     tegnSide();
+    /*
+     * Sporet opfriskes EFTER optegningen, ikke foer (F13).
+     *
+     * Serveren har allerede noteret besoeget - det skete i selve
+     * note-opslaget, hvor alle veje ind moedes. Det her er kun sidebarens
+     * liste, og den maa ikke koste en ventetid paa den note, man kom efter.
+     */
+    hentGenveje().then(tegnGenveje);
   } catch (ex) {
     editor.indlaeser = null;
     toast(ex.message);
@@ -3424,14 +4641,17 @@ function broedkrummer(note) {
  */
 function maerkerHtml(n) {
   const maerker = n.tags || [];
+  // Paa en note, jeg kun maa laese, staar maerkerne som TEKST: intet kryds og
+  // ingen tilfoej-knap. Fjerde sted, en redigering kunne begynde (F11).
+  const kanRette = maaRette(n);
   return `<div class="note-maerker" id="noteMaerker">
-      ${maerker.map((t) => `<span class="chip maerke">${esc(t)}<button class="chip-x"
-        data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button></span>`).join('')}
-      <button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
+      ${maerker.map((t) => `<span class="chip maerke">${esc(t)}${kanRette ? `<button class="chip-x"
+        data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button>` : ''}</span>`).join('')}
+      ${kanRette ? `<button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
       <input class="chip-felt" id="maerkeFelt" list="maerkeListe" placeholder="tag name"
         autocomplete="off" spellcheck="false" hidden>
       <datalist id="maerkeListe">${(state.tags || [])
-    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>
+    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>` : ''}
     </div>`;
 }
 
@@ -3494,6 +4714,14 @@ function bindMaerker() {
 }
 
 function gemMaerke() {
+  /*
+   * »Saved« paa en side, man ikke KAN gemme, er en usandhed.
+   *
+   * Maerket svarer paa »naaede mit arbejde frem?« - og paa en note, jeg kun
+   * maa laese, er der intet arbejde. Baandet ovenover siger allerede hvorfor
+   * (F11).
+   */
+  if (!maaRette(editor.note)) return '<span class="gem">Read only</span>';
   if (editor.konflikt) return '<span class="gem konflikt">Not saved — conflict</span>';
   if (editor.gemmer) return '<span class="gem">Saving…</span>';
   if (editor.beskidt) return '<span class="gem">Unsaved</span>';
@@ -3512,16 +4740,20 @@ function sideNote() {
       <button class="note-ikon" id="noteIkon" title="Pick an icon"
         aria-label="Pick an icon">${n.icon ? esc(n.icon) : icon('notes', 20)}</button>
       <input class="note-title" id="noteTitle" value="${esc(n.title)}"
-        placeholder="Untitled" autocomplete="off" spellcheck="false">
+        placeholder="Untitled" autocomplete="off" spellcheck="false"
+        ${maaRette(n) ? '' : 'readonly'}>
       <div class="note-tools">
         <span id="gemMaerke">${gemMaerke()}</span>
         <button class="iconbtn" id="bredBtn" aria-pressed="${n.fullWidth ? 'true' : 'false'}"
           title="${n.fullWidth ? 'Use reading width' : 'Use the full width'}">${icon('width', 16)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
-        ${udgivKnapHtml(n.published)}
+        ${favoritKnapHtml(n)}
+        ${delKnapHtml(n)}
+        ${n.mine === false ? '' : udgivKnapHtml(n.published)}
         <button class="iconbtn" id="menuBtn" title="More">${icon('dots', 16)}</button>
       </div>
     </div>
+    ${delingsBaandHtml(n)}
     ${maerkerHtml(n)}
     ${editor.konflikt ? konfliktHtml() : ''}
     <div class="note-body" id="noteBody"></div>
@@ -3532,6 +4764,7 @@ function sideNote() {
         ${n.backlinks.map((b) => `<button class="backlink" data-krumme="${esc(b.id)}">
           ${esc(b.title || 'Untitled')}</button>`).join('')}
       </div>` : ''}
+    ${dodaState.noteId === n.id ? dodaOpgaverHtml() : ''}
     ${kom.noteId === n.id ? kommentarerHtml() : ''}`;
 }
 
@@ -3577,6 +4810,9 @@ function tegnKrop() {
     pyntKodeblokke(host);
     bindTjek(host);
     bindBilleder(host);
+    // Indlejringerne fyldes BAGEFTER: optegningen maa aldrig vente paa et
+    // netvaerkskald (F12).
+    fyldGhIndlejringer(host);
   } catch (ex) {
     host.innerHTML = `<div class="render-fejl"><p class="meta saetning">
       This note could not be rendered, so here it is as plain text.</p>
@@ -3632,6 +4868,10 @@ function renderValg() {
     billedUrl: (u) => saguUrl(u),
     // Et LINK kan pege paa baade en fil og en anden note.
     linkUrl: (u) => saguUrl(u) || noteUrl(u),
+    // Et afsnit, der ER én bar adresse, kan blive til en indlejring (F12).
+    // Rendereren kender ikke GitHub - den spoerger bare, om nogen vil have
+    // linjen.
+    bartLink: (u, b) => ghKrog(u, b),
   };
 }
 
@@ -3679,10 +4919,14 @@ function tegnMedAabenBlok(host, n) {
       rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
     ${del(efter)}`;
 
-  // De renderede dele skal ogsaa have knapper og lightbox.
+  // De renderede dele skal ogsaa have knapper, lightbox og indlejringer.
+  // **Begge optegningsveje** - den her og `tegnKrop()` - skal goere det samme;
+  // glemmer den ene noget, virker funktionen kun, naar ingen blok er aaben,
+  // og fejlen ligner »kortet forsvandt, da jeg klikkede« (F12).
   pyntKodeblokke(host);
   bindTjek(host);
   bindBilleder(host);
+  fyldGhIndlejringer(host);
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;
@@ -3747,6 +4991,9 @@ function autoHoejde(felt) {
 }
 
 function aabnBlok(fra) {
+  // En delt note, jeg kun maa laese, aabner ikke en raa markdown-blok. Uden
+  // vagten ville teksten se ud til at kunne rettes (F11).
+  if (!maaRette(editor.note)) return;
   editor.aabenBlok = fra;
   tegnKrop();
 }
@@ -3768,6 +5015,19 @@ function lukBlok() {
   editor.aabenBlok = null;
   tegnKrop();
   planlaegGem();
+  /*
+   * ÉT sted til at fryse GitHub-adresser (F12).
+   *
+   * Her - og ikke i indsaettelses-haendelsen - fordi linjen kan vaere skrevet,
+   * indsat eller kommet med en hel blok, man har klistret ind. Alle veje ind
+   * ender med at blokken lukkes.
+   *
+   * Ingen `await`: gemningen er allerede planlagt, og en fejl hos GitHub maa
+   * ikke kunne haenge editoren. Lykkes det, tegnes kroppen igen med den
+   * frosne adresse.
+   */
+  frysGhAdresser().then((aendret) => { if (aendret) tegnKrop(); })
+    .catch(() => { /* linjen bliver staaende; kortet siger hvorfor */ });
 }
 
 /** Skriver feltets linjer tilbage paa deres plads i noten. */
@@ -3881,6 +5141,7 @@ function bindNoteSide() {
   const n = editor.note;
   if (!n) return;
   bindKommentarer();
+  bindDodaOpgaver();
 
   const titel = document.getElementById('noteTitle');
   if (titel) {
@@ -3959,6 +5220,12 @@ function bindNoteSide() {
   // Symptomet var en overskrift uden titel - og, vaerre, at ruden aldrig kunne
   // finde notens EKSISTERENDE udgivelse, fordi opslaget skete paa `undefined`.
   if (udgiv) udgiv.addEventListener('click', () => visUdgivPanel());
+  // Samme regel som ovenfor: en pil, ikke funktionen selv - ellers bliver
+  // klik-haendelsen til funktionens foerste parameter.
+  const delKnap = document.getElementById('delBtn');
+  if (delKnap) delKnap.addEventListener('click', () => visDelPanel());
+  const favKnap = document.getElementById('favBtn');
+  if (favKnap) favKnap.addEventListener('click', () => skiftFavorit());
 
   document.querySelectorAll('[data-krumme]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.krumme));
@@ -4068,23 +5335,34 @@ function visNoteMenu() {
   // staar der ikke: en knap, der ikke kan goere noget, er ikke en knap.
   const foer = soeskendeFoer(n);
 
+  /*
+   * Menuen viser kun det, man faktisk kan.
+   *
+   * `mit` = jeg ejer siden; `ret` = jeg maa skrive i den. En knap, der
+   * afviser, naar man trykker paa den, er ikke en knap - det er en faelde, og
+   * paa en delt side ville halvdelen af menuen vaere det (F11). Serveren
+   * afviser uanset hvad; det her er, for at man ikke skal proeve.
+   */
+  const mit = n.mine !== false;
+  const ret = maaRette(n);
+
   const host = document.createElement('div');
   host.className = 'usermenu notemenu';
   host.id = 'noteMenu';
   host.innerHTML = `
-    <button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
-    <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>
+    ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
+    <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
-    <button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
+    ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
   esc((foer.title || 'Untitled').slice(0, 24))}”</span></button>` : ''}
     <button class="usermenu-item" data-do="op">${icon('fold', 16)}<span>Move up</span></button>
     <button class="usermenu-item" data-do="ned">${icon('udfold', 16)}<span>Move down</span></button>
     <button class="usermenu-item" data-do="flyt">${icon('book', 16)}<span>Move to notebook…</span></button>
-    ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}
+    ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}` : ''}
     <button class="usermenu-item" data-do="fs">${icon('focus', 16)}<span>Browser fullscreen</span></button>
-    <button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>`;
+    ${mit ? `<button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>` : ''}`;
   vaert.appendChild(host);
 
   host.querySelectorAll('[data-do]').forEach((el) => {
@@ -4162,26 +5440,21 @@ function visNoteMenu() {
 /* ------------------------------------------------------------- genveje */
 
 /*
- * Kun taster, der ikke kan forveksles med at skrive.
+ * Kun det, der IKKE staar i genvejsbordet.
  *
- * Vagten skal spoerge om BAADE `activeElement` og haendelsens `target`: en
- * optimistisk opdatering kan naa at fjerne det fokuserede element, og saa ser
- * et vaern, der kun kigger paa activeElement, ingenting (doda v29).
+ * Selve genvejene bor i `GENVEJE` i p12 - ét sted, saa hjaelpeoversigten er
+ * genereret og ikke skrevet af (F13). Tilbage her er den ene ting, bordet
+ * ikke kan udtrykke: **Escape ud af fokustilstand, ogsaa mens man staar i et
+ * felt.** Alle andre genveje skal netop IKKE fyre, mens man skriver - den her
+ * skal, fordi fokustilstand er noget, man vil ud af, uden foerst at skulle
+ * finde ud af, hvor markoeren er.
  */
 document.addEventListener('keydown', (e) => {
-  const maal = e.target;
-  const iFelt = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-  if (iFelt(maal) || iFelt(document.activeElement)) {
-    if (e.key === 'Escape' && erIFokus() && !document.getElementById('blokFelt')) saetFokus(false);
-    return;
-  }
+  if (e.key !== 'Escape' || !erIFokus()) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-  if (e.key === 'Escape' && erIFokus()) { saetFokus(false); return; }
-  if ((e.key === 'f' || e.key === 'F') && state.view === 'note') {
-    e.preventDefault();
-    saetFokus(!erIFokus());
-  }
+  // ... men ikke, mens en raa blok er aaben: dér lukker Escape blokken.
+  if (document.getElementById('blokFelt')) return;
+  saetFokus(false);
 });
 
 // Forlader man browserens fuldskaerm med Esc, skal vores egen tilstand foelge
@@ -4227,7 +5500,7 @@ const OMNI_MODER = {
   '+': {
     id: 'task',
     pil: '+ New task in doda',
-    ph: 'Task title… (arrives in F8)',
+    ph: 'Task title… — it goes to doda',
     legend: [],
     enter: 'Create',
   },
@@ -4328,7 +5601,16 @@ async function opdaterOmni() {
     return;
   }
   if (omni.mode === '+') {
-    omni.raekker = [{ slags: 'doda', tekst, etiket: tekst ? `Send "${tekst}" to doda` : 'Send a task to doda' }];
+    // Er en note aaben, faar opgaven et link tilbage til den - saa siger
+    // raekken det HOEJT, i stedet for at det sker bag ryggen paa nogen
+    // (RUNE-ERFARINGER, doda v28: vis det, FOER handlingen sker).
+    const paaNote = state.view === 'note' && editor.note ? editor.note.title || 'Untitled' : null;
+    omni.raekker = [{
+      slags: 'doda',
+      tekst,
+      etiket: tekst ? `Send "${tekst}" to doda` : 'Send a task to doda',
+      under: paaNote ? `linked to “${paaNote}”` : null,
+    }];
     tegnOmniChips(null);
     tegnPanel();
     return;
@@ -4441,7 +5723,8 @@ function tegnPanel() {
     const ikon = { ny: 'plus', nybog: 'book', bog: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
     return `<button class="omni-row${paa}${r.slags === 'fejl' ? ' fejl' : ''}" data-row="${i}">
         <span class="omni-row-ikon">${r.ikon ? esc(r.ikon) : icon(ikon || 'book', 16)}</span>
-        <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span></span>
+        <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span>
+          ${r.under ? `<span class="omni-row-uddrag">${esc(r.under)}</span>` : ''}</span>
       </button>`;
   }).join('');
   host.hidden = false;
@@ -4502,10 +5785,47 @@ async function vaelgRaekke(i) {
     return;
   }
   if (r.slags === 'doda') {
-    // Markoeren findes fra F2; koblingen bygges i F8. At sige det er bedre
-    // end en knap, der ikke goer noget (doda v38: en hjaelpetekst, der lover
-    // en funktion, som ikke findes, er den dyreste slags fejl).
-    toast('Sending tasks to doda arrives in F8.');
+    if (!r.tekst) { toast('Write what the task should say.'); return; }
+    sendOpgaveTilDoda(r.tekst);
+  }
+}
+
+/**
+ * Sender en opgave til doda.
+ *
+ * ÉT sted, saa `+`-markoeren og opgaveruden paa noten giver samme besked og
+ * samme fejl. Er en note aaben, faar opgaven et link tilbage til den; ellers
+ * er det en fritstaaende opgave, og det er ogsaa i orden - man staar ikke
+ * altid i en note, naar noget falder én ind.
+ */
+async function sendOpgaveTilDoda(tekst) {
+  const note = state.view === 'note' && editor.note ? editor.note : null;
+  try {
+    if (!note) {
+      // Uden en note er der ingen note-rute at gaa igennem. Broen har en
+      // fritstaaende doer, saa markoeren virker fra enhver skaerm.
+      const r = await api('POST', '/api/v1/doda/tasks', { text: tekst });
+      toast(r.message || 'Sent to doda.');
+      return;
+    }
+    const r = await api('POST', `/api/v1/notes/${note.id}/tasks`, { text: tekst });
+    dodaState.opgaver = r.tasks || [];
+    dodaState.noteId = note.id;
+    tegnDodaOpgaver();
+    toast(r.message || 'Sent to doda.');
+  } catch (ex) {
+    /*
+     * En fejlet forbindelse er ikke en fejlet gemning.
+     *
+     * `not_connected` er ikke en fejl, brugeren har lavet - det er en
+     * indstilling, han ikke har sat endnu. Sig hvad han skal goere, og gaa
+     * derhen (en knap, der bare ikke virker, er det vaerste svar).
+     */
+    if (ex && ex.code === 'not_connected') {
+      toast('doda is not connected yet.', { label: 'Connect', run: () => gaaTil('settings') });
+      return;
+    }
+    toast(ex && ex.message ? ex.message : 'Could not reach doda.');
   }
 }
 
@@ -4705,6 +6025,8 @@ function markerTekst(el) {
 /* ------------------------------------------------------ afkrydsningsfelter */
 
 function bindTjek(host) {
+  // Tredje sted, en redigering kan begynde - se maaRette() (F11).
+  if (!maaRette(editor.note)) return;
   host.querySelectorAll('[data-tjek]').forEach((el) => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();       // maa ikke ogsaa aabne blokken raat
@@ -6136,4 +7458,319 @@ async function genindlaesTaellere() {
     if (gammel) gammel.remove();
     if (antal) nav.insertAdjacentHTML('beforeend', `<span class="nav-count">${antal}</span>`);
   } catch { /* et tal, der ikke kunne opdateres, er ikke vaerd at raabe op om */ }
+}
+
+/* ==================================================== doda (F8) ========= */
+
+/*
+ * Opgaverne, en note har sendt til doda.
+ *
+ * Ruden bor sammen med kommentarerne, fordi de to svarer paa det samme
+ * spoergsmaal: hvad er der SKET omkring den her side. Og ligesom dem hentes
+ * de, naar noten aabnes - aldrig pr. optegning. Rundturen gennem tunnelen er
+ * ~150 ms, og en note med fem opgaver ville vaere naesten et sekund, hvor der
+ * ikke sker noget (RUNE-ERFARINGER, doda v27).
+ */
+
+const dodaState = { noteId: null, opgaver: [], connected: false, gammel: null };
+
+async function hentDodaOpgaver(noteId, tving) {
+  const r = await api('GET', `/api/v1/notes/${noteId}/tasks${tving ? '?refresh=1' : ''}`);
+  dodaState.noteId = noteId;
+  dodaState.opgaver = r.tasks || [];
+  dodaState.connected = !!r.connected;
+  dodaState.gammel = r.staleReason || null;
+}
+
+/** dodas statusord, som de skal LAESES. */
+function dodaStatusTekst(s) {
+  return {
+    inbox: 'in the inbox', next: 'next action', waiting: 'waiting for', someday: 'someday',
+    done: 'done', dropped: 'dropped', deleted: 'deleted in doda',
+  }[s] || s;
+}
+
+function dodaOpgaverHtml() {
+  if (!dodaState.connected && !dodaState.opgaver.length) return '';
+  const aabne = dodaState.opgaver.filter((t) => t.status !== 'done' && t.status !== 'dropped'
+    && t.status !== 'deleted');
+  return `<section class="dodaopgaver" id="dodaOpgaver">
+    <h2>Tasks in doda${dodaState.opgaver.length
+    ? ` <span class="group-count">${aabne.length}/${dodaState.opgaver.length}</span>` : ''}</h2>
+    ${dodaState.gammel
+    /*
+     * En liste, der ikke er frisk, skal SIGE det - og blive staaende. En bro,
+     * der bliver tom, naar den anden ende er nede, ligner en bro, der har
+     * mistet noget.
+     */
+    ? `<p class="meta saetning">Showing what doda last said — ${esc(dodaState.gammel)}</p>` : ''}
+    ${dodaState.opgaver.length
+    ? `<ul class="doda-liste">${dodaState.opgaver.map((t) => `
+      <li class="doda-opgave${t.status === 'done' || t.status === 'dropped' ? ' udfoert' : ''}">
+        <span class="doda-titel">${esc(t.title)}</span>
+        <span class="kom-maerke doda-status ${esc(t.status)}">${esc(dodaStatusTekst(t.status))}</span>
+      </li>`).join('')}</ul>`
+    : '<p class="meta saetning">Nothing sent yet.</p>'}
+    <div class="kom-skriv">
+      <input class="input" id="dodaFelt" placeholder="Send a task to doda — #context @project !tomorrow"
+        autocomplete="off">
+      <div class="kom-knapper">
+        <button class="btn" id="dodaSend">Send to doda</button>
+        ${dodaState.opgaver.length
+    ? '<button class="linkbtn" id="dodaOpfrisk">Check doda now</button>' : ''}
+      </div>
+    </div>
+  </section>`;
+}
+
+function tegnDodaOpgaver() {
+  const host = document.getElementById('dodaOpgaver');
+  if (!host) return;
+  host.outerHTML = dodaOpgaverHtml();
+  bindDodaOpgaver();
+}
+
+function bindDodaOpgaver() {
+  const host = document.getElementById('dodaOpgaver');
+  if (!host) return;
+  const felt = host.querySelector('#dodaFelt');
+  const send = host.querySelector('#dodaSend');
+  if (send && felt) {
+    const gaa = async () => {
+      const t = felt.value.trim();
+      if (!t) { toast('Write what the task should say.'); return; }
+      felt.value = '';
+      await sendOpgaveTilDoda(t);
+    };
+    send.addEventListener('click', gaa);
+    felt.addEventListener('keydown', (e) => {
+      // Enter sender. Feltet er ét felt med ét formaal - og tastetrykket maa
+      // ikke boble op til notens egne genveje.
+      if (e.key === 'Enter') { e.preventDefault(); gaa(); }
+      e.stopPropagation();
+    });
+  }
+  const opfrisk = host.querySelector('#dodaOpfrisk');
+  if (opfrisk) {
+    opfrisk.addEventListener('click', async () => {
+      opfrisk.textContent = 'Checking…';
+      try {
+        await hentDodaOpgaver(dodaState.noteId, true);
+        tegnDodaOpgaver();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+}
+
+/* ---- p9_guide.js ---- */
+/*
+ * F9 - siden om API'et og iPhone-genvejene.
+ *
+ * ── Hvorfor den findes ────────────────────────────────────────────────────
+ *
+ * En noegle er ubrugelig uden en opskrift. Man kan se, at der ER et API, men
+ * ikke hvad man skriver i Shortcuts' »Get Contents of URL« - og saa bliver
+ * funktionen meldt som manglende, selv om den virker (RUNE-ERFARINGER,
+ * tovo v8: en funktion, man ikke kan SE, findes ikke for brugeren).
+ *
+ * ── Reglen, siden er skrevet efter ────────────────────────────────────────
+ *
+ * **En hjaelpetekst er en kravspecifikation** (doda v9/v35/v38). Hver eneste
+ * linje herunder svarer til noget, der er DAEKKET AF EN TEST i
+ * `tests/api.test.mjs` - de fire veje ind, `to=today`, `?date=`,
+ * `notebook=<navn>`, `#maerke`, `?format=md`, `changes` med slettede id'er, og
+ * hele scope-matricen. Bliver et endepunkt lavet om, skal linjen her med i
+ * samme ombaering; ellers staar der en funktion, appen ikke har.
+ *
+ * Adressen skrives med `offentligBase()` - den samme, udgivelsesruden bruger.
+ * Ellers ville en opskrift, man kopierer fra én adresse, pege et andet sted
+ * hen end en, man kopierer fra en anden (DESIGN.md §15).
+ */
+
+/** Ét sted: adressen, opskrifterne skrives med. */
+function apiBase() {
+  return offentligBase();
+}
+
+/**
+ * En opskrift.
+ *
+ * `felter` er præcis dét, der skal staa i Shortcuts' »Get Contents of URL« -
+ * i den raekkefoelge, felterne staar dér. Alt andet er stoej for den, der
+ * sidder med telefonen i haanden.
+ */
+function opskriftHtml(o) {
+  return `<div class="opskrift">
+    <h3>${esc(o.navn)}</h3>
+    <p class="lead">${o.hvorfor}</p>
+    <table class="data opskrift-felter"><tbody>
+      ${o.felter.map(([navn, vaerdi]) => `<tr>
+        <th>${esc(navn)}</th>
+        <td><code>${esc(vaerdi)}</code></td></tr>`).join('')}
+    </tbody></table>
+    ${o.noter ? `<p class="meta saetning">${o.noter}</p>` : ''}
+  </div>`;
+}
+
+function sideApi() {
+  const b = apiBase();
+  const OPSKRIFTER = [
+    {
+      navn: 'Send text to Sagu',
+      hvorfor: 'One field and a button. The first line becomes the title, the rest becomes the note.',
+      felter: [
+        ['URL', `${b}/api/v1/capture`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'Text — the Shortcut Input'],
+      ],
+      noter: 'A <strong>capture</strong> key is enough: it can put something new in and '
+        + 'read nothing at all. Lose the phone, and it cannot be used to pull your archive. '
+        + 'The answer carries a <code>message</code> field you can show as it is.',
+    },
+    {
+      navn: 'Put it in today\'s note',
+      hvorfor: 'Gathers the day\'s small things in one place, instead of a note per thought.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?to=today`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'Text — the Shortcut Input'],
+      ],
+      noter: 'The note is named after the date (<code>2026-08-21</code>) and is made the '
+        + 'first time you send something. In a different time zone than the server? Send your '
+        + 'own day: <code>?to=today&amp;date=</code> with the date from <em>Current Date</em>.',
+    },
+    {
+      navn: 'Share an image from the share sheet',
+      hvorfor: 'A photo of the cabinet, a whiteboard, a receipt — as a note with the image in it.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?name=foto.jpg&text=Skabet%20i%20kaelderen`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'File — the Shortcut Input'],
+      ],
+      noter: 'Set <em>Request Body</em> to <strong>File</strong>, not JSON. The image becomes '
+        + 'an attachment and is written into the note. Add <code>&amp;to=today</code> to put it '
+        + 'in today\'s note instead.',
+    },
+    {
+      navn: 'Get a note as markdown',
+      hvorfor: 'To paste into an email, a message, or another program.',
+      felter: [
+        ['URL', `${b}/api/v1/notes/NOTE_ID?format=md`],
+        ['Method', 'GET'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+      ],
+      noter: 'The answer is plain text — not JSON to dig through. Needs a '
+        + '<strong>read</strong> key; a capture key gets a 403.',
+    },
+    {
+      navn: 'Search your notes',
+      hvorfor: 'The same search as in the app — filters and all.',
+      felter: [
+        ['URL', `${b}/api/v1/search?q=vpn+tag:drift`],
+        ['Method', 'GET'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+      ],
+      noter: 'The filters work as they do in the field: <code>tag:</code>, <code>in:</code>, '
+        + '<code>updated:&lt;30d</code>, <code>has:code</code>, <code>"a phrase"</code> '
+        + 'and <code>-without</code>.',
+    },
+    {
+      navn: 'Keep a copy up to date',
+      hvorfor: 'For a program mirroring the archive — it is told what was deleted, too.',
+      felter: [
+        ['URL', `${b}/api/v1/changes?since=0`],
+        ['Method', 'GET'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+      ],
+      noter: 'The answer has a <code>now</code> field. Keep it, and send it as <code>since</code> '
+        + 'next time. <code>deleted</code> holds the ids of what is gone — without them a copy '
+        + 'collects ghosts.',
+    },
+  ];
+
+  return `
+  <h2>What a key may do</h2>
+  <div class="card">
+    <div class="tablewrap"><table class="data">
+      <thead><tr><th>Scope</th><th>Can</th><th>Cannot</th></tr></thead>
+      <tbody>
+        <tr><td><code>capture</code></td><td>Add new notes and images</td>
+          <td><strong>Read nothing at all</strong></td></tr>
+        <tr><td><code>read</code></td><td>Read and search</td><td>Write anything</td></tr>
+        <tr><td><code>link</code></td><td>Read, search and add</td><td>Change or delete</td></tr>
+        <tr><td><code>full</code></td><td>Everything above, and change and delete</td>
+          <td>Make keys, change your password, or touch server settings</td></tr>
+      </tbody>
+    </table></div>
+    <p class="meta saetning">No key can make another key or change your password — not even
+    <code>full</code>. Otherwise one leaked key would be enough to give itself permanent
+    access, or to lock you out of your own app. A key is revoked the moment you remove it
+    in Settings; there is no cache to clear.</p>
+  </div>
+
+  <h2>The four ways to send text</h2>
+  <div class="card">
+    <p class="lead">A shortcut has one text field and no patience. <code>/api/v1/capture</code>
+    therefore takes the text however it arrives:</p>
+    <div class="tablewrap"><table class="data">
+      <tbody>
+        <tr><th>JSON</th><td><code>{"text": "Ny router i skabet"}</code></td></tr>
+        <tr><th>Form</th><td><code>text=Ny+router+i+skabet</code></td></tr>
+        <tr><th>Plain text</th><td>the body, with no Content-Type at all</td></tr>
+        <tr><th>In the address</th><td><code>?text=Ny%20router</code></td></tr>
+      </tbody>
+    </table></div>
+    <p class="meta saetning">A <code>#tag</code> in the first line becomes a real tag, exactly
+    as it does in the title field — and a web address with a <code>#fragment</code> does not.
+    Add <code>?notebook=Drift</code> to file it somewhere; the name works, so a shortcut does
+    not have to look up an id.</p>
+  </div>
+
+  <h2>Recipes</h2>
+  <div class="card">
+    <p class="lead">In Shortcuts: <em>Get Contents of URL</em>. These are the fields, in the
+    order they appear there.</p>
+    ${OPSKRIFTER.map(opskriftHtml).join('')}
+  </div>
+
+  <h2>Connect Claude</h2>
+  <div class="card">
+    <p class="lead">Sagu speaks <strong>MCP</strong>, so Claude can search your archive and
+    write in it — without you pasting a key anywhere.</p>
+    <div class="tablewrap"><table class="data">
+      <tbody>
+        <tr><th>Address</th><td><code>${b}/mcp</code></td></tr>
+        <tr><th>In Claude</th><td>Settings → Connectors → Add custom connector</td></tr>
+        <tr><th>In Claude Code</th><td><code>claude mcp add --transport http sagu ${b}/mcp</code></td></tr>
+      </tbody>
+    </table></div>
+    <p class="meta saetning">The web client sends you through a consent page here and gets a
+    key of its own; Claude Code and Desktop can also just carry a <strong>full</strong> key
+    in an <code>Authorization</code> header. Either way the connection shows up under
+    Settings → Connected apps, and revoking it cuts the app off at once.</p>
+    <p class="meta saetning">Claude sees nine tools, and no more than the key allows: a
+    <strong>read</strong> connection cannot even see the ones that write. Publishing a page
+    is one of them — it puts the page on the <em>open web</em>, so Claude is told to ask
+    first.</p>
+  </div>
+
+  <h2>When something goes wrong</h2>
+  <div class="card">
+    <div class="tablewrap"><table class="data">
+      <tbody>
+        <tr><th>401</th><td>The key is wrong or revoked. Make a new one.</td></tr>
+        <tr><th>403</th><td>The key is <em>fine</em> — it is just too narrow.
+          The message says which scope it has.</td></tr>
+        <tr><th>404</th><td>No such note — or it is not yours. The two answer the same,
+          so nobody can guess which ids exist.</td></tr>
+        <tr><th>413</th><td>Too large, or your file storage is full. The message says which.</td></tr>
+        <tr><th>429</th><td>Too many calls with that key. Wait a moment.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="meta saetning">Every error has a machine code and a sentence. A shortcut can show
+    the sentence as it is; a program can branch on the code.</p>
+  </div>`;
 }

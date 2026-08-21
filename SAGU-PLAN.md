@@ -14,11 +14,11 @@ det private notearkiv og de offentlige wiki'er på `<arbejdsrum>.notion.site`.
 
 | | |
 |---|---|
-| **Fase** | **F0–F7 bygget og udgivet som v1, 2026-08-21.** |
-| **Næste** | **F8 · doda-integration** — den vigtigste enkeltdel |
-| **Tilstand** | 226 tests grønne. Install-scriptet **henter app-koden fra GitHub** og er **1.640 / 126.000 tegn (1,3 %)**, konstant uanset appens størrelse; runens YAML 242.624 → 5.610 b. Payloaden ville indlejret være 117.925 tegn (93,6 %). |
+| **Fase** | **ALLE FASER BYGGET (F0–F13), 2026-08-21.** v1 (F0–F7) er i drift på Hjorten. |
+| **Næste** | **Udgivelse af v2** (F8–F13) — venter på Andreas' ja |
+| **Tilstand** | 372 tests grønne (1 sprunget over). Install-scriptet **henter app-koden fra GitHub** og er **1.640 / 126.000 tegn (1,3 %)**, konstant uanset appens størrelse; runens YAML 242.624 → 5.610 b. Payloaden ville indlejret være 151.518 tegn (120,3 %) — appen er for stor til den gamle vej. |
 | **Repoet** | **Offentligt** (Andreas, 2026-08-21) efter en audit — `DESIGN.md` §13. Fire fund fjernet; intet hemmeligt fandtes. |
-| **Udgivet version** | — (`APP_VERSION = 1`, ikke pushet, intet git-repo endnu) |
+| **Udgivet version** | **v1** (F0–F7), i drift på Hjorten. F8–F13 er bygget og **venter på et ja** til v2: bump → commit → `git tag v2` → `git push --tags`. |
 
 **De fire målinger, kort** (hele regnestykket i `DESIGN.md`):
 
@@ -549,7 +549,27 @@ kildeordenen. Uden navigation (en udgivelse med én side) rykkede indholdet op i
 navigationens 240 px-spor, mens sideoversigten fik de 748. Hver enkelt-side-udgivelse
 har set sådan ud siden F6, uden at noget fejlede. Placeringen er nu eksplicit.
 
-### F8 · doda-integration (den vigtigste)
+### F8 · doda-integration (den vigtigste) — **SAGUS HALVDEL BYGGET 2026-08-21**
+
+Bygget i Sagu: forbindelsen (adresse + nøgle, personlig, nøglen forlader aldrig
+serveren, prøvet før den gemmes) · `+` i søgefeltet sender en opgave fra enhver skærm ·
+opgaveruden på noten med status · og et nyt **`link`-scope** (read+capture, aldrig
+slette), som er præcis den rettighed, en søsterapp skal have. Hele historien i
+`DESIGN.md` §16 — inklusive den fejl, en rigtig doda fandt: et link hængt på enden af
+en linje bliver ædt af `!`-markøren, så både linket og datoen forsvandt uden at noget
+fejlede.
+
+**Dodas halvdel er ogsaa bygget** (i doda-repoet, 2026-08-21): `app/sagu.js`, søgning i
+Sagu inde fra doda, en note oprettet i den rigtige notesbog med link tilbage, notens
+kommentarer vist på opgaven, og en ekstra række i paletten på `*`. Detaljerne står i
+dodas `DESIGN.md` under »Sagu-broen« — inklusive to fund: ruten `notion/refresh` måtte
+skifte navn, da den også svarede for Sagu, og **formen** på adressen skal afgøres før
+forbindelsen, ellers spørger doda Notion om et Sagu-id.
+
+Bemærk: doda ramte payload-loftet på samme dag (97 %) og tog **samme udvej** — men
+dodas repo er privat, så den koster et token i en `secret: true`-variabel.
+
+
 **Fra doda mod Sagu** — ny `app/sagu.js` ved siden af `notion.js`, som genbruger dodas
 **generiske** `link_url`/`link_title`-felter (de blev bevidst ikke døbt `notion_url`):
 søg i Sagu inde fra doda · hæng en note på en opgave, en note eller et projekt · hent den
@@ -568,7 +588,7 @@ tovo får kun det generiske: en note kan linke til et tovo-projekt. Intet mere.
 Sagu er nede → doda viser det som en chip med en pæn fejl, ikke som en fejlet gemning ·
 nøglen i doda har `read`+`capture`-scope og kan ikke slette noter.
 
-### F9 · API og iPhone-genveje
+### F9 · API og iPhone-genveje — **BYGGET 2026-08-21**
 Nøgler med scopes (`read`, `capture`, `full`) pr. bruger, hash-lagret, `sidst brugt`-stempel,
 øjeblikkelig tilbagekaldelse. Endepunkter, der kan bruges **uden cookie** og med ren tekst,
 formulardata eller `?text=` (dodas F2-mønster — genveje er dårlige til JSON):
@@ -576,40 +596,101 @@ formulardata eller `?text=` (dodas F2-mønster — genveje er dårlige til JSON)
 · søgning · billed-upload fra delingsmenuen · `GET /api/v1/changes?since=` med slettede id'er.
 Indbygget dokumentationsside (dodas `p9_guide`) med færdige genvejsopskrifter.
 
-**Accept:** hele scope-matricen målt uden cookie · en `capture`-nøgle kan ikke læse ·
-ingen nøgle kan lave nye nøgler eller skifte kodeord.
+**Accept:**
 
-### F10 · MCP-server og claude.ai-connector
-RUNE-ERFARINGER §9a, dodas `mcp.js` + `oauth.js`. Værktøjer: `search_notes`, `get_note`
-(markdown ud), `create_note`, `append_note`, `update_note`, `list_notebooks`, `list_tags`,
-`add_comment`, `publish_note`. Scopet håndhæves både i `tools/list` og ved kaldet.
+| Krav | Resultat |
+|---|---|
+| Hele scope-matricen målt **uden cookie** | ✓ — med en session godkender serveren alting, og scope-tjekket ser ud til at virke, selv hvis det aldrig blev kaldt |
+| En `capture`-nøgle kan ikke læse | ✓ — 403 på note, søgning, liste, `changes` og `format=md`. En mistet telefon når ikke arkivet |
+| Ingen nøgle kan lave nøgler eller skifte kodeord | ✓ — 401 for alle fire scopes, også `full`. Auth-ruterne står uden for »ét API, to legitimationer« |
+| De fire veje ind | ✓ — JSON, formulardata, ren krop og `?text=`. Og en krop, der *påstår* at være formulardata, tages som tekst |
+| Dagens note | ✓ — `to=today` samler dem ét sted, i rækkefølge; `?date=` lader telefonen sige, hvornår i dag er |
+| Billede fra delingsmenuen | ✓ — bliver en note med billedet i, med en `capture`-nøgle |
+| `changes` med slettede id'er | ✓ |
+| Guiden | ✓ — og en **formregel** slår hver metode og adresse op i serverens ruter, så den ikke kan love noget, appen ikke har |
 
-**Accept:** dodas 23 MCP-tests overført og grønne · fremmed `Origin` afvist (DNS-rebinding)
-· en `capture`-nøgle ser præcis ét værktøj.
+**266 tests grønne.** Payloaden ville indlejret være **127.927 tegn = 101,5 %** af det
+gamle loft — F9 alene ville have sprængt det. Detaljerne i `DESIGN.md` §17.
 
-### F11 · Deling mellem brugere *(bygges, når der kommer en bruger nummer to)*
-Kollegaerne læser wikien uden konto, så denne fase er **ikke på den kritiske vej**.
-Men **datalaget er der fra F0**: `user_id` og `note_acl` kan ikke eftermonteres, og
-isolationstesten køres i hver fase, uanset at der kun er én bruger.
+### F10 · MCP-server og claude.ai-connector — **BYGGET 2026-08-21**
+Ni værktøjer over JSON-RPC (`create_note`, `search_notes`, `get_note`, `append_note`,
+`update_note`, `list_notebooks`, `list_tags`, `add_comment`, `publish_note`) og hele
+OAuth 2.1-flowet, så claude.ai's webklient forbinder sig selv gennem en samtykkeside.
+`app/oauth.js` er porteret næsten ordret fra doda; kun tabellerne, samtykkesiden og
+ruterne er Sagus egne.
 
-Selve fasen: `note_acl` (læs/skriv), »delt med mig«-visning, deling af et helt undertræ,
-ejerskifte, kommentarer på tværs. Filteret ligger i dataadgangen, ikke i visningerne.
+**Accept:**
 
-**Accept:** isolationstesten udvides: en note delt til læsning kan **ikke** gemmes,
-kan ikke slettes, kan ikke offentliggøres — og dens vedhæftninger kan hentes, men ikke byttes.
+| Krav | Resultat |
+|---|---|
+| Dodas MCP-tests overført og grønne | ✓ — 25 i `tests/mcp.test.mjs`, plus 21 for connectoren |
+| Fremmed `Origin` afvist (DNS-rebinding) | ✓ — 403; vores egen slipper igennem |
+| En `capture`-nøgle ser præcis ét værktøj | ✓ — og `link` ser aldrig et, der skriver |
+| Scopet håndhæves også ved kaldet | ✓ — listen er en hjælp, ikke en spærring |
+| Hele OAuth-flowet | ✓ — opdagelse → registrering → samtykke → kode → token → `/mcp`, med PKCE S256, engangskode og roterende refresh |
+| Forbindelsen kan lukkes | ✓ — både token og refresh dør med det samme; »Connected apps« i Settings |
+| **Flerbruger** | ✓ — en forbindelse hører til den, der godkendte den; en tilbagekaldelse rører kun ens egen |
+| En connector kan ikke lave nøgler eller skifte kodeord | ✓ — 401 på `/api/v1/keys` og `/api/v1/connections` |
 
-### F12 · GitHub i noter
-En GitHub-fil-URL på sin egen linje bliver til en kode-embed: server henter via GitHub-API
-(token i `settings` som `secret: true`), **fryser commit-sha'en** ved indsættelse (så koden
-i noten ikke skifter under fødderne), viser sti + linjeinterval + »opdatér«-knap +
-kopier-knap + link til GitHub. Issue- og PR-links bliver til chips med titel og status.
-ETag-cache, rate-limit, pæn fejl når repoet er privat og tokenet mangler.
+**313 tests grønne**, 12 sabotager set fejle. Detaljerne i `DESIGN.md` §18.
 
-### F13 · Polering og udgivelse
-Tastaturgenveje · favoritter og »senest besøgte« · ikoner og manifest · README med
-versionshistorik · installationstest på Hjorten · Cloudflare-cache-fælderne (§5:
-`?v=N` og `no-store` på HTML) · migreringen af `<arbejdsrum>.notion.site` gennemført ·
-RUNE-ERFARINGER opdateret med det, Sagu lærte.
+### F11 · Deling mellem brugere — **BYGGET 2026-08-21**
+`note_acl` med `read`/`write` og `tree`, »delt med mig«-visning, deling af et helt
+undertræ, ejerskifte og kommentarer på tværs. Filteret ligger i dataadgangen, ikke i
+visningerne — og **arven regnes af det levende træ**, så der er intet at holde i takt,
+når nogen laver en underside eller flytter en.
+
+**Accept:**
+
+| Krav | Resultat |
+|---|---|
+| En note delt til læsning kan **ikke** gemmes | ✓ |
+| ... kan ikke slettes | ✓ — og heller ikke med `write`. At skrive er ikke at bestemme |
+| ... kan ikke offentliggøres | ✓ — heller ikke med `write`; »bagefter« er for sent for noget offentligt |
+| ... og dens vedhæftninger kan **hentes, men ikke byttes** | ✓ — ellers står en delt side med huller, hvor billederne skulle være |
+| Isolationstesten udvidet | ✓ — 25 tests i `tests/deling.test.mjs` ved siden af de 14 i `isolation.test.mjs` |
+| Undertræet følger med | ✓ — også undersider lavet **bagefter**; flyttes en note ud, forsvinder adgangen med det samme |
+| »Delt med mig« | ✓ — kun **toppen** af hvert træ, med hvem det kom fra |
+| Ejerskifte | ✓ — hele undertræet, ud af den gamle ejers notesbog, og den gamle beholder `write` |
+| Kommentarer på tværs | ✓ — også med `read`: at kommentere er ikke at ændre noten |
+| Kun ejeren deler videre | ✓ — og deling kræver en **session**, ikke en nøgle |
+
+**338 tests grønne**, 15 sabotager set fejle — og én sabotage uden røde, som afslørede
+en kolonne i søgeindekset, ingen læste (m12). Detaljerne i `DESIGN.md` §19.
+
+### F12 · GitHub i noter — **BYGGET 2026-08-21**
+En GitHub-fil-URL på sin egen linje bliver til koden; issue- og PR-links bliver til chips.
+
+**Accept:**
+
+| Krav | Resultat |
+|---|---|
+| Server henter via GitHub-API, token som `secret: true` | ✓ — personligt pr. bruger, prøvet før det gemmes, forlader aldrig serveren |
+| **Fryser commit-sha'en** ved indsættelse | ✓ — og sha'en står i TEKSTEN, så den overlever eksport og gendannelse |
+| Sti + linjeinterval + opdatér + kopiér + link | ✓ — med linjenumre, der passer til filen, ikke til udsnittet |
+| Issue- og PR-links som chips med titel og status | ✓ — og **flettet** skelnes fra **lukket**; `state` alene kan ikke se forskel |
+| ETag-cache | ✓ — 304 koster hverken kvote eller båndbredde; en frossen fil spørges der slet ikke om igen |
+| Rate-limit | ✓ — 300 opslag i timen pr. bruger, og GitHubs egen kvote meldes med *hvornår* den er tilbage |
+| Pæn fejl når repoet er privat og tokenet mangler | ✓ — beskeden nævner **begge** betydninger af 404 |
+| På wikien | ✓ — **kun fra cachen**; en fremmed kan ikke bruge ejerens kvote op |
+
+**22 tests**, 13 sabotager set fejle. Detaljerne i `DESIGN.md` §20.
+
+### F13 · Polering og udgivelse — **BYGGET 2026-08-21**
+
+| Punkt | Resultat |
+|---|---|
+| Tastaturgenveje | ✓ — ét bord, og oversigten (`?`) er **genereret** af det, så den ikke kan drive |
+| Favoritter og »senest besøgte« | ✓ — begge er brugerens, ikke notens; læses gennem `SYNLIG` |
+| Ikoner og manifest | ✓ (F0) |
+| README med versionshistorik | ✓ |
+| Installationstest på Hjorten | ✓ — v1 kørte 2026-08-21, 154 ms |
+| Cloudflare-cache-fælderne | ✓ (F0: `app.js?v=N` stemplet af build'et, HTML `no-store`) |
+| RUNE-ERFARINGER opdateret | ✓ — efter hver fase |
+| Migreringen af Notion-wikierne | **ikke kode.** Importen (F5) og udgivelsen (F6) er der; selve flytningen er Andreas' |
+
+**10 tests**, 8 sabotager — hvoraf tre først gav nul røde og afslørede tre for svage
+tests. Detaljerne i `DESIGN.md` §21.
 
 ---
 
