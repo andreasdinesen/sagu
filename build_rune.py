@@ -222,7 +222,23 @@ def stempl_version(version):
             fh.write(ny)
     if f'app.js?v={version}' not in ny:
         fejl('kunne ikke stemple versionen i index.html')
-    print(f'  index.html stemplet med v={version}')
+
+    # ... og service workeren SKAL foelge med.
+    #
+    # Bumpes cachenavnet ikke, hober hver udgivelse sig op i browserens cache,
+    # og workeren kan servere en gammel app.js i det uendelige. Det ramte doda
+    # i drift (v39). Derfor stemples de to fra SAMME tal, i samme funktion -
+    # to steder at huske er ét for meget.
+    sw_sti = os.path.join(PUBLIC, 'sw.js')
+    with open(sw_sti, encoding='utf8') as fh:
+        sw = fh.read()
+    sw_ny = re.sub(r'^const VERSION = \d+;', f'const VERSION = {version};', sw, flags=re.M)
+    if sw_ny != sw:
+        with open(sw_sti, 'w', encoding='utf8') as fh:
+            fh.write(sw_ny)
+    if f'const VERSION = {version};' not in sw_ny:
+        fejl('kunne ikke stemple versionen i sw.js - staar linjen der stadig?')
+    print(f'  index.html og sw.js stemplet med v={version}')
 
 
 # ------------------------------------------------------------------ 3. payload

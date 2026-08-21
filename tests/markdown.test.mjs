@@ -480,3 +480,23 @@ test('et billede UDEFRA bliver et forklarende link, ikke et oedelagt ikon', () =
     assert.ok(!h.includes('<img') && !h.includes('<a '), `${ondt} slap igennem`);
   }
 });
+
+/*
+ * **En tom linje er IKKE en blok.**
+ *
+ * Det lyder som en detalje, og det var årsagen til, at man ikke kunne skrive
+ * i en tom note på telefonen: editoren lagde en tom linje ind og bad om
+ * »blok 0«, men opdeleren springer tomme linjer over og gav ingen blokke.
+ * Optegningen bakkede ud på samme tick, så der aldrig kom et felt frem.
+ *
+ * Testen står her, fordi den fastholder den præmis, editoren regner med.
+ * Ændrer opdeleren adfærd en dag, skal det være et bevidst valg — ikke noget,
+ * der bliver opdaget som »man kan ikke skrive i sine noter«.
+ */
+test('blokke() giver INGEN blokke for en tom eller kun-blank note', () => {
+  for (const tom of ['', '\n', '\n\n\n', '   ', ' \n \n']) {
+    assert.deepEqual(md.blokke(tom), [], `${JSON.stringify(tom)} skulle ikke give blokke`);
+  }
+  // ... men ét enkelt tegn ER en blok.
+  assert.equal(md.blokke('x').length, 1);
+});

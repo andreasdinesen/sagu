@@ -14,11 +14,11 @@ det private notearkiv og de offentlige wiki'er på `<arbejdsrum>.notion.site`.
 
 | | |
 |---|---|
-| **Fase** | **ALLE FASER BYGGET (F0–F13), 2026-08-21.** v1 (F0–F7) er i drift på Hjorten. |
-| **Næste** | **Udgivelse af v2** (F8–F13) — venter på Andreas' ja |
-| **Tilstand** | 372 tests grønne (1 sprunget over). Install-scriptet **henter app-koden fra GitHub** og er **1.640 / 126.000 tegn (1,3 %)**, konstant uanset appens størrelse; runens YAML 242.624 → 5.610 b. Payloaden ville indlejret være 151.518 tegn (120,3 %) — appen er for stor til den gamle vej. |
+| **Fase** | **F0–F14 bygget, 2026-08-21.** v2 er udgivet og i drift på Hjorten. |
+| **Næste** | **v3** — fire driftsfejl rettet + offline (F14). Venter på et ja. |
+| **Tilstand** | 374 tests grønne (1 sprunget over). Install-scriptet **henter app-koden fra GitHub** og er **1.640 / 126.000 tegn (1,3 %)**, konstant uanset appens størrelse; runens YAML 242.624 → 5.610 b. Payloaden ville indlejret være 154.293 tegn (122,5 %) — appen er for stor til den gamle vej. |
 | **Repoet** | **Offentligt** (Andreas, 2026-08-21) efter en audit — `DESIGN.md` §13. Fire fund fjernet; intet hemmeligt fandtes. |
-| **Udgivet version** | **v1** (F0–F7), i drift på Hjorten. F8–F13 er bygget og **venter på et ja** til v2: bump → commit → `git tag v2` → `git push --tags`. |
+| **Udgivet version** | **v2** (F0–F13), i drift på Hjorten. Rettelserne efter v2 og F14 (offline) venter på et ja til v3. |
 
 **De fire målinger, kort** (hele regnestykket i `DESIGN.md`):
 
@@ -657,6 +657,17 @@ når nogen laver en underside eller flytter en.
 
 **338 tests grønne**, 15 sabotager set fejle — og én sabotage uden røde, som afslørede
 en kolonne i søgeindekset, ingen læste (m12). Detaljerne i `DESIGN.md` §19.
+
+### F14 · Offline — **BYGGET 2026-08-21** *(kom til efter planen)*
+Andreas' ønske efter v2: »vigtigste er at man kan se noter offline«.
+
+| Krav | Resultat |
+|---|---|
+| Se noter uden net | ✓ — målt med serveren **helt slukket**: skal, sidebar, træ, favoritter, spor og noter med tekst og mærker |
+| Sig det ærligt | ✓ — et bånd, tændt af en header, service workeren sætter på et svar fra cachen |
+| Skrive offline og synke bagefter | **ikke bygget.** En rettelse uden net fejler pænt, og båndet siger det på forhånd. En kø kræver konfliktbehandling i begge ender — en fase for sig |
+
+Detaljerne i `DESIGN.md` §23; de fire driftsfejl, v2 afslørede, i §22.
 
 ### F12 · GitHub i noter — **BYGGET 2026-08-21**
 En GitHub-fil-URL på sin egen linje bliver til koden; issue- og PR-links bliver til chips.

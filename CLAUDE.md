@@ -43,7 +43,29 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   gør, på `notes`. Filteret kunne aldrig finde en delt note, og kolonnen, der blev
   tilbage, lignede en spærring uden at være en. En formregel holder filteret væk.
 - **`maaRette()` er ét sted**, brugt af de fire steder en redigering kan begynde:
-  titelfeltet, at åbne en blok, tjekbokse og mærkerækken. En flade, der lader dig skrive
+  titelfeltet, at åbne en blok, tjekbokse og mærkerækken. `aabnSidste()` har sin egen
+  kopi af vagten, fordi dens tomme gren går uden om `aabnBlok()`.
+- **Et tryk HVOR SOM HELST i notekroppen begynder at skrive.** Reglen var før »kun det
+  tomme areal under indholdet«, og på en tom note findes det areal ikke — pladsholderen
+  fylder kroppen helt ud. Links, tjekbokse, billeder og GitHub-knapper standser selv
+  deres hændelse.
+- **En tom linje er IKKE en blok.** `blokke('\n')` giver `[]`, og editoren regner med
+  det: en tom første blok er derfor et gyldigt mål i `tegnMedAabenBlok`, ikke et fravær.
+- **Mærke-reglen ligger i `app/shared/maerker.js`** — også kommaet. `#drift,net` er to
+  mærker; `#drift, net` er ét og en sætning. Reglen gælder titelfeltet, mærkefeltet,
+  `capture` og MCP'en på én gang.
+- **Brug ikke `<datalist>`.** Den virker ikke på iOS, så forslag findes kun for halvdelen
+  af brugerne. Tegn listen selv — og husk så også piletaster, Tab, Enter og klik.
+- **En knap skal hedde det, den gør.** »Use this address« ryddede feltet og blev læst som
+  »brug den her adresse«. Gør knappen noget, man ikke kan fortryde med et klik, spørger den.
+- **Service workeren cacher alt under `/api/`** — ikke kun `/api/v1/`. `/api/me` fra en
+  cache ville overleve et log ud.
+- **`sw.js`' `VERSION` stemples af build'et sammen med `index.html`s `?v=`.** Bumpes
+  cachenavnet ikke, kan workeren servere en gammel `app.js` i det uendelige (doda v39).
+- **Offline-cachen ryddes ved log ud.** En cache overlever en session; »log ud« skal
+  betyde, at noterne er væk fra telefonen.
+- **Wikien caches aldrig offline.** En offentlig side hører til den besøgende, og en kopi
+  kan vise noget, der er trukket tilbage. En flade, der lader dig skrive
   og først afviser ved gemningen, ligner en fejl i appen — ikke en spærring.
 - **En GitHub-adresse i en note bærer sin egen sha.** Grenen slås op ÉN gang, ved
   indsættelsen, og adressen skrives om i **teksten** — ikke i en tabel ved siden af.

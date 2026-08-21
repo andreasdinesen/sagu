@@ -2285,3 +2285,139 @@ ikke afhænge af urets opløsning.
 | Tests | **10 i `tests/polering.test.mjs`** + 1 formregel |
 | Hver vagt set fejle | 8 sabotager — hvoraf **tre først gav nul røde** og afslørede tre for svage tests |
 | Prøvet i browseren | `?` viser listen · `n` fyrer ikke, mens man skriver i søgefeltet · `s` sætter stjernen og opdaterer sidebaren |
+
+## 22 · Efter v2 — det, driften fandt
+
+v2 kom på Andreas' telefon, og så kom fejlrapporterne. Alle fire var ting, der
+så rigtige ud i koden og var forkerte i hånden. De står her, fordi det er den
+slags, ingen testsuite fanger.
+
+### »Jeg kan ikke skrive noget i mine noter på min mobil«
+
+En tom note kunne **ikke åbnes overhovedet** — og fejlen var to lag dyb.
+
+**Lag 1:** klik-handleren åbnede kun redigeringen, når man ramte `#noteBody`
+*selv* (`e.target === host`), altså det tomme areal under indholdet. På en tom
+note er pladsholderen »Click here to start writing« et `<p>` uden `data-blok`,
+og den fylder kroppen helt ud. Målt på en telefonskærm: **kroppen 22 px,
+pladsholderen 22 px — nul pixels tilbage at ramme.** Teksten sagde »klik her«,
+og der var ikke noget »her«.
+
+**Lag 2:** selv da klikket nåede frem, virkede det ikke. `aabnSidste()` lægger
+en tom linje ind og beder om blok 0 — men `blokke('\n')` giver **ingen**
+blokke, fordi en tom linje ikke er en blok. `tegnMedAabenBlok` faldt i sin
+`!b`-gren, satte `aabenBlok` tilbage til null og tegnede pladsholderen igen
+**på samme tick**, så der aldrig kom et felt frem.
+
+Begge lag er lukket: et tryk hvor som helst i kroppen begynder at skrive, og
+en tom første blok er et gyldigt mål frem for et fravær. En test i
+`markdown.test.mjs` fastholder nu præmissen (`blokke('\n')` → `[]`), så en
+ændring dér bliver et bevidst valg og ikke »man kan ikke skrive i sine noter«.
+
+**Hvorfor kun på mobilen:** en NY note åbner sit felt ad en anden vej, og på en
+computer er der `E`-genvejen. Fejlen ramte kun den, der kom tilbage til en
+note, han havde ladet stå tom — og det gør man på en telefon.
+
+Sidegevinst: `aabnSidste()` fik den `maaRette`-vagt, den manglede. Den tomme
+gren gik uden om `aabnBlok()`, så den nye regel ville have givet en kollega med
+læseadgang et skrivefelt på en tom delt note.
+
+### »Use this address« gjorde det modsatte af det, den hed
+
+Knappen ved siden af feltet »Public address« ryddede indstillingen. Meningen
+var »brug den adresse, du står på« — men ved siden af et felt, man lige har
+skrevet en adresse i, læses den som »brug DEN her adresse«. Andreas rettede
+adressen, trykkede, og fik den gamle tilbage.
+
+Serveren gjorde alt rigtigt. **En knap skal hedde det, den gør** — den hedder
+nu »Clear it«, og fordi den ikke kan fortrydes med et klik, spørger den først.
+
+### Mærkeforslag fandtes kun for halvdelen af brugerne
+
+Mærkefeltet brugte `<datalist>`, altså browserens egen forslagsliste. Den
+virker på en computer og **slet ikke på iOS**. Forslagene var der, men kunne
+ikke ses af den, der sad med telefonen — og en funktion, man ikke kan se,
+findes ikke (RUNE-ERFARINGER, tovo v8).
+
+Listen tegnes nu selv, med piletaster, Tab, Enter og klik. Til gengæld skal
+den også selv kunne alt det, browseren gjorde — det er prisen for at holde op
+med at bruge en indbygget kontrol.
+
+### `#drift,net,backup` er tre mærker
+
+Komma-reglen ligger i `app/shared/maerker.js`, altså **ét sted**, så den
+gælder titelfeltet, mærkefeltet, `POST /api/v1/capture` fra en iPhone-genvej og
+MCP'ens `create_note` på én gang. Kommaet skal klæbe til begge sider:
+`#drift,net`, aldrig `#drift, net` — ellers ville »husk #drift, og ring til
+Bo« give et mærke, der hed »og«.
+
+## 23 · F14 · Offline
+
+**Bygget 2026-08-21**, efter Andreas' ønske: »vigtigste er at man kan se noter
+offline«.
+
+### Hvad der virker uden net
+
+Hele appen. Målt med serveren **helt slukket**: skallen, sidebaren, træet,
+favoritterne, sporet, og noterne med deres tekst og mærker. Et bånd øverst
+siger det højt — *»Offline — showing what was loaded last«* — fordi **en app,
+der viser gamle tal uden at sige det, er værre end en, der siger »her er
+intet«:** man træffer beslutninger på noget, man tror er nyt.
+
+Service workeren er porteret fra doda, hvor den har kørt i drift.
+
+### Net FØRST, ikke cache først
+
+For data. En note, man har rettet på en computer, skal være den nye, når man
+åbner telefonen. Prisen er, at man venter på netværket, når det er der — og
+det er den rigtige pris for et arkiv, man skriver i fra flere steder.
+
+For statiske filer er det omvendt: de er versionerede, så cache først er både
+sikkert og hurtigt.
+
+### Tre ting, det at prøve det afslørede
+
+**1 · `/api/me` blev cachet cache-først.** Grenen spurgte om `/api/v1/`, så
+`/api/me` og `/api/public-config` faldt i den statiske gren. Et svar på »hvem
+er jeg« fra cachen ville have overlevet et log ud og fortalt appen, at der
+stadig sad nogen. Fundet ved at **kigge i cachen** efter at have varmet den op.
+
+**2 · `?v=` gjorde skallen ubrugelig offline.** Workeren precacher
+`app.js?v=<VERSION>`, men i udviklingstilstand stempler serveren `?v=<mtime>`
+— to forskellige adresser, så den precachede kopi aldrig blev brugt, og hele
+skallen faldt på gulvet uden net. Offline falder nu tilbage til et opslag
+**uden** at se på `?v=`: versionsnummeret er en cache-buster, ikke en del af
+filens identitet, og en lidt gammel app er uendeligt meget bedre end en tom
+skærm.
+
+**3 · Cachen skal ryddes ved log ud.** En cache overlever en session. Uden
+oprydning ville en telefon, man har logget ud af, stadig kunne vise noterne
+fra sidste gang — en helt anden aftale end den, »log ud« giver indtryk af.
+
+### Cachenavnet stemples af build'et
+
+`sw.js`' `VERSION` og `index.html`s `?v=` stemples fra **samme tal i samme
+funktion**. Bumpes cachenavnet ikke, hober hver udgivelse sig op, og workeren
+kan servere en gammel `app.js` i det uendelige. Det ramte doda i drift (v39
+hed »web app'en på telefonen opdaterer sig selv igen«). En formregel står vagt
+om stemplingen.
+
+### Det, der IKKE er bygget
+
+**At skrive offline.** En rettelse uden net fejler med en pæn besked, og båndet
+siger det på forhånd (»Changes are not saved until you are back«). En kø, der
+gemmer skrivninger og sender dem, når nettet kommer igen, er ikke bygget —
+den kræver konfliktbehandling, som Sagu allerede har i den ene ende
+(`updated_at`-konflikten fra F1) og skal have i den anden. Det er en fase for
+sig, ikke et par linjer.
+
+Wikien caches heller ikke: en offentlig side hører til den besøgende, og en
+kopi i ejerens browser kan vise noget, der er trukket tilbage.
+
+### Målt
+
+| | |
+|---|---|
+| Prøvet med serveren slukket | app, sidebar, træ, favoritter, spor og noter — alt kunne læses |
+| Tests | 374 grønne, 1 sprunget over (+2 formregler, +1 markdown-præmis) |
+| Fundet ved at prøve frem for ved at teste | 3 fejl i selve offline-laget, og 4 i det, driften rapporterede |

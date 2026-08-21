@@ -360,14 +360,16 @@ async function sideSettings() {
 
         <label class="field" style="margin-top:16px"><span>Public address</span>
           <input class="input" id="offentligUrl" value="${esc(state.publicUrl || '')}"
-            placeholder="${esc(location.origin)}" autocomplete="off" spellcheck="false"></label>
+            placeholder="${esc(location.origin)}" autocomplete="off" autocapitalize="none"
+            autocorrect="off" inputmode="url" spellcheck="false"></label>
         <div class="btnrow" style="margin-top:8px">
-          <button class="btn" id="offentligGem">Save address</button>
-          ${state.publicUrl ? '<button class="btn" id="offentligRyd">Use this address</button>' : ''}
+          <button class="btn primary" id="offentligGem">Save address</button>
+          ${state.publicUrl ? `<button class="btn" id="offentligRyd">Clear it</button>` : ''}
         </div>
         <p class="meta saetning">Sagu can be reached on more than one address. This is the one
         published links are written with, and the one search engines are told is the real one.
-        Leave it empty to use whichever address you happen to be on.</p>
+        <strong>Clear it</strong> removes the fixed address again, so links use whichever
+        address you happen to be on.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
           <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
           <tbody>${a.users.map((u) => `<tr><td>${esc(u.username)}</td>
@@ -694,7 +696,25 @@ function bindSettings() {
     };
     gemUrl.addEventListener('click', () => saet(felt.value));
     const ryd = document.getElementById('offentligRyd');
-    if (ryd) ryd.addEventListener('click', () => saet(''));
+    /*
+     * Knappen hed »Use this address«, og den RYDDER feltet.
+     *
+     * Meningen var »brug den adresse, du staar paa« - men ved siden af et
+     * felt, man lige har skrevet en adresse i, laeses den som »brug DEN her
+     * adresse«. Andreas trykkede paa den efter at have rettet adressen og
+     * fik den gamle tilbage; knappen gjorde noejagtig det, den skulle, og
+     * stik imod det, den sagde (2026-08-21).
+     *
+     * **En knap skal hedde det, den goer** - og naar den goer noget, man ikke
+     * kan fortryde med det samme, skal den spoerge.
+     */
+    if (ryd) {
+      ryd.addEventListener('click', () => {
+        if (!confirm('Remove the fixed public address?\n\n'
+          + 'Published links will then use whichever address you open Sagu on.')) return;
+        saet('');
+      });
+    }
   }
 
   const nyNoegle = document.getElementById('noegleNy');

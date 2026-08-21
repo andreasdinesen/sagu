@@ -183,24 +183,55 @@ async function hentGenveje() {
   } catch { /* listerne er en tilgift, ikke en forudsaetning */ }
 }
 
+/*
+ * Begge lister kan foldes sammen.
+ *
+ * De ligger over notesbøgerne i sidebaren, og på en telefon skubber de træet
+ * ned under skærmkanten. Valget hører til kontoen, ikke til maskinen — men
+ * det gemmes samme sted som bøgernes egen foldning (`editor.foldede`), for
+ * **to måder at folde på i samme app er to steder at rette**, næste gang en
+ * af dem skal ændres (RUNE-ERFARINGER, tovo v11).
+ */
+const SEKTION_FAV = 'sektion:favourites';
+const SEKTION_SENESTE = 'sektion:recent';
+
 function genvejeHtml() {
-  const liste = (titel, noter) => (noter.length ? `
+  const liste = (titel, noegle, noter) => {
+    if (!noter.length) return '';
+    const foldet = editor.foldede.has(noegle);
+    return `
     <nav class="nav genvejsliste">
-      <div class="nav-titel">${esc(titel)}</div>
-      ${noter.map((n) => `<button class="nav-item" data-genvej="${esc(n.id)}"
+      <button class="nav-titel nav-fold" data-foldsektion="${esc(noegle)}"
+        aria-expanded="${foldet ? 'false' : 'true'}">
+        <span class="fold-pil${foldet ? ' er-foldet' : ''}">${icon('udfold', 12)}</span>
+        <span>${esc(titel)}</span>
+        ${foldet ? `<span class="nav-count">${noter.length}</span>` : ''}
+      </button>
+      ${foldet ? '' : noter.map((n) => `<button class="nav-item" data-genvej="${esc(n.id)}"
         ${editor.note && editor.note.id === n.id ? 'aria-current="page"' : ''}>
         ${n.icon ? `<span class="nav-emoji">${esc(n.icon)}</span>` : icon('notes')}
         <span>${esc(n.title || 'Untitled')}</span>
       </button>`).join('')}
-    </nav>` : '');
+    </nav>`;
+  };
 
-  return liste('Favourites', sidebarListe.favoritter)
-    + liste('Recent', sidebarListe.seneste);
+  return liste('Favourites', SEKTION_FAV, sidebarListe.favoritter)
+    + liste('Recent', SEKTION_SENESTE, sidebarListe.seneste);
 }
 
 function bindGenveje() {
   document.querySelectorAll('[data-genvej]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.genvej));
+  });
+  document.querySelectorAll('[data-foldsektion]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const n = el.dataset.foldsektion;
+      if (editor.foldede.has(n)) editor.foldede.delete(n); else editor.foldede.add(n);
+      gemFoldede();
+      // Tegner KUN sit eget element - en fuld optegning ville lukke en aaben
+      // blok og flytte rullepositionen.
+      tegnGenveje();
+    });
   });
 }
 

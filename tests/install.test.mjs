@@ -273,12 +273,22 @@ test('den rigtige codeload-adresse virker: https, gzip, praefiks og app/',
       'praefiks-mappen og pax-headeren skal vaere ryddet vaek');
   });
 
-test('et privat repo svarer 404 paa codeload - ikke 403',
+test('noget, man ikke kan se, svarer 404 paa codeload - ikke 403',
   { skip: process.env.SAGU_INGEN_NET ? 'net slaaet fra' : false }, async () => {
-    // Grunden til at fejlbeskeden SKAL naevne begge aarsager. Maalt i F0,
-    // bekraeftet her, saa paastanden ikke bare staar i et dokument.
+    /*
+     * Grunden til at fejlbeskeden SKAL naevne begge aarsager: GitHub skelner
+     * ikke mellem »findes ikke« og »du maa ikke se det«. Maalt i F0,
+     * bekraeftet her, saa paastanden ikke bare staar i et dokument.
+     *
+     * **Fiksturen var foer `andreasdinesen/doda`** - et rigtigt privat repo.
+     * Den blev roed den dag, doda blev gjort offentligt (2026-08-21): en
+     * test, der laener sig op ad en TILSTAND, nogen kan aendre et andet
+     * sted, maaler ikke det, den tror. Et repo, der aldrig kommer til at
+     * findes, kan ikke skifte under den - og det er samme 404, som er hele
+     * pointen.
+     */
     const svar = await fetch(
-      'https://codeload.github.com/andreasdinesen/doda/tar.gz/refs/heads/main',
+      'https://codeload.github.com/andreasdinesen/findes-ikke-og-kommer-ikke-til-det/tar.gz/refs/heads/main',
       { redirect: 'manual' }).catch(() => null);
     if (!svar) return;                       // uden net beviser testen intet
     assert.equal(svar.status, 404);

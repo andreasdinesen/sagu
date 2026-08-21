@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -26,6 +26,8 @@ const state = {
   notes: [],
   publicUrl: '',
   today: '',
+  // F14: viser vi noget, der kom fra offline-cachen?
+  offline: false,
   // Login-skaermen kan staa i to tilstande: log ind eller opret konto.
   gateMode: 'login',
 };
@@ -118,6 +120,16 @@ async function api(method, path, body) {
       new Error('No connection — this needs the network. Try again when you are back.'),
       { offline: true });
   }
+  /*
+   * Kom svaret fra offline-cachen, skal det SIGES.
+   *
+   * Service workeren saetter headeren, naar den serverer noget gammelt, fordi
+   * netvaerket ikke svarede. En app, der viser gamle tal uden at sige det, er
+   * vaerre end en, der siger »her er intet«: man traeffer beslutninger paa
+   * noget, man tror er nyt (F14).
+   */
+  if (typeof saetOffline === 'function') saetOffline(res.headers.get('X-Sagu-Offline') === '1');
+
   let data = {};
   try { data = await res.json(); } catch { /* tomt svar er i orden */ }
   // API'et svarer {error: kode, message: laesbar tekst}. Mennesket skal se
@@ -206,6 +218,7 @@ const ICONS = {
   laas: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/>',
   stjerne: '<path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
   tastatur: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h10"/>',
+  offline: '<path d="M3 3l18 18"/><path d="M8.5 16.5a5 5 0 017 0"/><path d="M5 13a10 10 0 013.5-2.3M19 13a10 10 0 00-6.5-2.9"/><path d="M2 9.5A15 15 0 016 7M22 9.5a15 15 0 00-8.5-3.4"/>',
   stjerneFuld: '<path fill="currentColor" d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
   import: '<path d="M12 3.5v11M8.5 11L12 14.5 15.5 11"/><path d="M4.5 15.5v3a1.5 1.5 0 001.5 1.5h12a1.5 1.5 0 001.5-1.5v-3"/>',
   ind: '<path d="M4 6.5h16M9 12h11M9 17.5h11"/><path d="M4 10l2.5 2L4 14"/>',
@@ -400,6 +413,10 @@ function shellHtml() {
       </div>
     </aside>
     <main class="main">
+      <div class="offline-baand" id="offlineBaand" ${state.offline ? '' : 'hidden'}>
+        ${icon('offline', 15)}
+        <span>Offline — showing what was loaded last. Changes are not saved until you are back.</span>
+      </div>
       <div class="topbar">
         <div class="toprow">
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
@@ -653,6 +670,14 @@ function visBrugerMenu() {
       luk();
       if (hvad === 'genveje') { visGenvejsPanel(); return; }
       if (hvad === 'settings' || hvad === 'import') { gaaTil(hvad); return; }
+      /*
+       * Ryd offline-cachen FOER logout-kaldet.
+       *
+       * En cache overlever en session. Uden det her ville en telefon, man
+       * har logget ud af, stadig kunne vise noterne fra sidste gang - og det
+       * er en helt anden aftale end den, »log ud« giver indtryk af (F14).
+       */
+      ryddOffline();
       await api('POST', '/api/logout', {});
       state.user = null;
       state.gateMode = 'login';
@@ -750,6 +775,62 @@ window.addEventListener('scroll', () => {
 
 window.addEventListener('resize', () => { byggToc(); });
 
+/* ------------------------------------------------------ offline (F14) */
+
+/*
+ * Service workeren registreres, saa noterne kan LAESES uden net.
+ *
+ * `./sw.js` uden en `?v=` med vilje: browseren sammenligner selve FILEN byte
+ * for byte og opdaterer workeren, naar den er aendret. Et versionsnummer i
+ * adressen ville lave en ny worker pr. udgivelse i stedet for at afloese den
+ * gamle - og saa ville to workere slaas om den samme cache.
+ *
+ * Fejler registreringen, sker der ingenting. Offline er en TILGIFT; appen
+ * skal virke praecis som foer uden den.
+ */
+function registrerOffline() {
+  if (!('serviceWorker' in navigator)) return;
+  // Kun over https (eller localhost). Panelet naas paa ren http, hvor en
+  // service worker slet ikke findes - og en fejl i konsollen dér ville se ud
+  // som om noget var i stykker.
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost'
+      && location.hostname !== '127.0.0.1') return;
+  navigator.serviceWorker.register('./sw.js').catch(() => { /* en tilgift */ });
+}
+
+/** Alt cachet indhold vaek. Kaldes ved log ud. */
+function ryddOffline() {
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage('ryd');
+    }
+    if (window.caches) caches.keys().then((n) => n.forEach((x) => caches.delete(x)));
+  } catch { /* ingen cache at rydde */ }
+}
+
+/**
+ * Baandet, der siger det HOEJT.
+ *
+ * En app, der viser gamle tal uden at sige det, er vaerre end en, der siger
+ * »her er intet«: man traeffer beslutninger paa noget, man tror er nyt. Derfor
+ * saetter service workeren `X-Sagu-Offline` paa et svar fra cachen, og
+ * `api()` taender baandet.
+ */
+function saetOffline(gammelt) {
+  const nu = !!gammelt;
+  if (state.offline === nu) return;
+  state.offline = nu;
+  const b = document.getElementById('offlineBaand');
+  if (b) b.hidden = !nu;
+}
+
+window.addEventListener('online', () => {
+  saetOffline(false);
+  // Hent det rigtige igen med det samme - man har ventet paa det.
+  if (state.user) hentState().then(() => tegnSide()).catch(() => {});
+});
+window.addEventListener('offline', () => saetOffline(true));
+
 /* --------------------------------------------------------------- start */
 
 /**
@@ -777,6 +858,7 @@ function fortsaetTilConnector() {
 
 (async function start() {
   anvendTema(nuvaerendeTema());
+  registrerOffline();
   try {
     state.config = await api('GET', '/api/public-config');
     document.title = state.config.appName || 'Sagu';

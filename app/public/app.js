@@ -191,11 +191,25 @@
 }(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
+  /** Ét maerkes tegn. Bogstav eller tal foerst, derefter ogsaa _ og -. */
+  const ORD = '[\\p{L}\\p{N}][\\p{L}\\p{N}_-]{0,59}';
+
+  /*
+   * `#drift,net,backup` er TRE maerker.
+   *
+   * Kommaet skal klaebe til begge sider - `#drift,net`, aldrig `#drift, net`.
+   * Med mellemrum efter kommaet er det en saetning: »husk #drift, og ring til
+   * Bo« maa ikke give et maerke der hedder »og«. Det er samme slags regel som
+   * markoerens egen (den skal staa ved linjestart eller efter et mellemrum) -
+   * **et maerke klaeber til det, det hoerer til.**
+   */
+  const MOENSTER = new RegExp(`(^|\\s)#(${ORD}(?:,${ORD})*)`, 'gu');
+
   function pluk(raa) {
     const maerker = [];
     const tekst = String(raa || '')
-      .replace(/(^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{0,59})/gu, (helt, foer, navn) => {
-        maerker.push(navn);
+      .replace(MOENSTER, (helt, foer, navne) => {
+        for (const n of navne.split(',')) if (n) maerker.push(n);
         return foer;
       })
       .replace(/\s+/g, ' ')
@@ -203,7 +217,25 @@
     return { tekst, maerker };
   }
 
-  return { pluk };
+  /**
+   * Det, en bruger taster i et maerke-FELT.
+   *
+   * Samme komma-regel, men uden `#`-markoeren: i et felt, der kun kan
+   * indeholde maerker, er havelaagen stoej. Mellemrum om kommaerne er derimod
+   * tilladt her - man er i et felt og ikke midt i en saetning, saa der er
+   * ingen »og« at forveksle noget med.
+   */
+  function fraFelt(raa) {
+    const ud = [];
+    for (const del of String(raa || '').split(',')) {
+      const n = del.trim().replace(/^#/, '').replace(/\s+/g, '-');
+      if (!n) continue;
+      if (!ud.some((x) => x.toLowerCase() === n.toLowerCase())) ud.push(n);
+    }
+    return ud;
+  }
+
+  return { pluk, fraFelt };
 }));
 
 /* ---- shared/markdown.js ---- */
@@ -2064,24 +2096,55 @@ async function hentGenveje() {
   } catch { /* listerne er en tilgift, ikke en forudsaetning */ }
 }
 
+/*
+ * Begge lister kan foldes sammen.
+ *
+ * De ligger over notesbøgerne i sidebaren, og på en telefon skubber de træet
+ * ned under skærmkanten. Valget hører til kontoen, ikke til maskinen — men
+ * det gemmes samme sted som bøgernes egen foldning (`editor.foldede`), for
+ * **to måder at folde på i samme app er to steder at rette**, næste gang en
+ * af dem skal ændres (RUNE-ERFARINGER, tovo v11).
+ */
+const SEKTION_FAV = 'sektion:favourites';
+const SEKTION_SENESTE = 'sektion:recent';
+
 function genvejeHtml() {
-  const liste = (titel, noter) => (noter.length ? `
+  const liste = (titel, noegle, noter) => {
+    if (!noter.length) return '';
+    const foldet = editor.foldede.has(noegle);
+    return `
     <nav class="nav genvejsliste">
-      <div class="nav-titel">${esc(titel)}</div>
-      ${noter.map((n) => `<button class="nav-item" data-genvej="${esc(n.id)}"
+      <button class="nav-titel nav-fold" data-foldsektion="${esc(noegle)}"
+        aria-expanded="${foldet ? 'false' : 'true'}">
+        <span class="fold-pil${foldet ? ' er-foldet' : ''}">${icon('udfold', 12)}</span>
+        <span>${esc(titel)}</span>
+        ${foldet ? `<span class="nav-count">${noter.length}</span>` : ''}
+      </button>
+      ${foldet ? '' : noter.map((n) => `<button class="nav-item" data-genvej="${esc(n.id)}"
         ${editor.note && editor.note.id === n.id ? 'aria-current="page"' : ''}>
         ${n.icon ? `<span class="nav-emoji">${esc(n.icon)}</span>` : icon('notes')}
         <span>${esc(n.title || 'Untitled')}</span>
       </button>`).join('')}
-    </nav>` : '');
+    </nav>`;
+  };
 
-  return liste('Favourites', sidebarListe.favoritter)
-    + liste('Recent', sidebarListe.seneste);
+  return liste('Favourites', SEKTION_FAV, sidebarListe.favoritter)
+    + liste('Recent', SEKTION_SENESTE, sidebarListe.seneste);
 }
 
 function bindGenveje() {
   document.querySelectorAll('[data-genvej]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.genvej));
+  });
+  document.querySelectorAll('[data-foldsektion]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const n = el.dataset.foldsektion;
+      if (editor.foldede.has(n)) editor.foldede.delete(n); else editor.foldede.add(n);
+      gemFoldede();
+      // Tegner KUN sit eget element - en fuld optegning ville lukke en aaben
+      // blok og flytte rullepositionen.
+      tegnGenveje();
+    });
   });
 }
 
@@ -2101,7 +2164,7 @@ function tegnGenveje() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -2122,6 +2185,8 @@ const state = {
   notes: [],
   publicUrl: '',
   today: '',
+  // F14: viser vi noget, der kom fra offline-cachen?
+  offline: false,
   // Login-skaermen kan staa i to tilstande: log ind eller opret konto.
   gateMode: 'login',
 };
@@ -2214,6 +2279,16 @@ async function api(method, path, body) {
       new Error('No connection — this needs the network. Try again when you are back.'),
       { offline: true });
   }
+  /*
+   * Kom svaret fra offline-cachen, skal det SIGES.
+   *
+   * Service workeren saetter headeren, naar den serverer noget gammelt, fordi
+   * netvaerket ikke svarede. En app, der viser gamle tal uden at sige det, er
+   * vaerre end en, der siger »her er intet«: man traeffer beslutninger paa
+   * noget, man tror er nyt (F14).
+   */
+  if (typeof saetOffline === 'function') saetOffline(res.headers.get('X-Sagu-Offline') === '1');
+
   let data = {};
   try { data = await res.json(); } catch { /* tomt svar er i orden */ }
   // API'et svarer {error: kode, message: laesbar tekst}. Mennesket skal se
@@ -2302,6 +2377,7 @@ const ICONS = {
   laas: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/>',
   stjerne: '<path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
   tastatur: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h10"/>',
+  offline: '<path d="M3 3l18 18"/><path d="M8.5 16.5a5 5 0 017 0"/><path d="M5 13a10 10 0 013.5-2.3M19 13a10 10 0 00-6.5-2.9"/><path d="M2 9.5A15 15 0 016 7M22 9.5a15 15 0 00-8.5-3.4"/>',
   stjerneFuld: '<path fill="currentColor" d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8z"/>',
   import: '<path d="M12 3.5v11M8.5 11L12 14.5 15.5 11"/><path d="M4.5 15.5v3a1.5 1.5 0 001.5 1.5h12a1.5 1.5 0 001.5-1.5v-3"/>',
   ind: '<path d="M4 6.5h16M9 12h11M9 17.5h11"/><path d="M4 10l2.5 2L4 14"/>',
@@ -2496,6 +2572,10 @@ function shellHtml() {
       </div>
     </aside>
     <main class="main">
+      <div class="offline-baand" id="offlineBaand" ${state.offline ? '' : 'hidden'}>
+        ${icon('offline', 15)}
+        <span>Offline — showing what was loaded last. Changes are not saved until you are back.</span>
+      </div>
       <div class="topbar">
         <div class="toprow">
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
@@ -2749,6 +2829,14 @@ function visBrugerMenu() {
       luk();
       if (hvad === 'genveje') { visGenvejsPanel(); return; }
       if (hvad === 'settings' || hvad === 'import') { gaaTil(hvad); return; }
+      /*
+       * Ryd offline-cachen FOER logout-kaldet.
+       *
+       * En cache overlever en session. Uden det her ville en telefon, man
+       * har logget ud af, stadig kunne vise noterne fra sidste gang - og det
+       * er en helt anden aftale end den, »log ud« giver indtryk af (F14).
+       */
+      ryddOffline();
       await api('POST', '/api/logout', {});
       state.user = null;
       state.gateMode = 'login';
@@ -2846,6 +2934,62 @@ window.addEventListener('scroll', () => {
 
 window.addEventListener('resize', () => { byggToc(); });
 
+/* ------------------------------------------------------ offline (F14) */
+
+/*
+ * Service workeren registreres, saa noterne kan LAESES uden net.
+ *
+ * `./sw.js` uden en `?v=` med vilje: browseren sammenligner selve FILEN byte
+ * for byte og opdaterer workeren, naar den er aendret. Et versionsnummer i
+ * adressen ville lave en ny worker pr. udgivelse i stedet for at afloese den
+ * gamle - og saa ville to workere slaas om den samme cache.
+ *
+ * Fejler registreringen, sker der ingenting. Offline er en TILGIFT; appen
+ * skal virke praecis som foer uden den.
+ */
+function registrerOffline() {
+  if (!('serviceWorker' in navigator)) return;
+  // Kun over https (eller localhost). Panelet naas paa ren http, hvor en
+  // service worker slet ikke findes - og en fejl i konsollen dér ville se ud
+  // som om noget var i stykker.
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost'
+      && location.hostname !== '127.0.0.1') return;
+  navigator.serviceWorker.register('./sw.js').catch(() => { /* en tilgift */ });
+}
+
+/** Alt cachet indhold vaek. Kaldes ved log ud. */
+function ryddOffline() {
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage('ryd');
+    }
+    if (window.caches) caches.keys().then((n) => n.forEach((x) => caches.delete(x)));
+  } catch { /* ingen cache at rydde */ }
+}
+
+/**
+ * Baandet, der siger det HOEJT.
+ *
+ * En app, der viser gamle tal uden at sige det, er vaerre end en, der siger
+ * »her er intet«: man traeffer beslutninger paa noget, man tror er nyt. Derfor
+ * saetter service workeren `X-Sagu-Offline` paa et svar fra cachen, og
+ * `api()` taender baandet.
+ */
+function saetOffline(gammelt) {
+  const nu = !!gammelt;
+  if (state.offline === nu) return;
+  state.offline = nu;
+  const b = document.getElementById('offlineBaand');
+  if (b) b.hidden = !nu;
+}
+
+window.addEventListener('online', () => {
+  saetOffline(false);
+  // Hent det rigtige igen med det samme - man har ventet paa det.
+  if (state.user) hentState().then(() => tegnSide()).catch(() => {});
+});
+window.addEventListener('offline', () => saetOffline(true));
+
 /* --------------------------------------------------------------- start */
 
 /**
@@ -2873,6 +3017,7 @@ function fortsaetTilConnector() {
 
 (async function start() {
   anvendTema(nuvaerendeTema());
+  registrerOffline();
   try {
     state.config = await api('GET', '/api/public-config');
     document.title = state.config.appName || 'Sagu';
@@ -3277,14 +3422,16 @@ async function sideSettings() {
 
         <label class="field" style="margin-top:16px"><span>Public address</span>
           <input class="input" id="offentligUrl" value="${esc(state.publicUrl || '')}"
-            placeholder="${esc(location.origin)}" autocomplete="off" spellcheck="false"></label>
+            placeholder="${esc(location.origin)}" autocomplete="off" autocapitalize="none"
+            autocorrect="off" inputmode="url" spellcheck="false"></label>
         <div class="btnrow" style="margin-top:8px">
-          <button class="btn" id="offentligGem">Save address</button>
-          ${state.publicUrl ? '<button class="btn" id="offentligRyd">Use this address</button>' : ''}
+          <button class="btn primary" id="offentligGem">Save address</button>
+          ${state.publicUrl ? `<button class="btn" id="offentligRyd">Clear it</button>` : ''}
         </div>
         <p class="meta saetning">Sagu can be reached on more than one address. This is the one
         published links are written with, and the one search engines are told is the real one.
-        Leave it empty to use whichever address you happen to be on.</p>
+        <strong>Clear it</strong> removes the fixed address again, so links use whichever
+        address you happen to be on.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
           <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
           <tbody>${a.users.map((u) => `<tr><td>${esc(u.username)}</td>
@@ -3611,7 +3758,25 @@ function bindSettings() {
     };
     gemUrl.addEventListener('click', () => saet(felt.value));
     const ryd = document.getElementById('offentligRyd');
-    if (ryd) ryd.addEventListener('click', () => saet(''));
+    /*
+     * Knappen hed »Use this address«, og den RYDDER feltet.
+     *
+     * Meningen var »brug den adresse, du staar paa« - men ved siden af et
+     * felt, man lige har skrevet en adresse i, laeses den som »brug DEN her
+     * adresse«. Andreas trykkede paa den efter at have rettet adressen og
+     * fik den gamle tilbage; knappen gjorde noejagtig det, den skulle, og
+     * stik imod det, den sagde (2026-08-21).
+     *
+     * **En knap skal hedde det, den goer** - og naar den goer noget, man ikke
+     * kan fortryde med det samme, skal den spoerge.
+     */
+    if (ryd) {
+      ryd.addEventListener('click', () => {
+        if (!confirm('Remove the fixed public address?\n\n'
+          + 'Published links will then use whichever address you open Sagu on.')) return;
+        saet('');
+      });
+    }
   }
 
   const nyNoegle = document.getElementById('noegleNy');
@@ -4648,10 +4813,11 @@ function maerkerHtml(n) {
       ${maerker.map((t) => `<span class="chip maerke">${esc(t)}${kanRette ? `<button class="chip-x"
         data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button>` : ''}</span>`).join('')}
       ${kanRette ? `<button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
-      <input class="chip-felt" id="maerkeFelt" list="maerkeListe" placeholder="tag name"
-        autocomplete="off" spellcheck="false" hidden>
-      <datalist id="maerkeListe">${(state.tags || [])
-    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>` : ''}
+      <span class="maerke-felt-hylster">
+        <input class="chip-felt" id="maerkeFelt" placeholder="tag, or tag,tag,tag"
+          autocomplete="off" autocapitalize="none" spellcheck="false" hidden>
+        <span class="maerke-forslag" id="maerkeForslag" hidden></span>
+      </span>` : ''}
     </div>`;
 }
 
@@ -4676,9 +4842,23 @@ function tegnMaerker() {
   bindMaerker();
 }
 
+/*
+ * Maerkefeltet med FORSLAG.
+ *
+ * Her stod `<datalist>` foer, altsaa browserens egen liste. Den virker paa en
+ * computer og **slet ikke paa iOS** - Safari viser ingenting - saa forslagene
+ * fandtes kun for halvdelen af brugerne, og den halvdel, der sad med
+ * telefonen, kunne ikke se, at de var der (Andreas, 2026-08-21).
+ *
+ * Listen tegnes derfor selv, praecis som omni-feltets. Til gengaeld skal den
+ * saa ogsaa selv kunne det, browseren gjorde: piletaster, Enter og et klik.
+ */
+const maerkeValg = { traef: [], valgt: 0 };
+
 function bindMaerker() {
   const felt = document.getElementById('maerkeFelt');
   const knap = document.getElementById('tilfoejMaerke');
+  const forslag = document.getElementById('maerkeForslag');
   if (!felt || !knap) return;
 
   knap.addEventListener('click', () => {
@@ -4686,24 +4866,111 @@ function bindMaerker() {
     felt.hidden = false;
     felt.value = '';
     felt.focus();
+    tegnForslag();
   });
 
-  const luk = () => { felt.hidden = true; knap.hidden = false; };
+  const luk = () => { felt.hidden = true; knap.hidden = false; skjulForslag(); };
+  const skjulForslag = () => {
+    maerkeValg.traef = [];
+    if (forslag) { forslag.hidden = true; forslag.innerHTML = ''; }
+  };
+
+  /** Det, der staar EFTER sidste komma - det er dét, man er i gang med. */
+  const sidsteDel = () => (felt.value.split(',').pop() || '').trim().replace(/^#/, '');
+
+  function tegnForslag() {
+    if (!forslag) return;
+    const soeg = sidsteDel().toLowerCase();
+    const alt = editor.note.tags || [];
+    // Allerede paa noten, eller allerede skrevet i feltet: ikke et forslag.
+    const brugt = new Set(alt.concat(saguMaerker.fraFelt(felt.value)).map((t) => t.toLowerCase()));
+    const traef = (state.tags || [])
+      .map((t) => t.name)
+      .filter((n) => !brugt.has(n.toLowerCase()))
+      // Det, der BEGYNDER med det skrevne, staar oeverst - som i omni-feltet.
+      .filter((n) => !soeg || n.toLowerCase().includes(soeg))
+      .sort((a, b) => {
+        const ai = a.toLowerCase().startsWith(soeg) ? 0 : 1;
+        const bi = b.toLowerCase().startsWith(soeg) ? 0 : 1;
+        return ai - bi || a.localeCompare(b, 'da');
+      })
+      .slice(0, 8);
+
+    maerkeValg.traef = traef;
+    maerkeValg.valgt = 0;
+    if (!traef.length) { forslag.hidden = true; forslag.innerHTML = ''; return; }
+    forslag.hidden = false;
+    forslag.innerHTML = traef.map((n, i) => `<button class="maerke-forslag-punkt${
+      i === 0 ? ' valgt' : ''}" data-forslag="${esc(n)}">${esc(n)}</button>`).join('');
+    forslag.querySelectorAll('[data-forslag]').forEach((el) => {
+      // `mousedown`, ikke `click`: feltets blur naar ellers at lukke listen,
+      // foer klikket bliver til noget (samme faelde som doda v30).
+      el.addEventListener('mousedown', (e) => { e.preventDefault(); vaelg(el.dataset.forslag); });
+    });
+  }
+
+  function markerValgt() {
+    if (!forslag) return;
+    forslag.querySelectorAll('[data-forslag]').forEach((el, i) => {
+      el.classList.toggle('valgt', i === maerkeValg.valgt);
+    });
+  }
+
+  /** Saetter et forslag ind i stedet for det halvskrevne ord. */
+  function vaelg(navn) {
+    const dele = felt.value.split(',');
+    dele[dele.length - 1] = navn;
+    // Et komma bagefter, saa man kan skrive det naeste med det samme.
+    felt.value = `${dele.join(',')},`;
+    felt.focus();
+    tegnForslag();
+  }
+
+  function gem() {
+    const nye = saguMaerker.fraFelt(felt.value);
+    if (!nye.length) { luk(); return; }
+    const nuvaerende = editor.note.tags || [];
+    const tilfoej = nye.filter((n) => !nuvaerende.some((t) => t.toLowerCase() === n.toLowerCase()));
+    if (!tilfoej.length) { luk(); return; }
+    saetNoteMaerker(nuvaerende.concat(tilfoej));
+  }
+
+  felt.addEventListener('input', tegnForslag);
   felt.addEventListener('keydown', (e) => {
     // Feltet ejer sine taster: uden stopPropagation gemmer notens egen
     // ⌘+Enter-genvej samtidig, og »f« ville slaa fokus-tilstand til
     // (RUNE-ERFARINGER, doda v29/v31/v34).
     e.stopPropagation();
     if (e.key === 'Escape') { e.preventDefault(); luk(); return; }
+    if (maerkeValg.traef.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const n = maerkeValg.traef.length;
+      maerkeValg.valgt = (maerkeValg.valgt + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      markerValgt();
+      return;
+    }
+    if (e.key === 'Tab' && maerkeValg.traef.length) {
+      e.preventDefault();
+      vaelg(maerkeValg.traef[maerkeValg.valgt]);
+      return;
+    }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const navn = felt.value.trim().replace(/^#/, '');
-    if (!navn) { luk(); return; }
-    const nuvaerende = editor.note.tags || [];
-    if (nuvaerende.some((t) => t.toLowerCase() === navn.toLowerCase())) { luk(); return; }
-    saetNoteMaerker(nuvaerende.concat([navn]));
+    /*
+     * Enter paa et fremhaevet forslag SAETTER det ind; Enter paa noget, man
+     * selv har skrevet til ende, gemmer. Forskellen er, om det skrevne ord
+     * allerede ER forslaget - ellers ville man ikke kunne lave et nyt maerke,
+     * der ligner et gammelt.
+     */
+    const halvt = sidsteDel();
+    const oeverst = maerkeValg.traef[maerkeValg.valgt];
+    if (halvt && oeverst && oeverst.toLowerCase() !== halvt.toLowerCase()) {
+      vaelg(oeverst);
+      return;
+    }
+    gem();
   });
-  felt.addEventListener('blur', () => setTimeout(luk, 120));
+  felt.addEventListener('blur', () => setTimeout(() => { gem(); }, 120));
 
   document.querySelectorAll('[data-fjernmaerke]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -4893,8 +5160,25 @@ function bindKrop() {
     }
     const blok = e.target.closest('[data-blok]');
     if (blok) { aabnBlok(Number(blok.dataset.blok)); return; }
-    // Klik under indholdet: aabn den sidste blok, eller lav en ny.
-    if (e.target === host) aabnSidste();
+    /*
+     * Alt ANDET i kroppen aabner ogsaa redigeringen.
+     *
+     * Her stod `if (e.target === host)`, altsaa »kun det tomme areal under
+     * indholdet«. Paa en TOM note findes det areal ikke: pladsholderen
+     * »Click here to start writing« er et `<p>` uden `data-blok`, og den
+     * fylder kroppen helt ud. Maalt paa en telefonskaerm: kroppen er 22 px
+     * hoej, pladsholderen 22 px - **nul pixels tilbage at ramme.**
+     *
+     * Paa en computer kunne man komme udenom (opret en note, og feltet er
+     * allerede aabent; ellers `E`), saa fejlen viste sig foerst paa en
+     * telefon, hvor man kommer tilbage til en tom note og trykker paa den
+     * eneste tekst, der staar - den, der bogstaveligt siger »klik her«.
+     *
+     * Reglen er nu den, teksten lover: **et tryk i noten begynder at
+     * skrive.** Links, tjekbokse, billeder og GitHub-knapper standser selv
+     * deres haendelse, saa de er upaavirkede.
+     */
+    aabnSidste();
   });
 }
 
@@ -4902,7 +5186,24 @@ function bindKrop() {
 function tegnMedAabenBlok(host, n) {
   const linjer = n.body.split('\n');
   const blokke = saguMarkdown.blokke(n.body);
-  const b = blokke.find((x) => x.fra === editor.aabenBlok);
+  /*
+   * En HELT TOM note har ingen blokke - og det er netop dér, man skal kunne
+   * begynde at skrive.
+   *
+   * `aabnSidste()` laegger en tom linje ind og beder om blok 0. Men
+   * `blokke('\n')` giver **ingen** blokke: en tom linje er ikke en blok, den
+   * springes over af opdeleren. Saa faldt vi i `!b` nedenfor, satte
+   * `aabenBlok` tilbage til null og tegnede pladsholderen igen - **paa
+   * samme tick**, saa der aldrig kom et felt at skrive i.
+   *
+   * Fejlen var usynlig paa en computer, fordi en NY note aabner sit felt ad
+   * en anden vej. Den ramte kun den, der kom tilbage til en note, han havde
+   * ladet staa tom - og trykkede paa den tekst, der siger »klik her«.
+   *
+   * En tom foerste blok er derfor et gyldigt maal, ikke et fravaer.
+   */
+  const b = blokke.find((x) => x.fra === editor.aabenBlok)
+    || (!blokke.length && editor.aabenBlok === 0 ? { fra: 0, til: 0 } : null);
   if (!b) { editor.aabenBlok = null; tegnKrop(); return; }
 
   const foer = linjer.slice(0, b.fra).join('\n');
@@ -4999,6 +5300,15 @@ function aabnBlok(fra) {
 }
 
 function aabnSidste() {
+  /*
+   * Vagten skal ogsaa staa HER, ikke kun i `aabnBlok`.
+   *
+   * Den tomme gren nedenfor aendrer `body` og saetter `aabenBlok` selv - den
+   * gaar altsaa udenom `aabnBlok()` og dens `maaRette`-tjek. Med den nye
+   * regel (et tryk hvor som helst i kroppen aabner redigeringen) ville en
+   * kollega med LAESE-adgang til en tom delt note faa et skrivefelt (F11).
+   */
+  if (!maaRette(editor.note)) return;
   const b = saguMarkdown.blokke(editor.note.body);
   if (!b.length) {
     // Tom note: laeg en tom linje ind, saa der er en blok at aabne.

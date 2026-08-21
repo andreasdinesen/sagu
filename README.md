@@ -29,6 +29,7 @@ forsyningskæde at holde patchet.
 | **Deling** | Del en side — og det under den — med en anden konto, som læse eller skrive. Arven regnes af træet, så en underside lavet bagefter kommer med. Ejerskifte flytter hele undertræet |
 | **GitHub** | En fil-adresse på sin egen linje bliver til koden — **frosset til den commit, den pegede på**, så noten bliver ved med at forklare den kode, den blev skrevet om. Issues og PR-er bliver til chips med titel og tilstand |
 | **Tastatur** | Enkelttaster uden ⌘/Ctrl, og en oversigt på `?` der er **genereret** af det samme bord, tasterne bruger |
+| **Offline** | Hele appen kan læses uden net — træet, favoritterne og noterne med tekst og mærker. Et bånd siger det højt, så man ikke tror, tallene er nye |
 | **API** | Skrevet til en iPhone-genvej med ét tekstfelt: fangst som JSON, formulardata, ren tekst eller `?text=`, `?format=md` ud, `changes?since=` med slettede id'er — og en indbygget guide med færdige opskrifter |
 | **doda-bro** | En note kan sende en tjeklistelinje til søsterappen [doda](https://github.com/andreasdinesen/doda) som en opgave og vise dens status igen — med links, aldrig synkronisering |
 | **Claude** | MCP-server på `/mcp` med ni værktøjer, og OAuth 2.1 med samtykkeside, så claude.ai's webklient forbinder sig selv. Scopet håndhæves både i listen og ved kaldet |
@@ -132,5 +133,6 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **3** | **Offline: hele appen kan læses uden net** — træet, favoritterne og noterne med tekst og mærker, med et bånd der siger det højt. Dertil fire ting, som først viste sig i brug: en **tom note kunne ikke åbnes** (pladsholderen fyldte kroppen helt ud, så der ikke var en pixel at ramme), knappen ved den offentlige adresse hed »Use this address« og *ryddede* feltet, mærkeforslagene brugte `<datalist>` og var derfor usynlige på iOS, og `#drift,net` er nu to mærker. Favoritter og »senest besøgte« kan foldes sammen. |
 | **2** | doda-broen begge veje (F8), API og iPhone-genveje med indbygget guide (F9), MCP-server og claude.ai-connector med OAuth 2.1 (F10), deling mellem konti med arv gennem undertræet (F11), GitHub-indlejringer med frossen commit-sha (F12), tastaturgenveje, favoritter og »senest besøgte« (F13). |
 | **1** | Første udgivelse. Fundament og flerbruger (F0), noter og editor (F1), søgning (F2), Notion-følelsen (F3), filer (F4), Notion-import og eksport (F5), wiki og offentliggørelse (F6), kommentarer (F7). |

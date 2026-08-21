@@ -648,10 +648,11 @@ function maerkerHtml(n) {
       ${maerker.map((t) => `<span class="chip maerke">${esc(t)}${kanRette ? `<button class="chip-x"
         data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button>` : ''}</span>`).join('')}
       ${kanRette ? `<button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
-      <input class="chip-felt" id="maerkeFelt" list="maerkeListe" placeholder="tag name"
-        autocomplete="off" spellcheck="false" hidden>
-      <datalist id="maerkeListe">${(state.tags || [])
-    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>` : ''}
+      <span class="maerke-felt-hylster">
+        <input class="chip-felt" id="maerkeFelt" placeholder="tag, or tag,tag,tag"
+          autocomplete="off" autocapitalize="none" spellcheck="false" hidden>
+        <span class="maerke-forslag" id="maerkeForslag" hidden></span>
+      </span>` : ''}
     </div>`;
 }
 
@@ -676,9 +677,23 @@ function tegnMaerker() {
   bindMaerker();
 }
 
+/*
+ * Maerkefeltet med FORSLAG.
+ *
+ * Her stod `<datalist>` foer, altsaa browserens egen liste. Den virker paa en
+ * computer og **slet ikke paa iOS** - Safari viser ingenting - saa forslagene
+ * fandtes kun for halvdelen af brugerne, og den halvdel, der sad med
+ * telefonen, kunne ikke se, at de var der (Andreas, 2026-08-21).
+ *
+ * Listen tegnes derfor selv, praecis som omni-feltets. Til gengaeld skal den
+ * saa ogsaa selv kunne det, browseren gjorde: piletaster, Enter og et klik.
+ */
+const maerkeValg = { traef: [], valgt: 0 };
+
 function bindMaerker() {
   const felt = document.getElementById('maerkeFelt');
   const knap = document.getElementById('tilfoejMaerke');
+  const forslag = document.getElementById('maerkeForslag');
   if (!felt || !knap) return;
 
   knap.addEventListener('click', () => {
@@ -686,24 +701,111 @@ function bindMaerker() {
     felt.hidden = false;
     felt.value = '';
     felt.focus();
+    tegnForslag();
   });
 
-  const luk = () => { felt.hidden = true; knap.hidden = false; };
+  const luk = () => { felt.hidden = true; knap.hidden = false; skjulForslag(); };
+  const skjulForslag = () => {
+    maerkeValg.traef = [];
+    if (forslag) { forslag.hidden = true; forslag.innerHTML = ''; }
+  };
+
+  /** Det, der staar EFTER sidste komma - det er dét, man er i gang med. */
+  const sidsteDel = () => (felt.value.split(',').pop() || '').trim().replace(/^#/, '');
+
+  function tegnForslag() {
+    if (!forslag) return;
+    const soeg = sidsteDel().toLowerCase();
+    const alt = editor.note.tags || [];
+    // Allerede paa noten, eller allerede skrevet i feltet: ikke et forslag.
+    const brugt = new Set(alt.concat(saguMaerker.fraFelt(felt.value)).map((t) => t.toLowerCase()));
+    const traef = (state.tags || [])
+      .map((t) => t.name)
+      .filter((n) => !brugt.has(n.toLowerCase()))
+      // Det, der BEGYNDER med det skrevne, staar oeverst - som i omni-feltet.
+      .filter((n) => !soeg || n.toLowerCase().includes(soeg))
+      .sort((a, b) => {
+        const ai = a.toLowerCase().startsWith(soeg) ? 0 : 1;
+        const bi = b.toLowerCase().startsWith(soeg) ? 0 : 1;
+        return ai - bi || a.localeCompare(b, 'da');
+      })
+      .slice(0, 8);
+
+    maerkeValg.traef = traef;
+    maerkeValg.valgt = 0;
+    if (!traef.length) { forslag.hidden = true; forslag.innerHTML = ''; return; }
+    forslag.hidden = false;
+    forslag.innerHTML = traef.map((n, i) => `<button class="maerke-forslag-punkt${
+      i === 0 ? ' valgt' : ''}" data-forslag="${esc(n)}">${esc(n)}</button>`).join('');
+    forslag.querySelectorAll('[data-forslag]').forEach((el) => {
+      // `mousedown`, ikke `click`: feltets blur naar ellers at lukke listen,
+      // foer klikket bliver til noget (samme faelde som doda v30).
+      el.addEventListener('mousedown', (e) => { e.preventDefault(); vaelg(el.dataset.forslag); });
+    });
+  }
+
+  function markerValgt() {
+    if (!forslag) return;
+    forslag.querySelectorAll('[data-forslag]').forEach((el, i) => {
+      el.classList.toggle('valgt', i === maerkeValg.valgt);
+    });
+  }
+
+  /** Saetter et forslag ind i stedet for det halvskrevne ord. */
+  function vaelg(navn) {
+    const dele = felt.value.split(',');
+    dele[dele.length - 1] = navn;
+    // Et komma bagefter, saa man kan skrive det naeste med det samme.
+    felt.value = `${dele.join(',')},`;
+    felt.focus();
+    tegnForslag();
+  }
+
+  function gem() {
+    const nye = saguMaerker.fraFelt(felt.value);
+    if (!nye.length) { luk(); return; }
+    const nuvaerende = editor.note.tags || [];
+    const tilfoej = nye.filter((n) => !nuvaerende.some((t) => t.toLowerCase() === n.toLowerCase()));
+    if (!tilfoej.length) { luk(); return; }
+    saetNoteMaerker(nuvaerende.concat(tilfoej));
+  }
+
+  felt.addEventListener('input', tegnForslag);
   felt.addEventListener('keydown', (e) => {
     // Feltet ejer sine taster: uden stopPropagation gemmer notens egen
     // ⌘+Enter-genvej samtidig, og »f« ville slaa fokus-tilstand til
     // (RUNE-ERFARINGER, doda v29/v31/v34).
     e.stopPropagation();
     if (e.key === 'Escape') { e.preventDefault(); luk(); return; }
+    if (maerkeValg.traef.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const n = maerkeValg.traef.length;
+      maerkeValg.valgt = (maerkeValg.valgt + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      markerValgt();
+      return;
+    }
+    if (e.key === 'Tab' && maerkeValg.traef.length) {
+      e.preventDefault();
+      vaelg(maerkeValg.traef[maerkeValg.valgt]);
+      return;
+    }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const navn = felt.value.trim().replace(/^#/, '');
-    if (!navn) { luk(); return; }
-    const nuvaerende = editor.note.tags || [];
-    if (nuvaerende.some((t) => t.toLowerCase() === navn.toLowerCase())) { luk(); return; }
-    saetNoteMaerker(nuvaerende.concat([navn]));
+    /*
+     * Enter paa et fremhaevet forslag SAETTER det ind; Enter paa noget, man
+     * selv har skrevet til ende, gemmer. Forskellen er, om det skrevne ord
+     * allerede ER forslaget - ellers ville man ikke kunne lave et nyt maerke,
+     * der ligner et gammelt.
+     */
+    const halvt = sidsteDel();
+    const oeverst = maerkeValg.traef[maerkeValg.valgt];
+    if (halvt && oeverst && oeverst.toLowerCase() !== halvt.toLowerCase()) {
+      vaelg(oeverst);
+      return;
+    }
+    gem();
   });
-  felt.addEventListener('blur', () => setTimeout(luk, 120));
+  felt.addEventListener('blur', () => setTimeout(() => { gem(); }, 120));
 
   document.querySelectorAll('[data-fjernmaerke]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -893,8 +995,25 @@ function bindKrop() {
     }
     const blok = e.target.closest('[data-blok]');
     if (blok) { aabnBlok(Number(blok.dataset.blok)); return; }
-    // Klik under indholdet: aabn den sidste blok, eller lav en ny.
-    if (e.target === host) aabnSidste();
+    /*
+     * Alt ANDET i kroppen aabner ogsaa redigeringen.
+     *
+     * Her stod `if (e.target === host)`, altsaa »kun det tomme areal under
+     * indholdet«. Paa en TOM note findes det areal ikke: pladsholderen
+     * »Click here to start writing« er et `<p>` uden `data-blok`, og den
+     * fylder kroppen helt ud. Maalt paa en telefonskaerm: kroppen er 22 px
+     * hoej, pladsholderen 22 px - **nul pixels tilbage at ramme.**
+     *
+     * Paa en computer kunne man komme udenom (opret en note, og feltet er
+     * allerede aabent; ellers `E`), saa fejlen viste sig foerst paa en
+     * telefon, hvor man kommer tilbage til en tom note og trykker paa den
+     * eneste tekst, der staar - den, der bogstaveligt siger »klik her«.
+     *
+     * Reglen er nu den, teksten lover: **et tryk i noten begynder at
+     * skrive.** Links, tjekbokse, billeder og GitHub-knapper standser selv
+     * deres haendelse, saa de er upaavirkede.
+     */
+    aabnSidste();
   });
 }
 
@@ -902,7 +1021,24 @@ function bindKrop() {
 function tegnMedAabenBlok(host, n) {
   const linjer = n.body.split('\n');
   const blokke = saguMarkdown.blokke(n.body);
-  const b = blokke.find((x) => x.fra === editor.aabenBlok);
+  /*
+   * En HELT TOM note har ingen blokke - og det er netop dér, man skal kunne
+   * begynde at skrive.
+   *
+   * `aabnSidste()` laegger en tom linje ind og beder om blok 0. Men
+   * `blokke('\n')` giver **ingen** blokke: en tom linje er ikke en blok, den
+   * springes over af opdeleren. Saa faldt vi i `!b` nedenfor, satte
+   * `aabenBlok` tilbage til null og tegnede pladsholderen igen - **paa
+   * samme tick**, saa der aldrig kom et felt at skrive i.
+   *
+   * Fejlen var usynlig paa en computer, fordi en NY note aabner sit felt ad
+   * en anden vej. Den ramte kun den, der kom tilbage til en note, han havde
+   * ladet staa tom - og trykkede paa den tekst, der siger »klik her«.
+   *
+   * En tom foerste blok er derfor et gyldigt maal, ikke et fravaer.
+   */
+  const b = blokke.find((x) => x.fra === editor.aabenBlok)
+    || (!blokke.length && editor.aabenBlok === 0 ? { fra: 0, til: 0 } : null);
   if (!b) { editor.aabenBlok = null; tegnKrop(); return; }
 
   const foer = linjer.slice(0, b.fra).join('\n');
@@ -999,6 +1135,15 @@ function aabnBlok(fra) {
 }
 
 function aabnSidste() {
+  /*
+   * Vagten skal ogsaa staa HER, ikke kun i `aabnBlok`.
+   *
+   * Den tomme gren nedenfor aendrer `body` og saetter `aabenBlok` selv - den
+   * gaar altsaa udenom `aabnBlok()` og dens `maaRette`-tjek. Med den nye
+   * regel (et tryk hvor som helst i kroppen aabner redigeringen) ville en
+   * kollega med LAESE-adgang til en tom delt note faa et skrivefelt (F11).
+   */
+  if (!maaRette(editor.note)) return;
   const b = saguMarkdown.blokke(editor.note.body);
   if (!b.length) {
     // Tom note: laeg en tom linje ind, saa der er en blok at aabne.

@@ -366,3 +366,36 @@ test('en SQL-template indeholder ingen backticks - heller ikke i en kommentar', 
   }
   assert.deepEqual(fejl, [], fejl.join('\n'));
 });
+
+/*
+ * F14 · **Service workerens cachenavn skal følge APP_VERSION.**
+ *
+ * Bumpes det ikke, hober hver udgivelse sig op i browserens cache, og
+ * workeren kan servere en gammel `app.js` i det uendelige. Det ramte doda i
+ * drift — v39 hed »web app'en på telefonen opdaterer sig selv igen« — og det
+ * er nøjagtig den samme mekanik her.
+ *
+ * `build_rune.py` stempler begge tal fra det samme sted, så de *kan* ikke
+ * drive. Reglen står her, fordi det er stemplingen selv, nogen kan komme til
+ * at fjerne — og så er der ingen, der opdager det, før en telefon sidder fast
+ * på en gammel version.
+ */
+test('sw.js og index.html baerer SAMME version som APP_VERSION', () => {
+  const kerne = readFileSync(path.join(ROD, 'app', 'parts', 'p1_core.js'), 'utf8');
+  const v = Number((kerne.match(/^const APP_VERSION = (\d+);/m) || [])[1]);
+  assert.ok(v > 0, 'fandt ikke APP_VERSION');
+
+  const sw = readFileSync(path.join(ROD, 'app', 'public', 'sw.js'), 'utf8');
+  assert.match(sw, new RegExp(`^const VERSION = ${v};`, 'm'),
+    `sw.js staar paa en anden version end ${v} - byg igen, eller stemplingen er vaek`);
+
+  const html = readFileSync(path.join(ROD, 'app', 'public', 'index.html'), 'utf8');
+  assert.ok(html.includes(`app.js?v=${v}`), 'index.html er ikke stemplet');
+
+  // ... og workeren skal precache PRAECIS de adresser, siden henter. Ellers
+  // ligger der to kopier, og den precachede bliver aldrig brugt.
+  for (const fil of ['app.js', 'style.css']) {
+    assert.ok(sw.includes(`./${fil}?v=\${VERSION}`),
+      `sw.js precacher ikke ${fil} med sin version`);
+  }
+});
