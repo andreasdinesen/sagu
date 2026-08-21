@@ -695,6 +695,37 @@
     return sti ? `${vaert}${sti.length > 40 ? `${sti.slice(0, 37)}…` : sti}` : vaert;
   }
 
+  /**
+   * En blok som ÉN linje, uden markdown'ens markoerer.
+   *
+   * Bruges, naar en blok skal vaere noget ANDET end markdown - en opgave i
+   * doda, for eksempel. En opgave er en titel, ikke et stykke kildekode: uden
+   * strimlingen ville den hedde »- [ ] ring til Bo«.
+   *
+   * Den bor her sammen med `flytBlok` og `saetTjek` af samme grund - det er
+   * en ren tekstoperation paa markdown, og saa kan den proeves uden browser.
+   *
+   * Kun linjens FOERSTE markoer ryger. `- - a` er en liste med et
+   * bindestregs-punkt, og punktet er en del af teksten.
+   *
+   * @param {number} fra blokkens foerste linje (`blokke()[i].fra`)
+   */
+  function blokSomLinje(md, fra) {
+    const tekst = String(md == null ? '' : md);
+    const b = blokke(tekst).find((x) => x.fra === fra);
+    if (!b) return '';
+    return tekst.split('\n').slice(b.fra, b.til + 1)
+      .map((l) => String(l)
+        .replace(/^\s*#{1,6}\s+/, '')                              // overskrift
+        .replace(/^\s*>\s?/, '')                                   // citat
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/, '')   // punkt, evt. med tjekboks
+        .replace(/^\s*```.*$/, ''))                                // kodehegn
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, pentNavn, pentBrugernavn };
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, blokSomLinje,
+    pentNavn, pentBrugernavn };
 }));

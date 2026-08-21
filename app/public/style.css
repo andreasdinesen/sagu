@@ -2318,3 +2318,38 @@ body.traekker { cursor: grabbing; user-select: none; }
 @media (max-width: 720px) {
   .blok-greb { left: -24px; }
 }
+
+/* Menuen på trækhåndtaget. Samme udseende som notens øvrige småruder. */
+.blok-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
+}
+.blok-menu-punkt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.blok-menu-punkt:hover, .blok-menu-punkt:focus-visible { background: var(--hover); }
+.blok-menu-uddrag {
+  padding: 4px 10px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

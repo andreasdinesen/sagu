@@ -568,3 +568,38 @@ test('flytBlok bevarer indrykning og kodeblokke ord for ord', () => {
   // Den tomme linje INDE i kodeblokken maa ikke vaere roert.
   assert.ok(ud.includes('const a = 1;\n\nconst b = 2;'), ud);
 });
+
+/*
+ * ── blokSomLinje ──────────────────────────────────────────────────────────
+ *
+ * Menuen paa traekhaandtaget sender en blok til doda som en OPGAVE. En opgave
+ * er en titel, ikke et stykke kildekode: staar der »- [ ] ring til Bo« i
+ * doda, har man sendt sin markdown videre i stedet for sin opgave.
+ */
+test('blokSomLinje strimler markdown ned til én linje', () => {
+  const t = '## Drift\n\n- [ ] ring til Bo\n- [x] bestil kabler\n\n'
+    + '> Et citat, der fylder\n> to linjer.\n\n1. foerste\n2. anden\n\nEt afsnit.\n';
+  assert.equal(md.blokSomLinje(t, 0), 'Drift');
+  assert.equal(md.blokSomLinje(t, 2), 'ring til Bo bestil kabler');
+  assert.equal(md.blokSomLinje(t, 5), 'Et citat, der fylder to linjer.');
+  assert.equal(md.blokSomLinje(t, 8), 'foerste anden');
+  assert.equal(md.blokSomLinje(t, 11), 'Et afsnit.');
+});
+
+test('blokSomLinje rører kun linjens FØRSTE markør', () => {
+  // »- - a« er et listepunkt, hvis tekst er »- a«. Strimlede vi videre, ville
+  // en tekst, der begynder med en bindestreg, blive aedt.
+  assert.equal(md.blokSomLinje('- - a\n', 0), '- a');
+  assert.equal(md.blokSomLinje('# # Dobbelt\n', 0), '# Dobbelt');
+});
+
+test('blokSomLinje beholder kodens indhold og smider hegnet væk', () => {
+  const t = '```js\nconst a = 1;\n```\n';
+  assert.equal(md.blokSomLinje(t, 0), 'const a = 1;');
+});
+
+test('blokSomLinje svarer tomt på en blok, der ikke findes', () => {
+  assert.equal(md.blokSomLinje('Noget.\n', 99), '');
+  assert.equal(md.blokSomLinje('', 0), '');
+  assert.equal(md.blokSomLinje(null, 0), '');
+});

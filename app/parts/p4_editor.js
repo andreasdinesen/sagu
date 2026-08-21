@@ -1208,6 +1208,17 @@ function bindKrop() {
     if (valg && !valg.isCollapsed && String(valg).trim().length > 1
         && host.contains(valg.getRangeAt(0).commonAncestorContainer)) return;
 
+    /*
+     * Traekhaandtaget er en BETJENING, ikke tekst.
+     *
+     * Reglen nedenfor - »alt andet i kroppen aabner ogsaa redigeringen« - er
+     * rigtig for tekst og pladsholdere, men haandtaget ligger inde i kroppen
+     * uden at vaere en blok, saa et klik paa prikkerne aabnede den sidste
+     * blok BAG menuen. To rigtige regler, der stoedte sammen; den her
+     * undtagelse er graensen mellem dem (maalt i browseren, 2026-08-21).
+     */
+    if (e.target.closest('.blok-greb, .blok-menu, .blok-indsaet')) return;
+
     // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
     // ellers har man byttet én irritation for en vaerre (doda v37).
     const a = e.target.closest('a');

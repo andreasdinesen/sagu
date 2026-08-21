@@ -25,7 +25,7 @@
  * anden aftale end den, »log ud« giver indtryk af. Appen sender `ryd`.
  */
 
-const VERSION = 11;
+const VERSION = 12;
 const CACHE = `sagu-v${VERSION}`;
 
 // Præcis de samme URL'er som index.html henter - ellers ligger der to kopier,

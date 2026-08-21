@@ -936,8 +936,39 @@
     return sti ? `${vaert}${sti.length > 40 ? `${sti.slice(0, 37)}…` : sti}` : vaert;
   }
 
+  /**
+   * En blok som ÉN linje, uden markdown'ens markoerer.
+   *
+   * Bruges, naar en blok skal vaere noget ANDET end markdown - en opgave i
+   * doda, for eksempel. En opgave er en titel, ikke et stykke kildekode: uden
+   * strimlingen ville den hedde »- [ ] ring til Bo«.
+   *
+   * Den bor her sammen med `flytBlok` og `saetTjek` af samme grund - det er
+   * en ren tekstoperation paa markdown, og saa kan den proeves uden browser.
+   *
+   * Kun linjens FOERSTE markoer ryger. `- - a` er en liste med et
+   * bindestregs-punkt, og punktet er en del af teksten.
+   *
+   * @param {number} fra blokkens foerste linje (`blokke()[i].fra`)
+   */
+  function blokSomLinje(md, fra) {
+    const tekst = String(md == null ? '' : md);
+    const b = blokke(tekst).find((x) => x.fra === fra);
+    if (!b) return '';
+    return tekst.split('\n').slice(b.fra, b.til + 1)
+      .map((l) => String(l)
+        .replace(/^\s*#{1,6}\s+/, '')                              // overskrift
+        .replace(/^\s*>\s?/, '')                                   // citat
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/, '')   // punkt, evt. med tjekboks
+        .replace(/^\s*```.*$/, ''))                                // kodehegn
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, pentNavn, pentBrugernavn };
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, blokSomLinje,
+    pentNavn, pentBrugernavn };
 }));
 
 /* ---- shared/notion.js ---- */
@@ -2663,7 +2694,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -6119,6 +6150,17 @@ function bindKrop() {
     if (valg && !valg.isCollapsed && String(valg).trim().length > 1
         && host.contains(valg.getRangeAt(0).commonAncestorContainer)) return;
 
+    /*
+     * Traekhaandtaget er en BETJENING, ikke tekst.
+     *
+     * Reglen nedenfor - »alt andet i kroppen aabner ogsaa redigeringen« - er
+     * rigtig for tekst og pladsholdere, men haandtaget ligger inde i kroppen
+     * uden at vaere en blok, saa et klik paa prikkerne aabnede den sidste
+     * blok BAG menuen. To rigtige regler, der stoedte sammen; den her
+     * undtagelse er graensen mellem dem (maalt i browseren, 2026-08-21).
+     */
+    if (e.target.closest('.blok-greb, .blok-menu, .blok-indsaet')) return;
+
     // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
     // ellers har man byttet én irritation for en vaerre (doda v37).
     const a = e.target.closest('a');
@@ -8240,12 +8282,23 @@ function tegnGreb(host) {
     g.className = 'blok-greb';
     g.type = 'button';
     g.dataset.greb = el.dataset.blok;
-    g.setAttribute('aria-label', 'Drag to move this block');
-    g.title = 'Drag to move';
+    /*
+     * Navnet skal sige, hvad haandtaget KAN - og kun det.
+     *
+     * Er doda ikke forbundet, aabner klikket ingen menu (se `visBlokMenu`),
+     * og saa maa navnet ikke love en. Et navn, der naevner en mulighed, som
+     * ikke er der, er den samme slags loefte som en knap, der ikke virker.
+     */
+    const medMenu = dodaState.connected;
+    g.setAttribute('aria-label', medMenu ? 'Move this block, or click for options' : 'Drag to move this block');
+    g.title = medMenu ? 'Drag to move — click for options' : 'Drag to move';
     g.innerHTML = '<span></span><span></span><span></span>'
       + '<span></span><span></span><span></span>';
     host.appendChild(g);
     g.addEventListener('pointerdown', (e) => startTraek(e, host, g));
+    // Klikket haandteres af `startTraek`s afslutning. Det maa ikke ogsaa naa
+    // notens egen klikhaandtering - to svar paa ét tryk.
+    g.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
   }
   placerGreb(host);
 
@@ -8312,6 +8365,9 @@ function startTraek(e, host, g) {
     host.classList.remove('traekker-blok');
     g.classList.remove('greb-aktiv');
     if (greb.aktiv && greb.til !== null) fuldfoerTraek();
+    // Ingen bevaegelse betyder, at det var et KLIK og ikke et traek. Saa er
+    // det menuen, der skal frem.
+    else if (!greb.aktiv) visBlokMenu(g);
     greb.fra = null; greb.til = null; greb.aktiv = false;
   };
 
@@ -8368,6 +8424,81 @@ function fuldfoerTraek() {
   editor.aabenBlok = null;
   tegnKrop();
 }
+
+/* ------------------------------------------------- menuen på håndtaget
+ *
+ * »Kan det laves så man kan klikke på de 6 prikker og så få en mulighed for
+ * at lave den til en opgave i doda?« (Andreas, 2026-08-21).
+ *
+ * Klikket var ledigt: et træk begynder først efter 4 px, så et tryk UDEN
+ * bevægelse gjorde ingenting. Nu åbner det menuen — samme håndtag, to
+ * betydninger, og ingen af dem stjæler den anden.
+ *
+ * ── Hvorfor menuen kun har ét punkt, og hvorfor den forsvinder helt ───────
+ *
+ * Punktet vises kun, når doda ER forbundet. En menu med en knap, der ikke
+ * kan gøre noget, er et løfte, appen ikke holder (samme regel som
+ * dele-ikonet og `maaRette`), og et gråt punkt med en forklaring ville lære
+ * folk at menuen som regel er tom. Uden doda opfører håndtaget sig, som det
+ * gjorde før: det trækker, og et klik gør ingenting.
+ *
+ * Kommer der flere punkter, er det HER, de hører til.
+ */
+
+let blokMenu = null;
+
+function lukBlokMenu() {
+  if (blokMenu) { blokMenu.remove(); blokMenu = null; }
+  document.removeEventListener('keydown', blokMenuTast, true);
+  document.removeEventListener('pointerdown', blokMenuUdenfor, true);
+}
+
+function blokMenuTast(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); lukBlokMenu(); }
+}
+
+function blokMenuUdenfor(e) {
+  if (blokMenu && !blokMenu.contains(e.target)) lukBlokMenu();
+}
+
+/** Blokkens tekst som ÉN linje. Selve strimlingen er `blokSomLinje()`. */
+function blokSomOpgave(linjeNr) {
+  return editor.note ? saguMarkdown.blokSomLinje(editor.note.body, linjeNr) : '';
+}
+
+function visBlokMenu(g) {
+  lukBlokMenu();
+  if (!dodaState.connected) return;
+  const tekst = blokSomOpgave(Number(g.dataset.greb));
+  if (tekst.length < 2) return;
+
+  blokMenu = document.createElement('div');
+  blokMenu.className = 'blok-menu';
+  blokMenu.innerHTML = `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
+      ${icon('tjek', 15)}<span>Send to doda</span></button>
+    <div class="blok-menu-uddrag">${esc(tekst.slice(0, 90))}${tekst.length > 90 ? '…' : ''}</div>`;
+  document.body.appendChild(blokMenu);
+
+  const r = g.getBoundingClientRect();
+  const m = blokMenu.getBoundingClientRect();
+  // Til højre for håndtaget, og aldrig ud over skærmkanten.
+  blokMenu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - m.width - 8))}px`;
+  blokMenu.style.top = `${Math.round(Math.min(r.bottom + 4, window.innerHeight - m.height - 8))}px`;
+
+  blokMenu.querySelector('#blokTilDoda').addEventListener('click', async () => {
+    lukBlokMenu();
+    if (tekst.length > 500) toast('That was long — the first 500 characters became the task.');
+    await sendOpgaveTilDoda(tekst.slice(0, 500));
+  });
+
+  document.addEventListener('keydown', blokMenuTast, true);
+  document.addEventListener('pointerdown', blokMenuUdenfor, true);
+  blokMenu.querySelector('#blokTilDoda').focus();
+}
+
+// Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.
+// Samme valg som markeringsknappen (F16).
+window.addEventListener('scroll', lukBlokMenu, { passive: true });
 
 /* ---- p7_udgiv.js ---- */
 'use strict';

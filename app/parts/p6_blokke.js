@@ -882,12 +882,23 @@ function tegnGreb(host) {
     g.className = 'blok-greb';
     g.type = 'button';
     g.dataset.greb = el.dataset.blok;
-    g.setAttribute('aria-label', 'Drag to move this block');
-    g.title = 'Drag to move';
+    /*
+     * Navnet skal sige, hvad haandtaget KAN - og kun det.
+     *
+     * Er doda ikke forbundet, aabner klikket ingen menu (se `visBlokMenu`),
+     * og saa maa navnet ikke love en. Et navn, der naevner en mulighed, som
+     * ikke er der, er den samme slags loefte som en knap, der ikke virker.
+     */
+    const medMenu = dodaState.connected;
+    g.setAttribute('aria-label', medMenu ? 'Move this block, or click for options' : 'Drag to move this block');
+    g.title = medMenu ? 'Drag to move — click for options' : 'Drag to move';
     g.innerHTML = '<span></span><span></span><span></span>'
       + '<span></span><span></span><span></span>';
     host.appendChild(g);
     g.addEventListener('pointerdown', (e) => startTraek(e, host, g));
+    // Klikket haandteres af `startTraek`s afslutning. Det maa ikke ogsaa naa
+    // notens egen klikhaandtering - to svar paa ét tryk.
+    g.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
   }
   placerGreb(host);
 
@@ -954,6 +965,9 @@ function startTraek(e, host, g) {
     host.classList.remove('traekker-blok');
     g.classList.remove('greb-aktiv');
     if (greb.aktiv && greb.til !== null) fuldfoerTraek();
+    // Ingen bevaegelse betyder, at det var et KLIK og ikke et traek. Saa er
+    // det menuen, der skal frem.
+    else if (!greb.aktiv) visBlokMenu(g);
     greb.fra = null; greb.til = null; greb.aktiv = false;
   };
 
@@ -1010,3 +1024,78 @@ function fuldfoerTraek() {
   editor.aabenBlok = null;
   tegnKrop();
 }
+
+/* ------------------------------------------------- menuen på håndtaget
+ *
+ * »Kan det laves så man kan klikke på de 6 prikker og så få en mulighed for
+ * at lave den til en opgave i doda?« (Andreas, 2026-08-21).
+ *
+ * Klikket var ledigt: et træk begynder først efter 4 px, så et tryk UDEN
+ * bevægelse gjorde ingenting. Nu åbner det menuen — samme håndtag, to
+ * betydninger, og ingen af dem stjæler den anden.
+ *
+ * ── Hvorfor menuen kun har ét punkt, og hvorfor den forsvinder helt ───────
+ *
+ * Punktet vises kun, når doda ER forbundet. En menu med en knap, der ikke
+ * kan gøre noget, er et løfte, appen ikke holder (samme regel som
+ * dele-ikonet og `maaRette`), og et gråt punkt med en forklaring ville lære
+ * folk at menuen som regel er tom. Uden doda opfører håndtaget sig, som det
+ * gjorde før: det trækker, og et klik gør ingenting.
+ *
+ * Kommer der flere punkter, er det HER, de hører til.
+ */
+
+let blokMenu = null;
+
+function lukBlokMenu() {
+  if (blokMenu) { blokMenu.remove(); blokMenu = null; }
+  document.removeEventListener('keydown', blokMenuTast, true);
+  document.removeEventListener('pointerdown', blokMenuUdenfor, true);
+}
+
+function blokMenuTast(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); lukBlokMenu(); }
+}
+
+function blokMenuUdenfor(e) {
+  if (blokMenu && !blokMenu.contains(e.target)) lukBlokMenu();
+}
+
+/** Blokkens tekst som ÉN linje. Selve strimlingen er `blokSomLinje()`. */
+function blokSomOpgave(linjeNr) {
+  return editor.note ? saguMarkdown.blokSomLinje(editor.note.body, linjeNr) : '';
+}
+
+function visBlokMenu(g) {
+  lukBlokMenu();
+  if (!dodaState.connected) return;
+  const tekst = blokSomOpgave(Number(g.dataset.greb));
+  if (tekst.length < 2) return;
+
+  blokMenu = document.createElement('div');
+  blokMenu.className = 'blok-menu';
+  blokMenu.innerHTML = `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
+      ${icon('tjek', 15)}<span>Send to doda</span></button>
+    <div class="blok-menu-uddrag">${esc(tekst.slice(0, 90))}${tekst.length > 90 ? '…' : ''}</div>`;
+  document.body.appendChild(blokMenu);
+
+  const r = g.getBoundingClientRect();
+  const m = blokMenu.getBoundingClientRect();
+  // Til højre for håndtaget, og aldrig ud over skærmkanten.
+  blokMenu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - m.width - 8))}px`;
+  blokMenu.style.top = `${Math.round(Math.min(r.bottom + 4, window.innerHeight - m.height - 8))}px`;
+
+  blokMenu.querySelector('#blokTilDoda').addEventListener('click', async () => {
+    lukBlokMenu();
+    if (tekst.length > 500) toast('That was long — the first 500 characters became the task.');
+    await sendOpgaveTilDoda(tekst.slice(0, 500));
+  });
+
+  document.addEventListener('keydown', blokMenuTast, true);
+  document.addEventListener('pointerdown', blokMenuUdenfor, true);
+  blokMenu.querySelector('#blokTilDoda').focus();
+}
+
+// Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.
+// Samme valg som markeringsknappen (F16).
+window.addEventListener('scroll', lukBlokMenu, { passive: true });
