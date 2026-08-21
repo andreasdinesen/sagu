@@ -2768,3 +2768,62 @@ i stedet i `CLAUDE.md` som noget, et menneske skal vide. **Samme lærdom som
 SQL-template-reglen samme dag: mål den faktiske fejl, ikke noget der ligner
 den — og en regel, der råber op om kode, der er i orden, bliver slettet af den
 næste.**
+
+## 32 · Markér en linje — tredje forsøg, og hvorfor de to første ikke virkede
+
+Funktionen blev bygget i v5, »rettet« i v9 og virkede først i v10. Det er værd
+at skrive ned, fordi begge fejl havde samme rod: **jeg afprøvede den ikke, som
+den bruges.**
+
+**v5** byggede knappen og målte den med en markering lavet af `createRange()`.
+Den vej kommer der ikke noget klik bagefter — og i en hybrid editor er det
+netop klikket, der afslutter et musetræk, som åbner afsnittet og rydder
+markeringen. Testen var grøn, funktionen var død.
+
+**v9** rettede dét: en markering er ikke en anmodning om at redigere. Nu
+overlevede markeringen — men knappen kom stadig ikke, for to grunde jeg havde
+bygget ind selv:
+
+- En vagt sagde »ikke mens et afsnit står som rå markdown: dér markerer man
+  for at rette«. Det var min antagelse, og den var forkert. **At klikke ind i
+  teksten og trække hen over en linje er den almindeligste måde at markere
+  noget i en note.** Det er netop dér, man gør det.
+- Og `window.getSelection()` kan ikke se en markering inde i et `<textarea>`:
+  det har sin egen `selectionStart`/`selectionEnd`. Selv uden vagten ville
+  teksten have været tom, mens man kunne se den markeret på skærmen.
+
+**v10** læser begge steder: fra det renderede indhold og fra det åbne felt.
+Placeringen i feltet er et skøn — linjenummer gange linjehøjde — fordi rigtige
+markørkoordinater i et textarea kræver en skyggekopi af hele feltet, og
+knappen skal bare være i nærheden af det, man markerede.
+
+**Lærestregen er ikke »test mere«.** Den er: en funktion, der hænger på en
+brugerhandling, skal prøves med den handling. En syntetisk markering udelader
+præcis det, der gik galt — og en vagt, man har skrevet ud fra en antagelse om,
+hvordan folk arbejder, er en antagelse, indtil nogen prøver.
+
+## 33 · Opgavens status stod stille
+
+En opgave lukket i doda blev ved med at stå som åben i Sagu.
+
+Mekanikken var i orden — der var endda en test på, at en ændret status slår
+igennem. **Men den test forcerede en opfriskning** (`?refresh=1`), og det kan
+brugeren ikke. I brug gjaldt vinduet: status blev opfrisket højst **hvert
+kvarter**, og den almindelige gang tager to minutter — send en opgave, skift
+til doda, luk den, skift tilbage.
+
+**En test, der forcerer det, brugeren ikke kan forcere, måler mekanikken og
+ikke oplevelsen.** Det er samme fejlklasse som de syntetiske markeringer i §32,
+to gange på én dag.
+
+To ting rettet:
+
+- **Vinduet er nu 60 sekunder.** Reglen bag tallet er »der må ikke gå et kald
+  til doda pr. optegning« (§16) — og at åbne en note er ikke en optegning; en
+  note tegnes mange gange, mens man skriver i den. Et minut holder stadig
+  kaldene væk fra optegningen og fra hurtige spring mellem noter.
+- **Sagu kigger efter, når man kommer tilbage til fanen.** Det er præcis den
+  gang: man er i doda, lukker opgaven, skifter tilbage. Med en bund på 10
+  sekunder, så to faner ved siden af hinanden ikke bliver til et kald hver gang.
+
+Tallet er pinnet af en test. Sættes det op igen, skal det være et valg.

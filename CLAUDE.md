@@ -46,6 +46,9 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   binder i samme åndedrag; markup'en må ikke ALDRIG også laves af `shellHtml()`. Gør den
   det, står punkterne uden klik-handler efter hver sideindlæsning — de ser rigtige ud og
   gør ingenting, til noget andet tilfældigvis tegner dem om.
+- **Markeringen kan ligge i det ÅBNE felt.** `window.getSelection()` ser ikke ind i et
+  `<textarea>` — brug `selectionStart`/`selectionEnd`. Og markér ikke det åbne felt som
+  »dér redigerer man kun«: det er netop dér, folk markerer.
 - **En markering er ikke en anmodning om at redigere.** Klikket, der afslutter et træk hen
   over teksten, må ikke åbne den rå blok: så kan man hverken kopiere tekst eller nå
   »Send to doda«-knappen.
@@ -137,8 +140,11 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **Ethvert træ skal have en cyklus-vagt.** En note flyttet ind under sit eget
   barn giver en ring, hvor begge forsvinder fra sidebaren — og gemningen
   lykkes, så intet fejler.
+- **En test, der forcerer det, brugeren ikke kan forcere, måler mekanikken og ikke
+  oplevelsen.** `?refresh=1` beviste at status KAN følge med — mens vinduet på et kvarter
+  gjorde broen død i praksis.
 - **doda kaldes ALDRIG pr. optegning.** Rundturen er ~150 ms. Status på en notes
-  opgaver står i Sagus egen `doda_tasks` og opfriskes højst én gang i kvarteret — med
+  opgaver står i Sagus egen `doda_tasks` og opfriskes højst én gang i minuttet (og når fanen kommer frem) — med
   ÉT kald (`/changes?since=`) for alle opgaver, ikke ét pr. opgave. En fejlet
   opfriskning rører ikke rækkerne; den siger bare, at de ikke er friske.
 - **Et link til en note skal have sin EGEN linje**, når det sendes til doda. `!`-markøren

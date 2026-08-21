@@ -32,8 +32,20 @@
 /** En doda, der ikke svarer, maa ikke kunne haenge Sagu. */
 const TIMEOUT_MS = 10_000;
 
-/** Hvor gammel en status maa vaere, foer den opfriskes. */
-const FRISK_I = 15 * 60;
+/*
+ * Hvor gammel en status maa vaere, foer den opfriskes.
+ *
+ * Var 15 minutter, og det var for laenge. Reglen bag tallet er »der maa ikke
+ * gaa et kald til doda pr. OPTEGNING« - og at aabne en note er ikke en
+ * optegning; en note tegnes mange gange, mens man skriver i den. Med et
+ * kvarter var broen doed i praecis den gang, den er lavet til: send en
+ * opgave, luk den i doda, kom tilbage til noten. Den stod stadig som aaben
+ * (Andreas, 2026-08-21).
+ *
+ * Et minut holder stadig et kald fra hver optegning og fra hurtige spring
+ * mellem noter - og det er kort nok til, at man tror paa det, man ser.
+ */
+const FRISK_I = 60;
 
 function opret(srv) {
   /**

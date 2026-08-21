@@ -339,3 +339,47 @@ test('en capture-noegle kan ikke laese opgaverne, og en link-noegle kan begge de
   assert.equal((await med('capture', 'GET', `/api/v1/notes/${n.id}`)).status, 403);
   assert.equal((await med('read', 'POST', '/api/v1/notes', { title: 'nej', body: '' })).status, 403);
 });
+
+test('en opgave, der er lukket i doda, bliver opfrisket i Sagu', async () => {
+  /*
+   * Fejlen var ikke i mekanikken, men i VINDUET: status blev opfrisket højst
+   * hvert kvarter, og den almindelige gang er »send en opgave, luk den i
+   * doda, kom tilbage til noten« — altså langt under et kvarter. Opgaven stod
+   * som åben, og broen så død ud (Andreas, 2026-08-21).
+   *
+   * Testen måler det, der betyder noget: at et lukket punkt i dodas
+   * ændringsfeed slår igennem på noten.
+   */
+  const n = (await a.kald('POST', '/api/v1/notes', { title: 'Med en opgave' })).data.note;
+  const r = await a.kald('POST', `/api/v1/notes/${n.id}/tasks`, { text: 'Ring til GoldWave' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const opg = r.data.tasks.find((t) => t.title.includes('GoldWave'));
+  assert.ok(opg, 'opgaven skal staa paa noten');
+  assert.notEqual(opg.status, 'done');
+
+  // doda melder den nu som fuldført.
+  const hos = attrap.items.get(opg.dodaId);
+  assert.ok(hos, 'attrappen skal kende opgaven');
+  hos.status = 'done';
+
+  const efter = await a.kald('GET', `/api/v1/notes/${n.id}/tasks?refresh=1`);
+  const nu = efter.data.tasks.find((t) => t.title.includes('GoldWave'));
+  assert.equal(nu.status, 'done', 'status skal foelge med fra dodas aendringsfeed');
+});
+
+test('opfrisknings-vinduet er kort nok til at man tror på det, man ser', async () => {
+  /*
+   * Det var her, fejlen lå — ikke i mekanikken.
+   *
+   * Testen ovenfor tvinger en opfriskning (`?refresh=1`) og beviser derfor,
+   * at status KAN følge med. Men i brug kom den ikke: vinduet var et kvarter,
+   * og den almindelige gang tager to minutter. **En test, der forcerer det,
+   * brugeren ikke kan forcere, måler mekanikken og ikke oplevelsen.**
+   *
+   * Tallet pinnes derfor. Sættes det op igen, skal det være et bevidst valg.
+   */
+  const { FRISK_I } = await import('../app/doda.js');
+  assert.ok(FRISK_I <= 120,
+    `opfrisknings-vinduet er ${FRISK_I} s - saa staar en lukket opgave som aaben for laenge`);
+  assert.ok(FRISK_I >= 15, 'og det maa ikke blive saa kort, at det bliver ét kald pr. optegning');
+});

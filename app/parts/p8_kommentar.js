@@ -423,6 +423,30 @@ function bindDodaOpgaver() {
   }
 }
 
+/*
+ * Kig efter, naar man KOMMER TILBAGE til Sagu.
+ *
+ * Den almindelige gang er: send en opgave, skift til doda, luk den, skift
+ * tilbage. Uden det her skulle man vente paa det naeste opfrisknings-vindue
+ * eller finde »Check doda now« - og indtil da staar opgaven som aaben, hvilket
+ * ligner en bro, der ikke virker.
+ *
+ * Der er en bund paa 10 sekunder: springer man frem og tilbage mellem to
+ * faner, skal det ikke blive til et kald hver gang.
+ */
+let sidsteDodaKig = 0;
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!state.user || state.view !== 'note' || !editor.note) return;
+  if (!dodaState.connected || dodaState.noteId !== editor.note.id) return;
+  if (Date.now() - sidsteDodaKig < 10000) return;
+  sidsteDodaKig = Date.now();
+  try {
+    await hentDodaOpgaver(editor.note.id, true);
+    tegnDodaOpgaver();
+  } catch { /* doda kan vaere nede - raekkerne staar der stadig */ }
+});
+
 /* ==================== markér en linje -> en opgave i doda (F16) ========= */
 
 /*
@@ -452,6 +476,41 @@ function skjulDodaMark() {
 
 /** Markeringen som ÉN linje. En opgave er en linje, ikke et afsnit. */
 function markeringSomOpgave() {
+  /*
+   * **Det åbne redigeringsfelt tæller MED.**
+   *
+   * Første udgave sprang over, når et afsnit stod som rå markdown, med
+   * begrundelsen »dér markerer man for at rette«. Det var forkert: at klikke
+   * ind i teksten og trække hen over en linje er den mest almindelige måde at
+   * markere noget i en note — og så var knappen umulig at få frem i praksis
+   * (Andreas, 2026-08-21, anden gang på samme funktion).
+   *
+   * Og `window.getSelection()` kan ikke se en markering inde i et
+   * `<textarea>`: den har sin egen `selectionStart`/`selectionEnd`. Uden det
+   * her ville teksten være tom, selv om man kunne se den markeret.
+   */
+  const felt = document.getElementById('blokFelt');
+  if (felt && felt.selectionStart !== felt.selectionEnd) {
+    const raa = felt.value.slice(felt.selectionStart, felt.selectionEnd);
+    const tekst = raa.replace(/\s+/g, ' ').trim();
+    if (tekst.length < 2) return null;
+    const r = felt.getBoundingClientRect();
+    /*
+     * Placeringen er et SKØN, ikke en måling: linjenummeret gange
+     * linjehøjden. Et ombrudt afsnit rykker den lidt, men knappen skal bare
+     * være i nærheden af det, man markerede - og alternativet (rigtige
+     * markørkoordinater i et textarea) kræver en skyggekopi af hele feltet.
+     */
+    const linje = felt.value.slice(0, felt.selectionStart).split('\n').length - 1;
+    const lh = parseFloat(getComputedStyle(felt).lineHeight) || 22;
+    return {
+      tekst: tekst.slice(0, 500),
+      afkortet: tekst.length > 500,
+      iFelt: true,
+      rect: { left: r.left, width: r.width, top: r.top + (linje * lh) - felt.scrollTop },
+    };
+  }
+
   const s = window.getSelection();
   if (!s || s.isCollapsed || !s.rangeCount) return null;
   const tekst = String(s.toString() || '').replace(/\s+/g, ' ').trim();
@@ -468,8 +527,8 @@ function markeringSomOpgave() {
 }
 
 function visDodaMark() {
-  // Ikke mens et afsnit står som rå markdown: dér markerer man for at rette.
-  if (editor.aabenBlok !== null) { skjulDodaMark(); return; }
+  // Der stod en vagt her mod det åbne redigeringsfelt. Den er væk med vilje -
+  // se markeringSomOpgave(): det er netop dér, man markerer.
   if (!dodaState.connected) { skjulDodaMark(); return; }
 
   const m = markeringSomOpgave();
@@ -490,8 +549,16 @@ function visDodaMark() {
       if (!nu) return;
       if (nu.afkortet) toast('That was long — the first 500 characters became the task.');
       await sendOpgaveTilDoda(nu.tekst);
-      const s = window.getSelection();
-      if (s) s.removeAllRanges();
+      // Ryd markeringen, saa knappen ikke straks melder sig igen. I et
+      // tekstfelt betyder det at laegge markoeren ved markeringens slutning -
+      // `removeAllRanges` roerer ikke et textarea.
+      const felt2 = document.getElementById('blokFelt');
+      if (nu.iFelt && felt2) {
+        felt2.setSelectionRange(felt2.selectionEnd, felt2.selectionEnd);
+      } else {
+        const s = window.getSelection();
+        if (s) s.removeAllRanges();
+      }
     };
     dodaMarkKnap.addEventListener('mousedown', gaa);
     dodaMarkKnap.addEventListener('touchstart', gaa, { passive: false });
