@@ -1,0 +1,93 @@
+gameskill:
+  id: sagu
+  name: Sagu
+  category: Apps
+  description: Noteapp og wiki. Notesboeger med undersider i vilkaarlig dybde, hybrid live-markdown-editor, fuldtekstsoegning
+    i titler, overskrifter, broedtekst, maerker og egenskaber, og udgivelse af en side eller et helt undertrae som offentlig
+    wiki med valgfrit kodeord og kommentarer. Import fra Notion, API til iOS Shortcuts, MCP-server. Flere brugere med egne
+    noter. Egen SQLite-database, ingen eksterne afhaengigheder.
+  author: andreas
+  version: 1
+  icon: app
+  docker:
+    image: '{{NODE_IMAGE}}'
+  variables:
+  - key: APP_NAME
+    name: Appens navn
+    type: string
+    default: Sagu
+  - key: NODE_IMAGE
+    name: Node-image
+    type: string
+    default: node:24-alpine
+    pattern: ^node:[0-9][A-Za-z0-9._-]*$
+    hint: Skal vaere et node:-image, fx node:24-alpine. Soegningen kraever FTS5, som findes i Node 22 og nyere.
+  install:
+    image: '{{NODE_IMAGE}}'
+    script: "set -eu\necho \"Installerer Sagu v1 ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden fra GitHub\
+      \ ...\"\nrm -rf /tmp/sagu-hent\nmkdir -p /tmp/sagu-hent\nnode -e 'const https=require(\"https\"),zlib=require(\"zlib\"\
+      );const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v1\";function d(m){console.error(\"[fejl]\
+      \ \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen ikke findes OG naar der\
+      \ ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function hent(u,n){https.get(u,{headers:{\"\
+      user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return d(\"\
+      for mange omdirigeringer\");r.resume();return hent(new URL(r.headers.location,u).toString(),n-1);}if(r.statusCode!==200)return\
+      \ d(\"GitHub svarede \"+r.statusCode);const g=zlib.createGunzip();g.on(\"error\",(e)=>d(\"arkivet kunne ikke pakkes\
+      \ ud: \"+e.message));r.pipe(g).pipe(process.stdout);}).on(\"error\",(e)=>d(\"kunne ikke naa GitHub: \"+e.message));}hent(U,3);'\
+      \ > /tmp/sagu-hent/app.tar\ntar x -C /tmp/sagu-hent -f /tmp/sagu-hent/app.tar\n\n# Mappenavnet i et GitHub-arkiv er\
+      \ <repo>-<ref uden v>, og arkivet\n# begynder med en pax_global_header-post. Ingen af delene gaettes:\n# find den app-mappe,\
+      \ der FINDES (RUNE-ERFARINGER, Sagu F5).\nNY=$(find /tmp/sagu-hent -maxdepth 2 -type d -name app | head -n 1)\nif [\
+      \ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n  echo \"[fejl] arkivet fra GitHub indeholder ingen app/server.js\"\
+      \n  exit 1\nfi\nrm -rf app\nmv \"$NY\" app\nrm -rf /tmp/sagu-hent\n\necho \"Filer udpakket:\"\nls -1 app app/public\n\
+      echo \"Klar. Start serveren i panelet.\"\n"
+  update:
+    image: '{{NODE_IMAGE}}'
+    label: Opdater Sagu
+    script: "set -eu\necho \"Opdaterer Sagu til v1 ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden fra\
+      \ GitHub ...\"\nrm -rf /tmp/sagu-hent\nmkdir -p /tmp/sagu-hent\nnode -e 'const https=require(\"https\"),zlib=require(\"\
+      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v1\";function d(m){console.error(\"\
+      [fejl] \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen ikke findes OG naar\
+      \ der ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function hent(u,n){https.get(u,{headers:{\"\
+      user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return d(\"\
+      for mange omdirigeringer\");r.resume();return hent(new URL(r.headers.location,u).toString(),n-1);}if(r.statusCode!==200)return\
+      \ d(\"GitHub svarede \"+r.statusCode);const g=zlib.createGunzip();g.on(\"error\",(e)=>d(\"arkivet kunne ikke pakkes\
+      \ ud: \"+e.message));r.pipe(g).pipe(process.stdout);}).on(\"error\",(e)=>d(\"kunne ikke naa GitHub: \"+e.message));}hent(U,3);'\
+      \ > /tmp/sagu-hent/app.tar\ntar x -C /tmp/sagu-hent -f /tmp/sagu-hent/app.tar\n\n# Mappenavnet i et GitHub-arkiv er\
+      \ <repo>-<ref uden v>, og arkivet\n# begynder med en pax_global_header-post. Ingen af delene gaettes:\n# find den app-mappe,\
+      \ der FINDES (RUNE-ERFARINGER, Sagu F5).\nNY=$(find /tmp/sagu-hent -maxdepth 2 -type d -name app | head -n 1)\nif [\
+      \ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n  echo \"[fejl] arkivet fra GitHub indeholder ingen app/server.js\"\
+      \n  exit 1\nfi\nrm -rf app\nmv \"$NY\" app\nrm -rf /tmp/sagu-hent\n\necho \"App-filerne er skiftet ud. Databasen i /data\
+      \ er uroert.\"\necho \"Skemaet opdateres automatisk, naar serveren starter.\"\n"
+  startup:
+    command: "if node -e \"require('node:sqlite')\" >/dev/null 2>&1; then\n  exec node app/server.js\nelse\n  exec node --experimental-sqlite\
+      \ app/server.js\nfi\n"
+    done_regex: sagu lytter
+    stop_timeout: 30
+  ports:
+  - name: web
+    default: 3000
+    protocol: tcp
+  watchers:
+  - name: Serverfejl i Sagu
+    pattern: \[fejl\]
+    threshold: 5
+    window_secs: 300
+  events:
+  - key: sagu_login_fejl
+    label: Mislykket login i Sagu
+    match: \[sikkerhed\] login-fejl ip=(\S+)
+  - key: sagu_login_spaerret
+    label: Login spaerret af rate-limit
+    match: \[sikkerhed\] login-spaerret ip=(\S+)
+  - key: sagu_noegle_afvist
+    label: Ugyldig adgangsnoegle
+    match: \[sikkerhed\] noegle-afvist ip=(\S+)
+  backup:
+    include: []
+  wipe:
+    paths:
+    - sagu.db
+    - sagu.db-wal
+    - sagu.db-shm
+    - files
+    - uploads
+    backup_first: true

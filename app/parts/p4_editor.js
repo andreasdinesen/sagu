@@ -1,0 +1,1402 @@
+'use strict';
+/* Sagu - traeet i sidebaren og den hybride editor.
+ *
+ * Editorens model, som er hele F1:
+ *
+ *   Markdown ER noten. Visningen er renderet; klikker man i et afsnit, bliver
+ *   PRAECIS det afsnit til et raat markdown-felt, og resten af noten bliver
+ *   staaende renderet. Der er ingen konvertering nogen steder - feltet
+ *   indeholder de linjer, der staar i databasen, og de skrives tilbage paa
+ *   samme plads.
+ *
+ * Det er derfor `saguMarkdown.blokke()` giver linjenumre: uden dem ville man
+ * skulle gaette, hvor et afsnit begynder, og et gem ville roere hele noten. */
+
+const editor = {
+  // Den note, der er INDLAEST. Ikke den, der er markeret i traeet - det er to
+  // forskellige tilstande, og at blande dem er den klassiske fejl: markerer
+  // man en raekke og giver editoren det lette listeobjekt, ser den samme id
+  // og tegner aldrig den fulde note (Verdandes spec).
+  note: null,
+  indlaeser: null,        // id'et, der er paa vej ind
+  aabenBlok: null,        // linjenummeret paa den blok, der redigeres raat
+  gemTimer: null,
+  gemmer: false,
+  beskidt: false,
+  sidstGemt: 0,
+  konflikt: null,
+  foldede: new Set(),
+};
+
+/* ------------------------------------------------------------- foldning */
+
+/*
+ * Foldede grene bliver i localStorage med vilje: hvor meget af traeet man vil
+ * se ad gangen afhaenger af skaermens stoerrelse, saa det hoerer til ENHEDEN
+ * og ikke til brugeren. Sorterings- og visningsvalg hoerer derimod til
+ * kontoen (RUNE-ERFARINGER, tovo v11) - saa spoerg for hvert af dem.
+ */
+function laesFoldede() {
+  try {
+    const raa = localStorage.getItem('sagu_foldede');
+    return new Set(raa ? JSON.parse(raa) : []);
+  } catch { return new Set(); }
+}
+
+/*
+ * Noeglen til hele notesbogs-sektionens foldning.
+ *
+ * Den ligger i det SAMME saet som de enkelte boeger (`editor.foldede`), saa
+ * der kun er én mekanik og ét sted, valget gemmes - to maader at folde paa i
+ * samme app er to steder at rette, naeste gang en af dem skal aendres
+ * (RUNE-ERFARINGER, tovo v11).
+ *
+ * Sektionen husker desuden bøgernes egen foldning: den, der har foldet et
+ * undertrae ud inde i en bog, skal have det, som han forlod det.
+ */
+const SEKTION_BOEGER = 'sektion:notebooks';
+
+/**
+ * Er ALLE notesboeger foldet sammen?
+ *
+ * Knappen skal sige, hvad den GOER - ikke hvad tilstanden er. To modsatte
+ * konventioner side om side er det, der goer en omskifter uforstaaelig
+ * (RUNE-ERFARINGER, tovo v9).
+ */
+function altFoldet(boeger) {
+  return boeger.length > 0 && boeger.every((b) => editor.foldede.has(b.id));
+}
+
+/**
+ * Folder alle notesboeger sammen - eller ud igen.
+ *
+ * To forskellige oensker, to forskellige knapper: sektionens overskrift
+ * gemmer HELE listen vaek, mens denne beholder bognavnene og lukker deres
+ * sider. Kun BOEGERNE roeres; den, der har foldet et undertrae ud inde i en
+ * bog, skal have det, som han forlod det.
+ */
+function saetAlleFoldede(fold) {
+  for (const b of state.notebooks || []) {
+    if (fold) editor.foldede.add(b.id);
+    else editor.foldede.delete(b.id);
+  }
+  gemFoldede();
+  tegnTrae();
+}
+
+function gemFoldede() {
+  try { localStorage.setItem('sagu_foldede', JSON.stringify([...editor.foldede])); } catch { /* privat */ }
+}
+
+/* --------------------------------------------------------------- traeet */
+
+async function hentTrae() {
+  try {
+    const d = await api('GET', '/api/v1/tree');
+    state.notebooks = d.notebooks;
+    state.tree = d.notes;
+  } catch (ex) {
+    if (ex.status !== 401) toast(ex.message);
+    state.tree = state.tree || [];
+  }
+}
+
+/** Boern af én foraelder, i den raekkefoelge brugeren har sat. */
+function boernAf(foraelderId, notesbogId) {
+  return (state.tree || []).filter((n) => n.parentId === foraelderId
+    && (foraelderId !== null || n.notebookId === notesbogId));
+}
+
+function traeHtml() {
+  const boeger = state.notebooks || [];
+  const loese = boernAf(null, null);
+
+  const gren = (note, dybde) => {
+    const boern = boernAf(note.id, null);
+    const foldet = editor.foldede.has(note.id);
+    const aktiv = editor.note && editor.note.id === note.id;
+    return `<div class="tree-row${aktiv ? ' on' : ''}" data-raekke="${esc(note.id)}"
+        style="padding-left:${8 + dybde * 14}px">
+        ${boern.length
+    ? `<button class="tree-fold${foldet ? '' : ' open'}" data-fold="${esc(note.id)}"
+           aria-label="${foldet ? 'Expand' : 'Collapse'}">${icon('caret', 12)}</button>`
+    : '<span class="tree-fold empty"></span>'}
+        <button class="tree-name" data-note="${esc(note.id)}" title="${esc(note.title || 'Untitled')}">
+          ${note.icon ? `<span class="tree-icon">${esc(note.icon)}</span>` : ''}
+          <span>${esc(note.title || 'Untitled')}</span></button>
+        <button class="tree-add" data-sub="${esc(note.id)}" aria-label="New subpage"
+          title="New subpage">${icon('plus', 13)}</button>
+      </div>
+      ${foldet ? '' : boern.map((b) => gren(b, dybde + 1)).join('')}`;
+  };
+
+  const bogHtml = (b) => {
+    const foldet = editor.foldede.has(b.id);
+    const boern = boernAf(null, b.id);
+    return `<div class="tree-book${foldet ? '' : ' open'}">
+        <div class="tree-row book" data-bograekke="${esc(b.id)}">
+          <button class="tree-fold${foldet ? '' : ' open'}" data-fold="${esc(b.id)}"
+            aria-label="${foldet ? 'Expand' : 'Collapse'}">${icon('caret', 12)}</button>
+          <button class="tree-ikonknap" data-bogikon="${esc(b.id)}"
+            aria-label="Pick an icon">${esc(b.icon || '📓')}</button>
+          <button class="tree-name" data-book="${esc(b.id)}" title="${esc(b.name)}">
+            <span>${esc(b.name)}</span></button>
+          <button class="tree-del${b.published ? ' paa' : ''}" data-udgivbog="${esc(b.id)}"
+            data-navn="${esc(b.name)}"
+            aria-label="${b.published ? 'Published on the web' : 'Publish this notebook'}"
+            title="${b.published ? 'Published on the web — open the settings' : 'Publish this notebook'}"
+            >${icon('globe', 13)}</button>
+          <button class="tree-add" data-in="${esc(b.id)}" aria-label="New note here"
+            title="New note here">${icon('plus', 13)}</button>
+        </div>
+        ${foldet ? '' : boern.map((x) => gren(x, 1)).join('')}
+      </div>`;
+  };
+
+  /*
+   * Sektionens egen overskrift med en fold.
+   *
+   * Med tredive importerede notesboeger er sidebaren en mur, og der er ingen
+   * vej til at lukke den samlet. Overskriften folder HELE sektionen - det er
+   * ét klik i stedet for tredive, og det er den vane, resten af familien har
+   * (Andreas, 2026-08-21).
+   */
+  const sektionFoldet = editor.foldede.has(SEKTION_BOEGER);
+  return `<div class="tree">
+      <div class="tree-sektion">
+        <button class="tree-sektion-navn" data-fold="${SEKTION_BOEGER}"
+          aria-expanded="${sektionFoldet ? 'false' : 'true'}"
+          title="${sektionFoldet ? 'Show the notebooks' : 'Fold the notebooks away'}">
+          <span class="tree-fold${sektionFoldet ? '' : ' open'}">${icon('caret', 12)}</span>
+          <span>Notebooks</span>
+          ${boeger.length ? `<span class="tree-sektion-tal">${boeger.length}</span>` : ''}
+        </button>
+        ${boeger.length > 1 && !sektionFoldet ? `<button class="tree-sektion-add" id="foldAlle"
+          aria-label="${altFoldet(boeger) ? 'Open every notebook' : 'Fold every notebook'}"
+          title="${altFoldet(boeger) ? 'Open every notebook' : 'Fold every notebook'}">${
+  icon(altFoldet(boeger) ? 'udfold' : 'fold', 13)}</button>` : ''}
+        <button class="tree-sektion-add" id="nyBogHer" aria-label="New notebook"
+          title="New notebook">${icon('plus', 13)}</button>
+      </div>
+      ${sektionFoldet ? '' : boeger.map(bogHtml).join('')}
+      ${sektionFoldet || !loese.length ? '' : `<div class="tree-book open">
+        <div class="tree-row book"><span class="tree-fold empty"></span>
+          <span class="tree-name meta" style="cursor:default">Not in a notebook</span></div>
+        ${loese.map((x) => gren(x, 1)).join('')}</div>`}
+      <div class="tree-actions">
+        <button class="btn ghost" id="nyNoteTop">${icon('plus', 14)} New note</button>
+        <button class="btn ghost" id="dagensNote">${icon('kalender', 14)} Today's note</button>
+        <button class="btn ghost" id="fraSkabelon">${icon('skabelon', 14)} From template</button>
+        <button class="btn ghost" id="nyBogTop">${icon('book', 14)} New notebook</button>
+      </div>
+    </div>`;
+}
+
+function bindTrae() {
+  const host = document.getElementById('treeHost');
+  if (!host) return;
+  bindTraeTraek(host);
+
+  host.querySelectorAll('[data-udgivbog]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      // Raekken aabner bogen ved klik; knappen goer noget andet.
+      e.stopPropagation();
+      visUdgivPanel({ slags: 'bog', id: el.dataset.udgivbog, titel: el.dataset.navn });
+    });
+  });
+
+  const foldKnap = document.getElementById('foldAlle');
+  if (foldKnap) {
+    foldKnap.addEventListener('click', (e) => {
+      // Knappen ligger inde i sektionsoverskriften, som selv folder ved klik.
+      e.stopPropagation();
+      saetAlleFoldede(!altFoldet(state.notebooks || []));
+    });
+  }
+
+  host.querySelectorAll('[data-fold]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.fold;
+      if (editor.foldede.has(id)) editor.foldede.delete(id);
+      else editor.foldede.add(id);
+      gemFoldede();
+      tegnTrae();
+    });
+  });
+
+  host.querySelectorAll('[data-note]').forEach((el) => {
+    el.addEventListener('click', () => aabnNote(el.dataset.note));
+  });
+
+  host.querySelectorAll('[data-sub]').forEach((el) => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await opretOgAaben({ parentId: el.dataset.sub });
+    });
+  });
+
+  host.querySelectorAll('[data-in]').forEach((el) => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await opretOgAaben({ notebookId: el.dataset.in });
+    });
+  });
+
+  host.querySelectorAll('[data-book]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.book;
+      if (editor.foldede.has(id)) editor.foldede.delete(id);
+      else editor.foldede.add(id);
+      gemFoldede();
+      tegnTrae();
+    });
+  });
+
+  host.querySelectorAll('[data-bogikon]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = (state.notebooks || []).find((x) => x.id === el.dataset.bogikon);
+      visIkonVaelger(el, b && b.icon, async (valgt) => {
+        try {
+          await api('PATCH', `/api/v1/notebooks/${el.dataset.bogikon}`, { icon: valgt });
+          await hentTrae();
+          tegnTrae();
+        } catch (ex) { toast(ex.message); }
+      });
+    });
+  });
+
+  const nyN = document.getElementById('nyNoteTop');
+  if (nyN) nyN.addEventListener('click', () => opretOgAaben({}));
+  const dagens = document.getElementById('dagensNote');
+  if (dagens) dagens.addEventListener('click', aabnDagensNote);
+
+  const skab = document.getElementById('fraSkabelon');
+  if (skab) {
+    skab.addEventListener('click', () => {
+      const gammel = document.getElementById('skabelonMenu');
+      if (gammel) { gammel.remove(); return; }
+      const m = document.createElement('div');
+      m.className = 'usermenu skabelonmenu';
+      m.id = 'skabelonMenu';
+      m.innerHTML = SKABELONER.map((x) =>
+        `<button class="usermenu-item" data-skab="${esc(x.id)}">${esc(x.navn)}</button>`).join('');
+      skab.parentElement.appendChild(m);
+      m.querySelectorAll('[data-skab]').forEach((el) => {
+        el.addEventListener('click', async () => { m.remove(); await opretFraSkabelon(el.dataset.skab); });
+      });
+      setTimeout(() => {
+        document.addEventListener('click', function udenfor(e) {
+          if (m.isConnected && !m.contains(e.target) && !skab.contains(e.target)) {
+            m.remove();
+            document.removeEventListener('click', udenfor);
+          }
+        });
+      }, 0);
+    });
+  }
+
+  // To knapper, ÉN handler: plusset i sektionsoverskriften og linjen nederst
+  // goer det samme, og skal derfor ikke kunne komme til at goere hver sit.
+  [document.getElementById('nyBogTop'), document.getElementById('nyBogHer')].forEach((nyB) => {
+    if (!nyB) return;
+    nyB.addEventListener('click', async () => {
+      const navn = prompt('Name of the notebook');
+      if (!navn) return;
+      try {
+        await api('POST', '/api/v1/notebooks', { name: navn });
+        await hentTrae();
+        tegnTrae();
+      } catch (ex) { toast(ex.message); }
+    });
+  });
+}
+
+/* ============================================ traek i traeet (Andreas' oenske)
+
+   »Man skal kunne flytte rundt paa raekkefoelgen af noter med musen.«
+
+   POINTER-events, ikke HTML5 drag & drop: DnD virker ikke paa touch, og
+   `pointerdown/move/up` + `setPointerCapture` er de samme paa mus, pen og
+   finger (RUNE-ERFARINGER §4, tovo v3).
+
+   Traekket er alligevel kun for MUS og PEN. Paa en telefon ejer fingeren
+   rulningen af sidebaren, og et traek, der stjaeler den, goer listen ubrugelig
+   - derfor har note-menuen »Move up«/»Move down«, som virker med mus,
+   tastatur og tommelfinger (doda F3's regel om at knapper er den ENE loesning,
+   der virker alle tre steder). To veje til det samme, ikke to halve.
+
+   Det, der falder, er en SOESKENDE til den raekke, man slipper paa - foer
+   eller efter, afgjort af midten. Saa er der ét at forstaa: linjen viser,
+   hvor den lander. Slipper man paa en NOTESBOG, flytter noten ind i den. */
+
+const traek = { id: null, fra: null, aktiv: false, x: 0, y: 0, linje: null };
+
+/**
+ * Synker den AABNE note med traeet efter en flytning.
+ *
+ * Traeet hentes friskt, men `editor.note` er et objekt fra et tidligere kald -
+ * og broedkrummerne, menuen og »Move to top level« laeser den. Uden det her
+ * staar de og siger, hvad der var sandt foer flytningen: menuen tilboed
+ * »Make it a subpage of X« igen paa en note, der lige var blevet én.
+ */
+function synkAabenNote() {
+  if (!editor.note) return;
+  const frisk = (state.tree || []).find((n) => n.id === editor.note.id);
+  if (!frisk) return;
+  editor.note.parentId = frisk.parentId;
+  editor.note.notebookId = frisk.notebookId;
+  tegnSide();
+}
+
+/** Noten som `state.tree` kender den. */
+function traeNote(id) {
+  return (state.tree || []).find((n) => n.id === id) || null;
+}
+
+/** Er `maal` en efterkommer af `id`? Man maa ikke slippe en note inde i sig selv. */
+function erEfterkommer(id, maal) {
+  let p = traeNote(maal);
+  for (let i = 0; i < 64 && p; i++) {
+    if (p.id === id) return true;
+    p = p.parentId ? traeNote(p.parentId) : null;
+  }
+  return false;
+}
+
+function ryddLinje() {
+  if (traek.linje) { traek.linje.remove(); traek.linje = null; }
+  document.querySelectorAll('.tree-row.drop-i').forEach((el) => el.classList.remove('drop-i'));
+}
+
+function visLinje(raekke, efter) {
+  ryddLinje();
+  const r = raekke.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'tree-indsaet';
+  el.style.top = `${(efter ? r.bottom : r.top) - 1}px`;
+  el.style.left = `${r.left}px`;
+  el.style.width = `${r.width}px`;
+  document.body.appendChild(el);
+  traek.linje = el;
+}
+
+/**
+ * Skriver den nye raekkefoelge.
+ *
+ * Foerst en flytning, hvis noten skifter foraelder eller notesbog - ellers
+ * ville `reorder` skrive et loebenummer i en gruppe, noten slet ikke er i.
+ * Derefter ét `reorder`-kald med HELE soeskendegruppen, saa numrene er
+ * 0,1,2,… og ikke et gaet.
+ */
+async function slipTraek(noteId, maalId, efter) {
+  const note = traeNote(noteId);
+  const maal = traeNote(maalId);
+  if (!note || !maal || note.id === maal.id) return;
+
+  const nyFar = maal.parentId || null;
+  const nyBog = maal.notebookId || null;
+  try {
+    if ((note.parentId || null) !== nyFar || (note.notebookId || null) !== nyBog) {
+      await api('POST', `/api/v1/notes/${note.id}/move`,
+        nyFar ? { parentId: nyFar } : { parentId: null, notebookId: nyBog });
+    }
+    const gruppe = (state.tree || [])
+      .filter((n) => (n.parentId || null) === nyFar
+        && (nyFar !== null || (n.notebookId || null) === nyBog)
+        && n.id !== note.id);
+    let i = gruppe.findIndex((n) => n.id === maal.id);
+    if (i < 0) i = gruppe.length - 1;
+    gruppe.splice(efter ? i + 1 : i, 0, note);
+    await api('POST', '/api/v1/reorder', { kind: 'note', ids: gruppe.map((n) => n.id) });
+    await hentTrae();
+    tegnTrae();
+    synkAabenNote();
+  } catch (ex) { toast(ex.message); }
+}
+
+/** Slip paa en notesbog: ind i den, oeverst i traeet. */
+async function slipIBog(noteId, bogId) {
+  const note = traeNote(noteId);
+  if (!note || ((note.notebookId || null) === bogId && !note.parentId)) return;
+  try {
+    await api('POST', `/api/v1/notes/${note.id}/move`, { parentId: null, notebookId: bogId });
+    await hentTrae();
+    tegnTrae();
+    synkAabenNote();
+    toast('Moved.');
+  } catch (ex) { toast(ex.message); }
+}
+
+function bindTraeTraek(host) {
+  host.addEventListener('pointerdown', (e) => {
+    // Mus og pen. Fingeren ejer rulningen - se kommentaren oeverst.
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    // Knapper i raekken (fold, plus, globus) goer deres eget.
+    if (e.target.closest('button') && !e.target.closest('.tree-name')) return;
+    const raekke = e.target.closest('.tree-row[data-raekke]');
+    if (!raekke) return;
+    traek.id = raekke.dataset.raekke;
+    traek.fra = raekke;
+    traek.aktiv = false;
+    traek.x = e.clientX;
+    traek.y = e.clientY;
+  });
+
+  host.addEventListener('pointermove', (e) => {
+    if (!traek.id) return;
+    if (!traek.aktiv) {
+      // 5 px, saa et almindeligt klik ikke bliver til et traek.
+      if (Math.abs(e.clientX - traek.x) + Math.abs(e.clientY - traek.y) < 5) return;
+      traek.aktiv = true;
+      traek.fra.classList.add('traekkes');
+      document.body.classList.add('traekker');
+      try { e.target.setPointerCapture(e.pointerId); } catch { /* ligegyldigt */ }
+    }
+    // elementFromPoint frem for e.target: med pointer capture er target laast
+    // til det element, traekket begyndte paa.
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const bog = under && under.closest('.tree-row.book[data-bograekke]');
+    if (bog) {
+      ryddLinje();
+      bog.classList.add('drop-i');
+      return;
+    }
+    const maal = under && under.closest('.tree-row[data-raekke]');
+    if (!maal || maal.dataset.raekke === traek.id
+      || erEfterkommer(traek.id, maal.dataset.raekke)) { ryddLinje(); return; }
+    const r = maal.getBoundingClientRect();
+    visLinje(maal, e.clientY > r.top + r.height / 2);
+  });
+
+  const slut = async (e) => {
+    if (!traek.id) return;
+    const varAktiv = traek.aktiv;
+    const noteId = traek.id;
+    if (traek.fra) traek.fra.classList.remove('traekkes');
+    document.body.classList.remove('traekker');
+    traek.id = null;
+    traek.fra = null;
+    traek.aktiv = false;
+    if (!varAktiv) { ryddLinje(); return; }
+
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const bog = under && under.closest('.tree-row.book[data-bograekke]');
+    const maal = under && under.closest('.tree-row[data-raekke]');
+    ryddLinje();
+    if (bog) { await slipIBog(noteId, bog.dataset.bograekke); return; }
+    if (!maal || maal.dataset.raekke === noteId || erEfterkommer(noteId, maal.dataset.raekke)) return;
+    const r = maal.getBoundingClientRect();
+    await slipTraek(noteId, maal.dataset.raekke, e.clientY > r.top + r.height / 2);
+  };
+
+  host.addEventListener('pointerup', slut);
+  host.addEventListener('pointercancel', () => {
+    if (traek.fra) traek.fra.classList.remove('traekkes');
+    document.body.classList.remove('traekker');
+    traek.id = null; traek.fra = null; traek.aktiv = false;
+    ryddLinje();
+  });
+}
+
+/**
+ * Flytter en note ét trin op eller ned blandt sine soeskende.
+ *
+ * Den vej, der virker med mus, tastatur OG tommelfinger - traekket er kun for
+ * mus og pen (doda F3).
+ */
+async function flytNoteISort(note, retning) {
+  const gruppe = (state.tree || []).filter((n) => (n.parentId || null) === (note.parentId || null)
+    && (note.parentId || (n.notebookId || null) === (note.notebookId || null)));
+  const i = gruppe.findIndex((n) => n.id === note.id);
+  const j = i + retning;
+  if (i < 0 || j < 0 || j >= gruppe.length) return;
+  const ny = gruppe.slice();
+  ny.splice(j, 0, ny.splice(i, 1)[0]);
+  try {
+    await api('POST', '/api/v1/reorder', { kind: 'note', ids: ny.map((n) => n.id) });
+    await hentTrae();
+    tegnTrae();
+    synkAabenNote();
+  } catch (ex) { toast(ex.message); }
+}
+
+/** Den soeskende, der staar LIGE FOER noten - den, en indrykning lander under. */
+function soeskendeFoer(note) {
+  const gruppe = (state.tree || []).filter((n) => (n.parentId || null) === (note.parentId || null)
+    && (note.parentId || (n.notebookId || null) === (note.notebookId || null)));
+  const i = gruppe.findIndex((n) => n.id === note.id);
+  return i > 0 ? gruppe[i - 1] : null;
+}
+
+/** Kun traeet gentegnes - ikke skallen, ikke editoren. */
+function tegnTrae() {
+  const host = document.getElementById('treeHost');
+  if (!host) return;
+  host.innerHTML = traeHtml();
+  bindTrae();
+}
+
+async function opretOgAaben(felter) {
+  try {
+    // Svaret INDEHOLDER elementet. At kalde "hent alt igen" bagefter er en
+    // ekstra rundtur for noget, man har i haanden (RUNE-ERFARINGER, doda v27).
+    const d = await api('POST', '/api/v1/notes', Object.assign({ title: 'Untitled', body: '' }, felter));
+    if (felter.parentId) { editor.foldede.delete(felter.parentId); gemFoldede(); }
+    // Er der lavet et NYT maerke undervejs, skal listen med - ellers mangler
+    // det i »Tags«-skaermen og i autoudfyldningen, til man genindlaeser.
+    if (felter.tags && felter.tags.length) {
+      try { state.tags = (await api('GET', '/api/v1/state')).tags || state.tags; } catch { /* ligegyldigt */ }
+    }
+    await hentTrae();
+    tegnTrae();
+    await aabnNote(d.note.id);
+    const t = document.getElementById('noteTitle');
+    if (t) { t.focus(); t.select(); }
+  } catch (ex) { toast(ex.message); }
+}
+
+/* -------------------------------------------------------------- editoren */
+
+/**
+ * Aabner en note.
+ *
+ * `indlaeser` findes, fordi markeringen og indlaesningen er to forskellige
+ * tilstande: klikker man hurtigt paa to noter, maa det foerste svar ikke
+ * overskrive det andet.
+ */
+async function aabnNote(id) {
+  if (editor.note && editor.note.id === id && !editor.indlaeser) return;
+  await gemNu();
+  editor.indlaeser = id;
+  state.view = 'note';
+  state.openNote = id;
+  editor.aabenBlok = null;
+  editor.konflikt = null;
+  tegnSide();
+  try {
+    const d = await api('GET', `/api/v1/notes/${id}`);
+    if (editor.indlaeser !== id) return;      // en anden note vandt kapløbet
+    editor.indlaeser = null;
+    editor.note = d.note;
+    editor.beskidt = false;
+    editor.sidstGemt = Date.now();
+    kom.svarPaa = null;
+    kom.redigerer = null;
+    // Kommentarerne hentes SAMMEN med noten, saa afsnittet staar der ved
+    // foerste optegning i stedet for at hoppe ind bagefter. En fejl her maa
+    // ikke tage noten med sig - den er det, brugeren kom efter.
+    try { await hentKommentarer(id); } catch { kom.liste = []; kom.noteId = id; }
+    if (editor.note && editor.note.id !== id) return;
+    opdaterNav();
+    tegnTrae();
+    tegnSide();
+  } catch (ex) {
+    editor.indlaeser = null;
+    toast(ex.message);
+    gaaTil('notes');
+  }
+}
+
+function notesbogNavn(id) {
+  const b = (state.notebooks || []).find((x) => x.id === id);
+  return b ? b.name : null;
+}
+
+/** Broedkrummer: hvor i traeet er jeg? */
+function broedkrummer(note) {
+  const kort = new Map((state.tree || []).map((n) => [n.id, n]));
+  const sti = [];
+  let cur = kort.get(note.parentId);
+  for (let i = 0; i < 32 && cur; i++) { sti.unshift(cur); cur = kort.get(cur.parentId); }
+  const bog = notesbogNavn(note.notebookId);
+  const dele = [];
+  if (bog) dele.push(`<span>${esc(bog)}</span>`);
+  for (const s of sti) dele.push(`<button data-krumme="${esc(s.id)}">${esc(s.title || 'Untitled')}</button>`);
+  return dele.length ? `<nav class="krummer meta saetning">${dele.join('<span class="sep">/</span>')}</nav>` : '';
+}
+
+/*
+ * Notens maerker - SYNLIGE paa noten.
+ *
+ * De laa i datamodellen fra F0 og blev sat af Notion-importen, men der fandtes
+ * ingen vej til at saette et selv, og »Tags«-skaermen sagde »arrives in F3«.
+ * En hjaelpetekst, der beskriver noget, appen ikke kan, er den dyreste slags
+ * fejl: brugeren tror, han bruger appen forkert (RUNE-ERFARINGER, doda v38).
+ *
+ * Raekken staar dér, hvor handlingen sker - ikke i en menu og ikke kun i en
+ * toast. En handling, der aendrer noget, skal efterlade et spor paa stedet
+ * (tovo v8).
+ */
+function maerkerHtml(n) {
+  const maerker = n.tags || [];
+  return `<div class="note-maerker" id="noteMaerker">
+      ${maerker.map((t) => `<span class="chip maerke">${esc(t)}<button class="chip-x"
+        data-fjernmaerke="${esc(t)}" aria-label="Remove ${esc(t)}" title="Remove">×</button></span>`).join('')}
+      <button class="chip tilfoej" id="tilfoejMaerke">${maerker.length ? '+ tag' : '+ Add a tag'}</button>
+      <input class="chip-felt" id="maerkeFelt" list="maerkeListe" placeholder="tag name"
+        autocomplete="off" spellcheck="false" hidden>
+      <datalist id="maerkeListe">${(state.tags || [])
+    .map((t) => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>
+    </div>`;
+}
+
+async function saetNoteMaerker(navne) {
+  const n = editor.note;
+  try {
+    const d = await api('PATCH', `/api/v1/notes/${n.id}`, { tags: navne });
+    n.tags = d.note.tags;
+    n.updatedAt = d.note.updatedAt;
+    // Listen over ALLE maerker skal med, ellers mangler det nye i
+    // autoudfyldningen og i »Tags«-skaermen, til man genindlaeser.
+    try { state.tags = (await api('GET', '/api/v1/state')).tags || state.tags; } catch { /* ligegyldigt */ }
+    tegnMaerker();
+  } catch (ex) { toast(ex.message); }
+}
+
+/** Kun maerke-raekken tegnes om - ikke hele noten, som ville lukke en aaben blok. */
+function tegnMaerker() {
+  const host = document.getElementById('noteMaerker');
+  if (!host || !editor.note) return;
+  host.outerHTML = maerkerHtml(editor.note);
+  bindMaerker();
+}
+
+function bindMaerker() {
+  const felt = document.getElementById('maerkeFelt');
+  const knap = document.getElementById('tilfoejMaerke');
+  if (!felt || !knap) return;
+
+  knap.addEventListener('click', () => {
+    knap.hidden = true;
+    felt.hidden = false;
+    felt.value = '';
+    felt.focus();
+  });
+
+  const luk = () => { felt.hidden = true; knap.hidden = false; };
+  felt.addEventListener('keydown', (e) => {
+    // Feltet ejer sine taster: uden stopPropagation gemmer notens egen
+    // ⌘+Enter-genvej samtidig, og »f« ville slaa fokus-tilstand til
+    // (RUNE-ERFARINGER, doda v29/v31/v34).
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); luk(); return; }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const navn = felt.value.trim().replace(/^#/, '');
+    if (!navn) { luk(); return; }
+    const nuvaerende = editor.note.tags || [];
+    if (nuvaerende.some((t) => t.toLowerCase() === navn.toLowerCase())) { luk(); return; }
+    saetNoteMaerker(nuvaerende.concat([navn]));
+  });
+  felt.addEventListener('blur', () => setTimeout(luk, 120));
+
+  document.querySelectorAll('[data-fjernmaerke]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const vaek = el.dataset.fjernmaerke.toLowerCase();
+      saetNoteMaerker((editor.note.tags || []).filter((t) => t.toLowerCase() !== vaek));
+    });
+  });
+}
+
+function gemMaerke() {
+  if (editor.konflikt) return '<span class="gem konflikt">Not saved — conflict</span>';
+  if (editor.gemmer) return '<span class="gem">Saving…</span>';
+  if (editor.beskidt) return '<span class="gem">Unsaved</span>';
+  return '<span class="gem ok">Saved</span>';
+}
+
+function sideNote() {
+  const n = editor.note;
+  if (editor.indlaeser || !n) {
+    return '<div class="card empty"><p class="meta saetning">Opening…</p></div>';
+  }
+
+  return `
+    ${broedkrummer(n)}
+    <div class="note-head">
+      <button class="note-ikon" id="noteIkon" title="Pick an icon"
+        aria-label="Pick an icon">${n.icon ? esc(n.icon) : icon('notes', 20)}</button>
+      <input class="note-title" id="noteTitle" value="${esc(n.title)}"
+        placeholder="Untitled" autocomplete="off" spellcheck="false">
+      <div class="note-tools">
+        <span id="gemMaerke">${gemMaerke()}</span>
+        <button class="iconbtn" id="bredBtn" aria-pressed="${n.fullWidth ? 'true' : 'false'}"
+          title="${n.fullWidth ? 'Use reading width' : 'Use the full width'}">${icon('width', 16)}</button>
+        <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
+        ${udgivKnapHtml(n.published)}
+        <button class="iconbtn" id="menuBtn" title="More">${icon('dots', 16)}</button>
+      </div>
+    </div>
+    ${maerkerHtml(n)}
+    ${editor.konflikt ? konfliktHtml() : ''}
+    <div class="note-body" id="noteBody"></div>
+    ${filerHtml(n)}
+    ${n.backlinks && n.backlinks.length ? `
+      <div class="backlinks">
+        <h2>Linked from</h2>
+        ${n.backlinks.map((b) => `<button class="backlink" data-krumme="${esc(b.id)}">
+          ${esc(b.title || 'Untitled')}</button>`).join('')}
+      </div>` : ''}
+    ${kom.noteId === n.id ? kommentarerHtml() : ''}`;
+}
+
+/*
+ * Konflikten er et VALG, ikke en tavs overskrivning.
+ *
+ * Noten blev gemt et andet sted, mens den stod aaben her. Begge udgaver
+ * findes stadig - brugeren skal kunne se hvad han selv skrev, og bestemme.
+ */
+function konfliktHtml() {
+  return `<div class="konflikt-baand">
+      <div>
+        <strong>Someone saved this note while you were editing.</strong>
+        <div class="meta saetning">Nothing was overwritten. Your version is still on screen.</div>
+      </div>
+      <div class="btnrow">
+        <button class="btn" id="konfliktHent">Load theirs</button>
+        <button class="btn primary" id="konfliktGem">Keep mine</button>
+      </div>
+    </div>`;
+}
+
+/* ------------------------------------------------- den hybride optegning */
+
+/**
+ * Tegner notens krop.
+ *
+ * Én optegningsfejl maa IKKE tage hele ruden med sig: én note i en uventet
+ * form kastede i Verdande inde i en reaktiv effekt, og derefter kunne INGEN
+ * note aabnes - den forrige blev bare staaende. Derfor guarden og faldet
+ * tilbage til raa tekst (Verdandes spec, punkt 8 i deres faeldeliste).
+ */
+function tegnKrop() {
+  const host = document.getElementById('noteBody');
+  const n = editor.note;
+  if (!host || !n) return;
+
+  if (editor.aabenBlok !== null) { tegnMedAabenBlok(host, n); return; }
+
+  try {
+    const { html } = saguMarkdown.render(n.body, renderValg());
+    host.innerHTML = html || '<p class="tom-note meta saetning">Click here to start writing.</p>';
+    pyntKodeblokke(host);
+    bindTjek(host);
+    bindBilleder(host);
+  } catch (ex) {
+    host.innerHTML = `<div class="render-fejl"><p class="meta saetning">
+      This note could not be rendered, so here it is as plain text.</p>
+      <pre>${esc(n.body)}</pre></div>`;
+    if (window.console) console.error('render fejlede', ex);
+  }
+  bindKrop();
+  byggToc();
+}
+
+/**
+ * De valg, rendereren skal have - ét sted, saa den aabne blok og resten af
+ * noten aldrig kan tegnes med forskellige regler.
+ *
+ * `sagu:<id>` frem for en absolut adresse: en note skal kunne flyttes med til
+ * wikien eller en eksport uden at billederne doer. Vaerten oversaetter.
+ */
+/** `sagu:<id>` -> den interne filadresse. Alt andet er vaertens sag. */
+function saguUrl(u) {
+  return /^sagu:[a-f0-9]{32}$/.test(u) ? `/api/v1/files/${u.slice(5)}` : null;
+}
+
+/**
+ * `sagu-note:<id>` -> den note.
+ *
+ * Notion-importen skriver den for HVERT internt link mellem to importerede
+ * sider (241 af dem i Andreas' arkiv). Uden oversaettelsen afviste `sikkerUrl`
+ * dem med rette - de er ikke http(s) - og hele krydsreferencenettet stod som
+ * raa markdown med et hex-id i. Kvitteringen sagde »241 internal links
+ * rewritten«, og ikke ét af dem virkede (Andreas, 2026-08-21).
+ *
+ * Samme greb som §F4's `linkUrl`-krog: rendereren maa ikke kende Sagus
+ * adresser, vaerten oversaetter.
+ */
+function noteUrl(u) {
+  const m = /^sagu-note:([a-f0-9]{32})$/.exec(String(u || ''));
+  if (!m) return null;
+  // `#note-<id>` er den adresse, appen ALLEREDE aabner paa - baade fra
+  // [[henvisninger]] og fra adresselinjen. Ét maal, én handler.
+  return `#note-${m[1]}`;
+}
+
+function renderValg() {
+  return {
+    blokAttribut: true,
+    slaaOpNote: (titel) => {
+      const t = (state.tree || []).find((x) => (x.title || '').toLowerCase() === titel.toLowerCase());
+      return t ? { href: `#note-${t.id}` } : null;
+    },
+    // Kun VORES egne filer vises som billeder. Et billede udefra bliver et
+    // link med en forklaring - CSP'en henter det alligevel ikke, og et
+    // oedelagt ikon forklarer ingenting. F5's import henter dem ned.
+    billedUrl: (u) => saguUrl(u),
+    // Et LINK kan pege paa baade en fil og en anden note.
+    linkUrl: (u) => saguUrl(u) || noteUrl(u),
+  };
+}
+
+function bindKrop() {
+  const host = document.getElementById('noteBody');
+  if (!host) return;
+
+  // ÉN delegeret handler paa kroppen. Ikke `{once:true}`: den ville fjerne sig
+  // selv efter foerste klik, saa man kunne aabne én blok pr. optegning og
+  // derefter ingenting - og fejlen ville ligne "editoren gaar i staa".
+  host.addEventListener('click', (e) => {
+    // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
+    // ellers har man byttet én irritation for en vaerre (doda v37).
+    const a = e.target.closest('a');
+    if (a) {
+      const intern = a.getAttribute('href') || '';
+      if (intern.startsWith('#note-')) { e.preventDefault(); aabnNote(intern.slice(6)); }
+      return;
+    }
+    const blok = e.target.closest('[data-blok]');
+    if (blok) { aabnBlok(Number(blok.dataset.blok)); return; }
+    // Klik under indholdet: aabn den sidste blok, eller lav en ny.
+    if (e.target === host) aabnSidste();
+  });
+}
+
+/** Erstatter ÉN blok med et raat markdown-felt. Resten bliver staaende. */
+function tegnMedAabenBlok(host, n) {
+  const linjer = n.body.split('\n');
+  const blokke = saguMarkdown.blokke(n.body);
+  const b = blokke.find((x) => x.fra === editor.aabenBlok);
+  if (!b) { editor.aabenBlok = null; tegnKrop(); return; }
+
+  const foer = linjer.slice(0, b.fra).join('\n');
+  const efter = linjer.slice(b.til + 1).join('\n');
+  const raa = linjer.slice(b.fra, b.til + 1).join('\n');
+
+  const del = (md) => {
+    if (!md.trim()) return '';
+    try { return saguMarkdown.render(md, renderValg()).html; } catch { return ''; }
+  };
+
+  host.innerHTML = `${del(foer)}
+    <textarea class="blok-felt" id="blokFelt" spellcheck="false"
+      rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
+    ${del(efter)}`;
+
+  // De renderede dele skal ogsaa have knapper og lightbox.
+  pyntKodeblokke(host);
+  bindTjek(host);
+  bindBilleder(host);
+
+  const felt = document.getElementById('blokFelt');
+  if (!felt) return;
+  autoHoejde(felt);
+  felt.focus();
+  // Markoeren i slutningen, saa man kan skrive videre med det samme.
+  felt.setSelectionRange(felt.value.length, felt.value.length);
+
+  felt.addEventListener('input', () => {
+    autoHoejde(felt);
+    skrivBlokTilbage(felt.value, b);
+    opdaterWikiForslag(felt);
+  });
+
+  felt.addEventListener('paste', (e) => { haandterIndsaet(e, felt); });
+  felt.addEventListener('dragover', (e) => { e.preventDefault(); felt.classList.add('traekker'); });
+  felt.addEventListener('dragleave', () => felt.classList.remove('traekker'));
+  felt.addEventListener('drop', (e) => {
+    e.preventDefault();
+    felt.classList.remove('traekker');
+    haandterIndsaet(e, felt);
+  });
+
+  felt.addEventListener('keydown', (e) => {
+    // Forslagslisten faar tasterne FOERST, naar den er aaben - ellers lukker
+    // Escape hele blokken i stedet for kun listen.
+    if (wikiTast(e)) return;
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+    // ⌘/Ctrl+Enter gemmer og lukker blokken. Feltet stopper tasten selv, saa
+    // en container-genvej ikke ogsaa fyrer (doda v29/v31/v34).
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      lukBlok();
+    }
+  });
+
+  felt.addEventListener('blur', () => {
+    // Kun hvis fokus forlod selve noten - ellers lukker et klik i en anden
+    // blok feltet, foer den nye blok naar at aabne.
+    setTimeout(() => {
+      const aktiv = document.activeElement;
+      if (aktiv && aktiv.id === 'blokFelt') return;
+      lukWikiForslag();
+      lukBlok();
+    }, 0);
+  });
+
+  // De blokke, der stadig er renderet, skal kunne klikkes.
+  host.querySelectorAll('[data-blok]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      const nr = Number(el.dataset.blok);
+      if (nr !== editor.aabenBlok) aabnBlok(nr);
+    });
+  });
+}
+
+function autoHoejde(felt) {
+  felt.style.height = 'auto';
+  felt.style.height = `${felt.scrollHeight}px`;
+}
+
+function aabnBlok(fra) {
+  editor.aabenBlok = fra;
+  tegnKrop();
+}
+
+function aabnSidste() {
+  const b = saguMarkdown.blokke(editor.note.body);
+  if (!b.length) {
+    // Tom note: laeg en tom linje ind, saa der er en blok at aabne.
+    editor.note.body = '\n';
+    editor.aabenBlok = 0;
+    tegnKrop();
+    return;
+  }
+  aabnBlok(b[b.length - 1].fra);
+}
+
+function lukBlok() {
+  if (editor.aabenBlok === null) return;
+  editor.aabenBlok = null;
+  tegnKrop();
+  planlaegGem();
+}
+
+/** Skriver feltets linjer tilbage paa deres plads i noten. */
+function skrivBlokTilbage(nyTekst, b) {
+  const linjer = editor.note.body.split('\n');
+  const nye = nyTekst.split('\n');
+  linjer.splice(b.fra, b.til - b.fra + 1, ...nye);
+  editor.note.body = linjer.join('\n');
+  // Blokkens slutlinje flytter sig, mens man skriver; `fra` gør ikke.
+  b.til = b.fra + nye.length - 1;
+  markerBeskidt();
+}
+
+/* ------------------------------------------------------------ gemningen */
+
+function markerBeskidt() {
+  editor.beskidt = true;
+  const m = document.getElementById('gemMaerke');
+  if (m) m.innerHTML = gemMaerke();
+  planlaegGem();
+}
+
+function planlaegGem() {
+  clearTimeout(editor.gemTimer);
+  editor.gemTimer = setTimeout(gemNu, 900);
+}
+
+async function gemNu() {
+  clearTimeout(editor.gemTimer);
+  if (!editor.note || !editor.beskidt || editor.gemmer || editor.konflikt) return;
+  const n = editor.note;
+  editor.gemmer = true;
+  const m = document.getElementById('gemMaerke');
+  if (m) m.innerHTML = gemMaerke();
+  try {
+    const d = await api('PATCH', `/api/v1/notes/${n.id}`, {
+      title: n.title,
+      body: n.body,
+      // Konfliktvagten: serveren afviser, hvis noten er aendret et andet sted.
+      ifUpdatedAt: n.updatedAt,
+    });
+    // Kun stemplet og de afledte felter opdateres. Kroppen er brugerens -
+    // at skrive serverens svar tilbage ville kaste det, han skrev, mens
+    // kaldet var undervejs.
+    n.updatedAt = d.note.updatedAt;
+    n.backlinks = d.note.backlinks;
+    editor.beskidt = false;
+    editor.sidstGemt = Date.now();
+    // Titlen kan vaere aendret - traeet skal foelge med.
+    const t = (state.tree || []).find((x) => x.id === n.id);
+    if (t && t.title !== n.title) { t.title = n.title; tegnTrae(); }
+  } catch (ex) {
+    if (ex.status === 409) {
+      editor.konflikt = true;
+      tegnSide();
+      return;
+    }
+    toast(ex.message);
+  } finally {
+    editor.gemmer = false;
+    const m2 = document.getElementById('gemMaerke');
+    if (m2) m2.innerHTML = gemMaerke();
+  }
+}
+
+/* ------------------------------------------------------------ fuldskaerm */
+
+/*
+ * »Fuld skaerm« er tre forskellige oensker, og de loeses hver for sig:
+ *
+ *  1. **Fuld bredde** - notens tekstspalte bruger hele siden i stedet for
+ *     laesebredden paa 820 px. Godt til tabeller og kode; skidt til prosa,
+ *     fordi lange linjer er svaere at laese. Derfor et valg PR. NOTE, gemt i
+ *     databasen (`full_width`), saa det foelger noten til enhver skaerm.
+ *  2. **Fokus** - alt andet end noten forsvinder: sidebar, broedkrummer,
+ *     vaerktoejer. Det er en tilstand ved SKAERMEN, ikke ved noten, saa den
+ *     gemmes ikke. Esc gaar tilbage.
+ *  3. **Browserens fuldskaerm** - ogsaa uden faner og adressefelt. Kraever en
+ *     brugerhandling, saa den kan kun taendes fra en knap, og den fejler
+ *     stille i en iframe. Derfor er den et TILVALG oven paa fokus og ikke
+ *     det, F-tasten goer.
+ */
+function saetFokus(til) {
+  document.body.classList.toggle('fokus', til);
+  const b = document.getElementById('fokusBtn');
+  if (b) {
+    b.setAttribute('aria-pressed', til ? 'true' : 'false');
+    b.title = til ? 'Leave focus mode (Esc)' : 'Focus mode (F) — just the note';
+  }
+  // Sideoversigten skal med ud og ind: i fokus er der plads til den, men
+  // dens plads flytter sig, saa den skal maales igen.
+  byggToc();
+}
+
+function erIFokus() { return document.body.classList.contains('fokus'); }
+
+async function slaaBrowserFuldskaerm() {
+  try {
+    if (document.fullscreenElement) { await document.exitFullscreen(); return; }
+    await document.documentElement.requestFullscreen();
+  } catch {
+    // Fejler i en iframe og naar tilladelsen mangler. Sig det frem for at
+    // lade knappen se doed ud.
+    toast('The browser would not go fullscreen here. Focus mode still works.');
+  }
+}
+
+/* -------------------------------------------------------------- binding */
+
+function bindNoteSide() {
+  const n = editor.note;
+  if (!n) return;
+  bindKommentarer();
+
+  const titel = document.getElementById('noteTitle');
+  if (titel) {
+    titel.addEventListener('input', () => {
+      // En note maa ALDRIG staa uden en titel: den hedder sin titel i traeet,
+      // i wikiens adresse og i [[henvisninger]]. Tomt felt = "Untitled",
+      // men foerst naar man forlader feltet, saa man kan slette og skrive om.
+      n.title = titel.value;
+      markerBeskidt();
+    });
+    titel.addEventListener('blur', () => {
+      /*
+       * `#maerke` i titlen bliver til et rigtigt maerke - se plukMaerker().
+       *
+       * Det sker, naar man FORLADER feltet, ikke ved hvert tastetryk: ellers
+       * ville `#` blive spist, mens man stadig er i gang med at skrive ordet.
+       */
+      const { tekst: uden, maerker: fundne } = plukMaerker(titel.value);
+
+      if (fundne.length) {
+        titel.value = uden;
+        n.title = uden;
+        markerBeskidt();
+        const nu = n.tags || [];
+        const nye = fundne.filter((f) => !nu.some((t) => t.toLowerCase() === f.toLowerCase()));
+        // Gem titlen FOERST og maerkerne bagefter: det mest specifikke skriver
+        // sidst, ellers overskriver den ene gemning den anden (tovo v7).
+        if (nye.length) { gemNu().then(() => saetNoteMaerker(nu.concat(nye))); }
+      }
+      if (!titel.value.trim()) { titel.value = 'Untitled'; n.title = 'Untitled'; markerBeskidt(); }
+    });
+    titel.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // Enter i titlen gaar ned i teksten - det er den vane, alle har.
+        aabnSidste();
+      }
+    });
+  }
+
+  const bred = document.getElementById('bredBtn');
+  if (bred) {
+    bred.addEventListener('click', async () => {
+      n.fullWidth = !n.fullWidth;
+      document.body.classList.toggle('bred-note', n.fullWidth);
+      bred.setAttribute('aria-pressed', n.fullWidth ? 'true' : 'false');
+      bred.title = n.fullWidth ? 'Use reading width' : 'Use the full width';
+      try {
+        await api('PATCH', `/api/v1/notes/${n.id}`, { fullWidth: n.fullWidth });
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+
+  const fokus = document.getElementById('fokusBtn');
+  if (fokus) fokus.addEventListener('click', () => saetFokus(!erIFokus()));
+
+  const ikonKnap = document.getElementById('noteIkon');
+  if (ikonKnap) {
+    ikonKnap.addEventListener('click', () => visIkonVaelger(ikonKnap, n.icon, async (e) => {
+      n.icon = e;
+      ikonKnap.innerHTML = e ? esc(e) : icon('notes', 20);
+      try {
+        await api('PATCH', `/api/v1/notes/${n.id}`, { icon: e });
+        const t = (state.tree || []).find((x) => x.id === n.id);
+        if (t) { t.icon = e; tegnTrae(); }
+      } catch (ex) { toast(ex.message); }
+    }));
+  }
+
+  const menu = document.getElementById('menuBtn');
+  if (menu) menu.addEventListener('click', visNoteMenu);
+
+  const udgiv = document.getElementById('udgivBtn');
+  // IKKE `addEventListener('click', visUdgivPanel)`: saa bliver klik-haendelsen
+  // til funktionens foerste argument, og ruden tror, den har faaet et maal.
+  // Symptomet var en overskrift uden titel - og, vaerre, at ruden aldrig kunne
+  // finde notens EKSISTERENDE udgivelse, fordi opslaget skete paa `undefined`.
+  if (udgiv) udgiv.addEventListener('click', () => visUdgivPanel());
+
+  document.querySelectorAll('[data-krumme]').forEach((el) => {
+    el.addEventListener('click', () => aabnNote(el.dataset.krumme));
+  });
+
+  if (editor.konflikt) {
+    const hent = document.getElementById('konfliktHent');
+    if (hent) {
+      hent.addEventListener('click', async () => {
+        editor.konflikt = null;
+        editor.beskidt = false;
+        editor.note = null;
+        await aabnNote(n.id);
+      });
+    }
+    const gem = document.getElementById('konfliktGem');
+    if (gem) {
+      gem.addEventListener('click', async () => {
+        // "Behold min" = gem UDEN vagten. Den anden udgave staar i
+        // historikken, saa intet er tabt.
+        editor.konflikt = null;
+        try {
+          const d = await api('PATCH', `/api/v1/notes/${n.id}`, { title: n.title, body: n.body });
+          n.updatedAt = d.note.updatedAt;
+          editor.beskidt = false;
+          toast('Saved. The other version is in the history.');
+          tegnSide();
+        } catch (ex) { toast(ex.message); }
+      });
+    }
+  }
+
+  bindMaerker();
+  bindFiler();
+  bindDropZone(document.querySelector('.main'));
+  document.body.classList.toggle('bred-note', !!n.fullWidth);
+  tegnKrop();
+}
+
+/**
+ * Flyt en note til en anden notesbog.
+ *
+ * Ruten fandtes fra F1 (`POST /notes/:id/move`), men der var ingen vej til den
+ * i UI'et - og en funktion, man ikke kan naa, findes ikke for brugeren
+ * (RUNE-ERFARINGER, tovo v8). Undersiderne foelger med: et undertrae ligger i
+ * ÉN notesbog, ellers kan sidebaren ikke tegne det ét sted.
+ */
+function visFlytRude(n) {
+  const boeger = state.notebooks || [];
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'flytRude';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Move “${esc(n.title || 'Untitled')}”</h2>
+        <button class="iconbtn" id="flytLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">Subpages come along — a page and everything under it
+        lives in one notebook.</p>
+        <label class="field"><span>Notebook</span>
+          <select class="input" id="flytBog">
+            <option value="">No notebook</option>
+            ${boeger.map((b) => `<option value="${esc(b.id)}"${
+  b.id === n.notebookId ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}
+          </select></label>
+        <div class="btnrow" style="margin-top:16px">
+          <button class="btn primary" id="flytGem">Move</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#flytLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  host.querySelector('#flytGem').addEventListener('click', async () => {
+    const bog = host.querySelector('#flytBog').value || null;
+    try {
+      // parentId: null, fordi en note, der flytter notesbog, ikke laengere kan
+      // haenge under en side i den gamle. Serveren ville ellers rette
+      // notesbogen tilbage til foraelderens (flytNote).
+      await api('POST', `/api/v1/notes/${n.id}/move`, { parentId: null, notebookId: bog });
+      luk();
+      await hentTrae();
+      tegnTrae();
+      // `aabnNote` paa den note, der ALLEREDE er aaben, gaar tilbage med det
+      // samme - den henter ikke forfra. Derfor synkes felterne fra traeet.
+      synkAabenNote();
+      toast(bog ? 'Moved.' : 'Moved out of its notebook.');
+    } catch (ex) { toast(ex.message); }
+  });
+}
+
+function visNoteMenu() {
+  const gammel = document.getElementById('noteMenu');
+  if (gammel) { gammel.remove(); return; }
+  const anker = document.getElementById('menuBtn');
+  const vaert = document.querySelector('.note-tools');
+  if (!anker || !vaert) return;
+  const n = editor.note;
+  // Den soeskende, der staar lige FOER - det er den, en indrykning lander
+  // under. Findes den ikke, er der intet at rykke ind under, og punktet
+  // staar der ikke: en knap, der ikke kan goere noget, er ikke en knap.
+  const foer = soeskendeFoer(n);
+
+  const host = document.createElement('div');
+  host.className = 'usermenu notemenu';
+  host.id = 'noteMenu';
+  host.innerHTML = `
+    <button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
+    <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>
+    <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
+    <button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
+    <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
+    ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
+  esc((foer.title || 'Untitled').slice(0, 24))}”</span></button>` : ''}
+    <button class="usermenu-item" data-do="op">${icon('fold', 16)}<span>Move up</span></button>
+    <button class="usermenu-item" data-do="ned">${icon('udfold', 16)}<span>Move down</span></button>
+    <button class="usermenu-item" data-do="flyt">${icon('book', 16)}<span>Move to notebook…</span></button>
+    ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}
+    <button class="usermenu-item" data-do="fs">${icon('focus', 16)}<span>Browser fullscreen</span></button>
+    <button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>`;
+  vaert.appendChild(host);
+
+  host.querySelectorAll('[data-do]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const hvad = el.dataset.do;
+      host.remove();
+      try {
+        if (hvad === 'fil') { vaelgFiler(); return; }
+        if (hvad === 'md') { visMarkdownPanel(); return; }
+        if (hvad === 'sub') { await opretOgAaben({ parentId: n.id }); return; }
+        if (hvad === 'fs') { saetFokus(true); await slaaBrowserFuldskaerm(); return; }
+        if (hvad === 'dup' || hvad === 'dupall') {
+          const d = await api('POST', `/api/v1/notes/${n.id}/duplicate`, { withChildren: hvad === 'dupall' });
+          await hentTrae();
+          tegnTrae();
+          await aabnNote(d.note.id);
+          return;
+        }
+        if (hvad === 'op' || hvad === 'ned') { await flytNoteISort(n, hvad === 'op' ? -1 : 1); return; }
+        if (hvad === 'ind') {
+          // Indrykning: noten bliver en underside af den, der stod lige foer.
+          // Serveren flytter hele undertraeet med og synker notesbogen.
+          await api('POST', `/api/v1/notes/${n.id}/move`, { parentId: foer.id });
+          editor.foldede.delete(foer.id);
+          gemFoldede();
+          await hentTrae();
+          tegnTrae();
+          synkAabenNote();
+          return;
+        }
+        if (hvad === 'flyt') { visFlytRude(n); return; }
+        if (hvad === 'root') {
+          await api('POST', `/api/v1/notes/${n.id}/move`, { parentId: null });
+          await hentTrae();
+          tegnTrae();
+          synkAabenNote();
+          return;
+        }
+        if (hvad === 'del') {
+          const svar = await api('DELETE', `/api/v1/notes/${n.id}`);
+          // Sig hvor mange der fulgte med - ellers opdager man foerst
+          // bagefter, at undersiderne ogsaa er vaek.
+          toast(svar.deleted > 1
+            ? `Moved to trash with ${svar.deleted - 1} subpage${svar.deleted > 2 ? 's' : ''}.`
+            : 'Moved to trash.', {
+            label: 'Undo',
+            run: async () => {
+              try {
+                await api('POST', `/api/v1/notes/${n.id}/restore`, {});
+                await hentTrae();
+                tegnTrae();
+                await aabnNote(n.id);
+              } catch (ex) { toast(ex.message); }
+            },
+          });
+          editor.note = null;
+          await hentTrae();
+          tegnTrae();
+          gaaTil('notes');
+        }
+      } catch (ex) { toast(ex.message); }
+    });
+  });
+
+  setTimeout(() => {
+    document.addEventListener('click', function udenfor(e) {
+      if (host.isConnected && !host.contains(e.target) && !anker.contains(e.target)) {
+        host.remove();
+        document.removeEventListener('click', udenfor);
+      }
+    });
+  }, 0);
+}
+
+/* ------------------------------------------------------------- genveje */
+
+/*
+ * Kun taster, der ikke kan forveksles med at skrive.
+ *
+ * Vagten skal spoerge om BAADE `activeElement` og haendelsens `target`: en
+ * optimistisk opdatering kan naa at fjerne det fokuserede element, og saa ser
+ * et vaern, der kun kigger paa activeElement, ingenting (doda v29).
+ */
+document.addEventListener('keydown', (e) => {
+  const maal = e.target;
+  const iFelt = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  if (iFelt(maal) || iFelt(document.activeElement)) {
+    if (e.key === 'Escape' && erIFokus() && !document.getElementById('blokFelt')) saetFokus(false);
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  if (e.key === 'Escape' && erIFokus()) { saetFokus(false); return; }
+  if ((e.key === 'f' || e.key === 'F') && state.view === 'note') {
+    e.preventDefault();
+    saetFokus(!erIFokus());
+  }
+});
+
+// Forlader man browserens fuldskaerm med Esc, skal vores egen tilstand foelge
+// med - ellers staar appen i fokus uden at nogen bad om det.
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && erIFokus() && state.view !== 'note') saetFokus(false);
+});
+
+// En ventende gemning maa ikke gaa tabt, fordi fanen lukkes.
+window.addEventListener('beforeunload', (e) => {
+  if (editor.beskidt) { gemNu(); e.preventDefault(); e.returnValue = ''; }
+});

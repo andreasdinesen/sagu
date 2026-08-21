@@ -1,0 +1,1863 @@
+/* Sagu - samme designsprog som doda (som selv foelger tingdo.app).
+   Tokens og begrundelser: DESIGN.md. */
+
+:root {
+  --bg: #efe9e2;
+  --sidebar: #e7e0d7;
+  --card: #f7f3ee;
+  --card-hover: #f2ece4;
+  --border: #dcd3c7;
+  --border-soft: #e5ded4;
+  --text: #1c1917;
+  --muted: #8b8078;
+  --accent: #b07d14;
+  --accent-soft: #f0e4cb;
+  --accent-text: #8a6212;
+  --danger: #a8422c;
+  --shadow: 0 1px 2px rgba(60, 45, 20, .05);
+  --shadow-lift: 0 4px 24px rgba(60, 45, 20, .10);
+
+  --r-sm: 8px;
+  --r: 14px;
+  --r-lg: 20px;
+  --pill: 999px;
+
+  --sidebar-w: 264px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Farverne staar TO steder med vilje. [data-theme="dark"] er brugerens
+   eksplicitte valg og skal vinde over maskinen; media-blokken daekker
+   "foelg systemet". Uden dobbeltdeklarationen kan man ikke vaelge lyst tema
+   paa en moerk maskine. */
+:root[data-theme="dark"] {
+  --bg: #141210;
+  --sidebar: #1a1714;
+  --card: #211d19;
+  --card-hover: #282320;
+  --border: #312a23;
+  --border-soft: #272119;
+  --text: #ede8e1;
+  --muted: #95897c;
+  --accent: #d9a441;
+  --accent-soft: #3a2e17;
+  --accent-text: #e8bd63;
+  --danger: #e0836a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-lift: 0 4px 24px rgba(0, 0, 0, .45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141210;
+    --sidebar: #1a1714;
+    --card: #211d19;
+    --card-hover: #282320;
+    --border: #312a23;
+    --border-soft: #272119;
+    --text: #ede8e1;
+    --muted: #95897c;
+    --accent: #d9a441;
+    --accent-soft: #3a2e17;
+    --accent-text: #e8bd63;
+    --danger: #e0836a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+    --shadow-lift: 0 4px 24px rgba(0, 0, 0, .45);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Uden denne vinder display:flex over hidden-attributten (RUNE-ERFARINGER §4). */
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  /* Lange ubrudte ord fra IMPORTERET indhold (Notion-titler, kilde-URL'er)
+     er den hyppigste kilde til vandret scroll paa telefon. Sagu importerer
+     et helt arkiv, saa den her er ikke valgfri. */
+  overflow-wrap: break-word;
+}
+
+button, input, textarea, select { font: inherit; color: inherit; }
+
+/* ------------------------------------------------------------ typografi */
+
+h1 { font-size: 34px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+h2 { font-size: 20px; font-weight: 650; letter-spacing: -.01em; margin: 0 0 8px; }
+
+/*
+ * .meta er en VERSAL ETIKET ("3 notes"), ikke en tekstklasse. Brugt til prosa
+ * bliver den ulaeselig, og brugt til et filnavn bliver stien forkert
+ * (RUNE-ERFARINGER, tools v1+v2).
+ *
+ * Udvejen skal vaere en REGEL, ikke en liste over foraeldre: et afsnit er
+ * prosa, et span er et maerke. Der er en test paa, at den her findes.
+ */
+.meta {
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+p.meta, li.meta, .meta.saetning {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.lead { color: var(--muted); margin: 0; }
+code, kbd, pre { font-family: var(--mono); }
+code { font-size: .92em; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+
+/* ------------------------------------------------------------- layout */
+
+.app { display: flex; min-height: 100%; }
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: none;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  /* `dvh` i en EGEN erklaering, saa en browser uden den beholder vh.
+     Paa iPhone er 100vh hoejere end det synlige felt, saa foden - med
+     versionslinjen og temaknappen - ryger ned under skaermkanten
+     (RUNE-ERFARINGER, doda v39). */
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 24px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.brand svg { color: var(--accent); flex: none; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav + .nav { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  /* Uden den her kan et langt notesbogsnavn skubbe sidebaren bredere. */
+  min-width: 0;
+}
+
+.nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item:hover { background: var(--card-hover); }
+
+.nav-item[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.nav-item svg { flex: none; opacity: .75; }
+.nav-item[aria-current="page"] svg { opacity: 1; }
+.nav-count { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.sidebar-foot { margin-top: auto; padding-top: 16px; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.foot-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; }
+.version-line { flex: 1; }
+.version-old { border: 0; background: none; text-align: left; cursor: pointer; color: var(--accent-text); }
+
+.pinbtn, .temabtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pinbtn:hover, .temabtn:hover { background: var(--card-hover); color: var(--text); border-color: var(--border); }
+.pinbtn.off svg { transform: rotate(45deg); }
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 32px 64px;
+}
+
+/*
+ * .main centrerer sine boern, saa #pageHost bliver shrink-to-fit. Med TOMT
+ * indhold - som fase 0's aerlige "kommer i F1" - staar overskriften saa
+ * midtstillet, og det ligner en fejl i typografien (RUNE-ERFARINGER, tovo F0).
+ *
+ * Arver du en skal, saa test den ogsaa med tomt indhold.
+ */
+#pageHost, .topbar { width: 100%; max-width: 820px; }
+#pageHost h2 { scroll-margin-top: 24px; }
+
+.topbar { margin-bottom: 24px; }
+
+/* ------------------------------------------------------------- kort */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  /* Et grid-/flex-spor vokser til indholdets MIN-bredde, og saa er barnets
+     width:100% ligegyldigt (RUNE-ERFARINGER, tovo v13). */
+  min-width: 0;
+}
+
+.card + .card { margin-top: 16px; }
+.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+
+/* ------------------------------------------------------------ knapper */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.btn:hover { background: var(--card-hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { border-color: transparent; background: none; }
+.btn.ghost:hover { background: var(--card-hover); }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* En fodraekke med knapper skal kunne bryde fra dag ét - fire knapper er for
+   meget til én linje paa en telefon (RUNE-ERFARINGER, doda v33). */
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ------------------------------------------------------------- felter */
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; min-width: 0; }
+.field > span { font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.input {
+  width: 100%;
+  /* Et input/textarea har en indbygget min-content-bredde (cols ~20 tegn),
+     og min-width:auto lader den skubbe forael­deren ud. */
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* appearance:none paa input/select fjerner OGSAA fluebenet i en checkbox og
+   pilen i en select. Giv dem den tilbage (RUNE-ERFARINGER, Tilmeld). */
+input[type="checkbox"], input[type="radio"] { appearance: auto; width: auto; min-width: 0; }
+
+.switch { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+
+/* --------------------------------------------------------------- gate */
+
+.gate { display: flex; align-items: center; justify-content: center; min-height: 100vh; min-height: 100dvh; padding: 24px; }
+.gate .card { width: 100%; max-width: 400px; }
+.gate .brand { justify-content: center; padding-bottom: 12px; }
+.gate-error { color: var(--danger); font-size: 14px; margin: 0 0 14px; }
+.gate-note { color: var(--muted); font-size: 13px; margin: 16px 0 0; text-align: center; }
+.gate-or { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--muted); font-size: 13px; }
+.gate-or::before, .gate-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.gate-switch { text-align: center; margin: 16px 0 0; font-size: 14px; }
+.gate-switch button { border: 0; background: none; color: var(--accent-text); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* -------------------------------------------------------------- toasts */
+
+.toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; }
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--pill);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+  font-size: 14px;
+}
+
+.toast-action { border: 0; background: none; color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+
+/* ------------------------------------------------------------ brugermenu */
+
+/* Lag: indhold < brugermenu (58) < toasts (60) < palet (70). Dokumenteret
+   samlet ét sted - flyt aldrig ét lag uden at se paa resten. */
+.usermenu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 58;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+}
+
+/* Menuen HAENGER i sidebarens fod og placeres af CSS - ikke af et
+   getBoundingClientRect() paa klik-tidspunktet. Maaler man koordinater paa en
+   flade, der stadig glider ind, lander menuen uden for skaermen paa mobil
+   (RUNE-ERFARINGER, Beanledger v29). Foden skal derfor vaere positioneret. */
+.sidebar-foot { position: relative; }
+
+.usermenu-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.usermenu-name { font-weight: 600; }
+
+.usermenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.usermenu-item:hover { background: var(--card-hover); }
+.usermenu-item.danger { color: var(--danger); }
+
+/* ------------------------------------------------------- sideoversigt */
+
+/* §9b fra RUNE-ERFARINGER, ordret. Den bor i <body>, ikke i #pageHost:
+   alt derinde skiftes ud ved hver optegning. */
+.toc {
+  position: fixed;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Venstre padding er en USYNLIG gribeflade. Uden den er hvert maal
+     ~24x10 px, og man skal ramme praecist for at folde ud. Den ligger i
+     sidens margen, aldrig hen over indhold. */
+  padding: 12px 10px 12px 30px;
+  max-height: 70vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--r);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background .14s, border-color .14s, box-shadow .14s;
+}
+
+.toc:hover { background: var(--card); border-color: var(--border); box-shadow: var(--shadow-lift); }
+
+.toc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+
+/* flex:none, ellers klemmer flex-foraelderen stregen til ingenting. */
+.toc-dash { flex: none; width: 16px; height: 2px; border-radius: 2px; background: currentColor; opacity: .4; transition: width .14s, opacity .14s; }
+.toc-item.on .toc-dash { width: 24px; opacity: 1; background: var(--accent); }
+.toc-item.on { color: var(--text); }
+.toc-tekst { max-width: 0; opacity: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: max-width .18s, opacity .14s; }
+.toc:hover .toc-tekst { max-width: 190px; opacity: 1; }
+
+/* ------------------------------------------------------------ tabeller */
+
+table.data { width: 100%; border-collapse: collapse; }
+table.data th, table.data td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
+table.data th { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+/* Modifikatorer til table.data SKAL skrives med tabel-praefiks. `.center`
+   alene (0-1-0) taber til `table.data td` (0-1-2) og goer ingenting
+   (RUNE-ERFARINGER, Beanledger v26). */
+table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data td.center, table.data th.center { text-align: center; }
+
+/*
+ * En bred tabel skal kunne rulle i sin EGEN ramme frem for at blive klemt.
+ * `width: 100%` alene er ikke nok med mange kolonner: de bliver presset ned
+ * til ét ord hver og raekkerne ti linjer hoeje (RUNE-ERFARINGER, Tilmeld).
+ */
+.tablewrap { overflow-x: auto; }
+.tablewrap table.data { min-width: max-content; }
+
+/*
+ * ... men max-content har ingen oevre graense. En importeret Notion-titel paa
+ * 90 tegn maalte 647 px i en 375 px skaerm og traak hele tabellen med sig.
+ * Loftet er derfor en del af komponenten, ikke en lap paa én tabel - Sagu
+ * importerer et helt arkiv, saa den laengste titel er ikke en, vi vaelger.
+ */
+.tablewrap table.data td, .tablewrap table.data th { max-width: 22rem; }
+
+/*
+ * Ruller tabellen vandret, SKAL foerste kolonne staa fast. Ellers ruller
+ * navnet ud af syne, og man staar med en dato uden at vide, hvis den er -
+ * altsaa er den kolonne, man rullede hen til, ubrugelig (tovo v13).
+ * Baggrunden skal vaere ugennemsigtig, ellers skinner raekken igennem.
+ */
+@media (max-width: 900px) {
+  .tablewrap table.data td:first-child,
+  .tablewrap table.data th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--card);
+    max-width: 60vw;
+  }
+}
+
+/* --------------------------------------------------------------- chips */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip.neutral { background: var(--card-hover); color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ------------------------------------------------------------- tom side */
+
+.empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+.empty h2 { color: var(--text); }
+
+/* ------------------------------------------------ menuknap og overlay */
+
+.navtoggle { position: fixed; top: 14px; left: 14px; z-index: 52; display: none; padding: 8px; }
+.backdrop { display: none; }
+
+/*
+ * Sidebaren kan foldes helt vaek paa desktop (§9c). Skjult ligger den som et
+ * OVERLAY over indholdet i stedet for at skubbe det - ellers hopper hele
+ * siden, hver gang man kigger i menuen.
+ */
+@media (min-width: 901px) {
+  body.navskjult .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform .18s ease;
+    box-shadow: var(--shadow-lift);
+  }
+
+  body.navskjult.navopen .sidebar { transform: none; }
+  body.navskjult .navtoggle { display: inline-flex; }
+  body.navskjult.navopen .backdrop { display: block; position: fixed; inset: 0; z-index: 45; background: rgba(0, 0, 0, .35); }
+  /* body.navskjult .main (0-2-1) slaar .main (0-1-0). Media queries giver
+     ingen specificitet - derfor skal begge klasser med. */
+  body.navskjult .main { padding-left: 64px; }
+}
+
+/*
+ * Mobilgraensen er 900 px, ikke 760: en iPad i portraet er 768/834 px og
+ * ville ellers beholde sidebaren og miste 264 px indhold.
+ *
+ * Tallet bor TO steder - her og i SMAL_SKAERM i p1_core.js. Er de ude af
+ * trit, folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror,
+ * den er en overlay (RUNE-ERFARINGER §4).
+ */
+@media (max-width: 900px) {
+  .navtoggle { display: inline-flex; }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform .18s ease;
+    box-shadow: var(--shadow-lift);
+  }
+
+  body.navopen .sidebar { transform: none; }
+  body.navopen .backdrop { display: block; position: fixed; inset: 0; z-index: 45; background: rgba(0, 0, 0, .35); }
+
+  /* Begge selektorer med: media queries giver ingen specificitet, saa
+     `body.navskjult .main` fra desktop-blokken ville ellers vinde. */
+  .main, body.navskjult .main { padding: 64px 16px 40px; }
+
+  .toc { display: none; }
+
+  /* Nettet under mobilgraensen - ALDRIG paa desktop, saa layoutbrud
+     forbliver synlige under udvikling. Prisen er, at et overloeb hverken
+     kan ses eller rulles frem, saa maal ogsaa pr. ELEMENT
+     (getBoundingClientRect().right > innerWidth). */
+  html, body { overflow-x: hidden; }
+}
+
+/* --------------------------------------------------------------- print */
+
+@media print {
+  .sidebar, .navtoggle, .backdrop, .toc, .toasts, .topbar { display: none !important; }
+  .main { padding: 0; display: block; }
+  #pageHost { max-width: none; }
+
+  /* Papirmargenen ligger som padding paa arket. @page { margin: 0 } fjerner
+     browserens auto-sidehoved og -fod, fordi der saa ingen margen-boks er at
+     tegne dem i (RUNE-ERFARINGER §4). */
+  @page { margin: 0; }
+  body { padding: 14mm; background: #fff; }
+
+  /* Print-HTML maa ALDRIG bruge var(--…)-farver: i moerkt tema er --muted
+     lys graa og forsvinder paa hvidt papir. */
+  body, .card { color: #111; background: #fff; box-shadow: none; }
+  .card { border-color: #ccc; }
+  .meta, .lead { color: #555; }
+
+  /* Baggrundsfarver kraever print-color-adjust, ellers dropper browseren dem. */
+  .chip { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ============================================================ traeet ==== */
+
+.treehost { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.tree { display: flex; flex-direction: column; gap: 1px; }
+.tree-book + .tree-book { margin-top: 6px; }
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r-sm);
+  /* Uden min-width:0 kan en lang notetitel skubbe hele sidebaren bredere. */
+  min-width: 0;
+}
+
+.tree-row:hover { background: var(--card-hover); }
+.tree-row.on { background: var(--accent-soft); }
+.tree-row.on .tree-name { color: var(--accent-text); font-weight: 600; }
+.tree-row.book .tree-name { font-weight: 600; }
+
+.tree-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-icon { flex: none; font-size: 14px; line-height: 1; }
+
+.tree-fold {
+  flex: none;
+  width: 18px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.tree-fold svg { transition: transform .12s; }
+.tree-fold.open svg { transform: rotate(90deg); }
+.tree-fold.empty { cursor: default; }
+
+/* Knappen skal kunne SES paa touch. Skjult paa hover er den usynlig praecis
+   dér, hvor den betyder mest (RUNE-ERFARINGER, doda F3). */
+.tree-add {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  padding: 0;
+}
+
+.tree-row:hover .tree-add, .tree-add:focus-visible { opacity: 1; }
+.tree-add:hover { background: var(--bg); color: var(--text); }
+@media (hover: none) { .tree-add { opacity: 1; } }
+
+.tree-actions { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.tree-actions .btn { justify-content: flex-start; font-size: 13px; padding: 6px 8px; color: var(--muted); }
+
+/* ============================================================ noten ===== */
+
+.krummer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.krummer button { border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0; }
+.krummer button:hover { color: var(--text); text-decoration: underline; }
+.krummer .sep { color: var(--border); }
+
+.note-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+
+.note-title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  padding: 0;
+  line-height: 1.2;
+}
+
+.note-title:focus { outline: none; }
+.note-title::placeholder { color: var(--border); }
+
+.note-tools { display: flex; align-items: center; gap: 4px; flex: none; position: relative; padding-top: 6px; }
+.note-tools .gem { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-right: 6px; }
+.note-tools .gem.ok { color: var(--muted); opacity: .6; }
+.note-tools .gem.konflikt { color: var(--danger); opacity: 1; }
+
+.iconbtn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.iconbtn:hover { background: var(--card-hover); color: var(--text); border-color: var(--border); }
+.iconbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
+/* Menuen forankres i vaerktoejsraekken og placeres af CSS - ikke af et
+   getBoundingClientRect() paa klik-tidspunktet (Beanledger v29). */
+.notemenu { position: absolute; top: calc(100% + 6px); right: 0; left: auto; bottom: auto; min-width: 230px; }
+
+.konflikt-baand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--danger);
+  border-radius: var(--r);
+  background: var(--card);
+}
+
+/* ------------------------------------------------------ notens indhold */
+
+.note-body { font-size: 16px; line-height: 1.7; }
+.note-body > * { margin: 0 0 14px; }
+.note-body h1, .note-body h2, .note-body h3, .note-body h4 { margin: 28px 0 10px; line-height: 1.3; }
+.note-body h1 { font-size: 27px; }
+.note-body h2 { font-size: 22px; }
+.note-body h3 { font-size: 18px; }
+.note-body h4 { font-size: 16px; }
+.note-body h2, .note-body h3 { scroll-margin-top: 24px; }
+.note-body ul, .note-body ol { padding-left: 24px; margin: 0; }
+.note-body li { margin: 3px 0; }
+.note-body li > ul, .note-body li > ol { margin-top: 3px; }
+.note-body a { color: var(--accent-text); }
+
+.note-body blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 2px 0 2px 16px;
+  color: var(--muted);
+}
+
+.note-body pre {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+
+.note-body pre code { background: none; padding: 0; font-size: 13.5px; line-height: 1.55; }
+.note-body hr { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
+
+.note-body .notelink { color: var(--accent-text); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+/* En doed henvisning skal SES som doed - den er en kendsgerning om noten. */
+.note-body .notelink.dead { color: var(--muted); border-bottom: 1px dashed var(--border); cursor: help; }
+
+/* Klikfladen: hele blokken, ikke kun teksten. Uden den skal man ramme
+   praecist for at aabne et afsnit (RUNE-ERFARINGER, doda v7). */
+.note-body [data-blok] {
+  border-radius: var(--r-sm);
+  cursor: text;
+  transition: background .1s;
+  padding: 2px 6px;
+  margin-left: -6px;
+  margin-right: -6px;
+}
+
+.note-body [data-blok]:hover { background: var(--card-hover); }
+.note-body pre[data-blok]:hover { background: var(--card); }
+.tom-note { cursor: text; }
+
+.blok-felt {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0 -6px 14px;
+  padding: 2px 6px;
+  border: 0;
+  border-left: 2px solid var(--accent);
+  border-radius: 0;
+  background: var(--card-hover);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14.5px;
+  line-height: 1.65;
+  resize: none;
+  overflow: hidden;
+}
+
+.blok-felt:focus { outline: none; }
+
+.render-fejl pre { white-space: pre-wrap; }
+
+.backlinks { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--border); }
+.backlinks h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.backlink {
+  display: block;
+  padding: 7px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.linkknap { border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; padding: 0; }
+.linkknap:hover { color: var(--accent-text); text-decoration: underline; }
+
+/* ------------------------------------------------- bredde og fuldskaerm */
+
+/*
+ * Tre forskellige oensker, tre forskellige mekanismer:
+ *
+ *  - `body.bred-note`   notens spalte bruger hele siden. Et valg PR. NOTE,
+ *                       gemt i databasen, saa det foelger noten til enhver skaerm.
+ *  - `body.fokus`       alt andet forsvinder. En tilstand ved SKAERMEN, ikke
+ *                       ved noten - den gemmes derfor ikke.
+ *  - :fullscreen        browserens egen. Kraever en brugerhandling og er
+ *                       derfor et tilvalg oven paa fokus.
+ */
+body.bred-note #pageHost { max-width: none; }
+
+body.fokus .sidebar,
+body.fokus .navtoggle,
+body.fokus .krummer,
+body.fokus .backlinks { display: none; }
+
+body.fokus .main { padding: 56px 32px 96px; }
+body.fokus #pageHost { max-width: 760px; }
+body.fokus.bred-note #pageHost { max-width: 1100px; }
+/* Vaerktoejerne bliver - man skal kunne komme UD igen. En udvej skal virke
+   praecis dér, hvor man er (RUNE-ERFARINGER, doda v39). */
+body.fokus .note-tools { opacity: .35; transition: opacity .15s; }
+body.fokus .note-tools:hover, body.fokus .note-tools:focus-within { opacity: 1; }
+
+@media (max-width: 900px) {
+  body.fokus .main { padding: 20px 16px 80px; }
+  .note-title { font-size: 27px; }
+
+  /* Ikonet hoerer SAMMEN med titlen - det er vaerktoejerne, der skal bryde
+     ned under. Med `flex-direction: column` paa hele hovedet endte ikonet
+     paa sin egen linje over titlen, og saa lignede det en tom knap. */
+  .note-head { flex-wrap: wrap; align-items: center; gap: 6px; }
+  .note-title { flex: 1 1 60%; }
+  .note-tools { flex: 1 0 100%; padding-top: 0; justify-content: flex-start; }
+  .note-ikon { width: 34px; height: 34px; font-size: 21px; }
+}
+
+/* ========================================================== omni-feltet == */
+
+.toprow { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-bottom: 10px; min-height: 18px; }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; }
+
+.omni-card {
+  position: relative;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lift);
+  padding: 6px;
+}
+
+.omni-card.moded { border-color: var(--accent); }
+
+.omni-field { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-width: 0; }
+.omni-icon { flex: none; color: var(--muted); display: inline-flex; }
+.omni-card.moded .omni-icon { color: var(--accent); }
+
+.omni-mode {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: var(--pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.omni-input {
+  flex: 1;
+  /* Uden min-width:0 kan pillen og en lang placeholder skubbe kortet bredere. */
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 19px;
+  padding: 4px 0;
+}
+
+.omni-input:focus { outline: none; }
+.omni-input::placeholder { color: var(--muted); }
+
+.omni-clear {
+  flex: none;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--pill);
+  background: none; color: var(--muted); cursor: pointer; padding: 0;
+}
+
+.omni-clear:hover { background: var(--card-hover); color: var(--text); }
+
+.omni-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.legend-keys, .legend-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { color: var(--border); }
+
+kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------- panelet */
+
+.omni-panel {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  max-height: 58vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.omni-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.omni-row.on { background: var(--accent-soft); }
+.omni-row.on .omni-row-titel { color: var(--accent-text); }
+.omni-row.fejl { color: var(--danger); }
+.omni-row-ikon { flex: none; color: var(--muted); display: inline-flex; padding-top: 2px; font-size: 15px; }
+.omni-row.on .omni-row-ikon { color: var(--accent-text); }
+
+/* min-width:0 paa BEGGE: uden det kan et langt uddrag skubbe raekken bredere
+   end kortet, og ellipsen falder uden for skaermen. */
+.omni-row-tekst { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.omni-row-titel { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.omni-row-uddrag {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.omni-row-uddrag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; padding: 0 2px; }
+.omni-row-meta { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-top: 3px; }
+
+.omni-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+/* ------------------------------------------------------- landingssiden */
+
+.hjem { margin-bottom: 26px; }
+.hjem h1 { font-size: 30px; }
+
+.senest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.senest:last-child { border-bottom: 0; }
+.senest:hover { color: var(--accent-text); }
+.senest span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.senest .meta { flex: none; }
+
+table.data.syntax td { padding: 6px 10px 6px 0; vertical-align: top; }
+table.data.syntax td:first-child { white-space: nowrap; width: 1%; }
+
+/* I fokus skal feltet ogsaa vaek - det er hele pointen. */
+body.fokus .topbar { display: none; }
+
+@media (max-width: 900px) {
+  .omni-input { font-size: 17px; }
+  .omni-legend { font-size: 10px; }
+  .omni-row-meta { display: none; }
+}
+
+/* ======================================================== F3: blokkene == */
+
+/* Kodeblok: knappen ligger UDEN FOR <pre>. En kopier-knap inde i blokken og
+   en syntaksfarver, der laeser textContent, bliver uenige - og forskellen
+   ender i filen (Verdandes spec: et klik skrev ordet »Copied« ind i koden). */
+.kodeblok { margin: 0 0 14px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; background: var(--card); }
+.kodeblok pre { margin: 0; border: 0; border-radius: 0; background: none; }
+.kodeblok-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px 6px 14px; border-bottom: 1px solid var(--border-soft); background: var(--card-hover); }
+.kodeblok-sprog { font-size: 10px; }
+
+.kodeblok-kopi {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.kodeblok-kopi:hover { background: var(--bg); color: var(--text); border-color: var(--border); }
+
+/* ------------------------------------------------------------ tjeklister */
+
+.tjekliste { margin: 0 0 14px; }
+.tjek { display: flex; align-items: flex-start; gap: 10px; padding: 2px 0; }
+
+.tjek-boks {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  margin-top: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tjek-boks[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.tjek.er-tjekket .tjek-tekst { color: var(--muted); text-decoration: line-through; }
+.tjek-tekst { min-width: 0; }
+
+/* -------------------------------------------------------------- callouts */
+
+.callout { margin: 0 0 14px; padding: 12px 16px; border-left: 3px solid var(--accent); border-radius: var(--r-sm); background: var(--card); }
+.callout-hoved { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--accent-text); margin-bottom: 6px; }
+.callout-tegn { font-size: 13px; }
+.callout-krop > :last-child { margin-bottom: 0; }
+.callout.warning, .callout.caution { border-left-color: var(--danger); }
+.callout.warning .callout-hoved, .callout.caution .callout-hoved { color: var(--danger); }
+
+/* --------------------------------------------------------------- tabeller */
+
+/* En bred tabel ruller i sin EGEN ramme frem for at skubbe siden. */
+.tabelwrap { overflow-x: auto; margin: 0 0 14px; }
+.md-tabel { border-collapse: collapse; min-width: max-content; font-size: 14.5px; }
+.md-tabel th, .md-tabel td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; vertical-align: top; max-width: 22rem; }
+.md-tabel th { background: var(--card-hover); font-weight: 650; }
+.md-tabel td.right, .md-tabel th.right { text-align: right; }
+.md-tabel td.center, .md-tabel th.center { text-align: center; }
+
+@media (max-width: 900px) {
+  .tabelwrap .md-tabel td:first-child, .tabelwrap .md-tabel th:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--card); max-width: 55vw;
+  }
+  .tabelwrap .md-tabel th:first-child { background: var(--card-hover); }
+}
+
+/* --------------------------------------------------------------- billeder */
+
+.note-img { max-width: 100%; height: auto; border-radius: var(--r-sm); cursor: zoom-in; display: block; }
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  background: rgba(0, 0, 0, .88);
+}
+
+.lightbox img { max-width: 100%; max-height: 82vh; object-fit: contain; border-radius: var(--r-sm); }
+.lightbox-tekst { color: #ddd; max-width: 60ch; text-align: center; }
+
+/* Der SKAL vaere en synlig vej ud. Esc og swipe virker, men en telefon har
+   ingen Esc-tast, og et billede i fuld skaerm uden en knap er en blindgyde. */
+.lightbox-luk {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pill);
+  background: rgba(255, 255, 255, .14);
+  color: #fff;
+  cursor: pointer;
+}
+
+.lightbox-luk:hover { background: rgba(255, 255, 255, .26); }
+
+/* ------------------------------------------------------ [[-udfyldningen */
+
+.wikiforslag {
+  position: relative;
+  z-index: 40;
+  margin: -8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+.wikiforslag-row { display: block; width: 100%; padding: 8px 12px; border: 0; background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.wikiforslag-row.on { background: var(--accent-soft); color: var(--accent-text); }
+.blok-felt.traekker { background: var(--accent-soft); }
+
+/* --------------------------------------------------------- ikon-vaelgeren */
+
+.note-ikon {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.note-ikon:hover { background: var(--card-hover); border-color: var(--border); }
+
+.tree-ikonknap { flex: none; width: 22px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; font-size: 14px; line-height: 1; cursor: pointer; padding: 0; }
+.tree-ikonknap:hover { transform: scale(1.15); }
+
+.ikonvaelger { left: 0; right: auto; bottom: auto; top: calc(100% + 4px); min-width: 264px; }
+.ikongrid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.ikonknap { display: inline-flex; align-items: center; justify-content: center; height: 30px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 17px; line-height: 1; cursor: pointer; padding: 0; }
+.ikonknap:hover { background: var(--card-hover); }
+.ikonknap.on { border-color: var(--accent); background: var(--accent-soft); }
+
+.skabelonmenu { left: 0; right: 0; bottom: auto; top: calc(100% + 4px); }
+.tree-actions { position: relative; }
+
+/* ------------------------------------------------------------- modalen */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  /* minmax(0, …) lader sporet blive smallere end sit indhold. Uden det vokser
+     kortet til indholdets MIN-bredde, og et bredt barn skubber det ud over
+     skaermkanten (RUNE-ERFARINGER, tovo v13). */
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .45);
+}
+
+.modal-kort {
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+}
+
+.modal-top { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.modal-top h2 { margin: 0; flex: 1; min-width: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-fod { padding: 12px 18px; border-top: 1px solid var(--border); }
+
+.mdkilde {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 16px 18px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+  background: none;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .modal { padding: 12px; }
+  .modal-kort { max-height: 92vh; }
+  .ikonvaelger { min-width: 0; width: 100%; }
+  .ikongrid { grid-template-columns: repeat(6, 1fr); }
+}
+
+@media print {
+  .kodeblok-top, .lightbox, .modal { display: none !important; }
+}
+
+/* ================================================ F4: vedhaeftninger ==== */
+
+.filer { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--border); }
+.filer h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.filer h2 .meta { font-size: 11px; }
+
+.fil {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.fil:last-child { border-bottom: 0; }
+.fil-ikon { flex: none; font-size: 15px; line-height: 1; }
+.fil-navn { flex: 1; min-width: 0; color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fil-stoerrelse { flex: none; font-variant-numeric: tabular-nums; }
+.fil .btn { flex: none; padding: 4px 9px; font-size: 12px; opacity: 0; }
+.fil:hover .btn, .fil .btn:focus-visible { opacity: 1; }
+/* Skjult paa hover er usynligt praecis dér, hvor det betyder mest. */
+@media (hover: none) { .fil .btn { opacity: 1; } }
+
+/* En traukket fil skal kunne SES lande. Uden en ramme aner man ikke, om
+   siden overhovedet tager imod. */
+body.traekker-fil .main::after {
+  content: "";
+  position: fixed;
+  inset: 8px;
+  z-index: 70;
+  border: 2px dashed var(--accent);
+  border-radius: var(--r-lg);
+  background: rgba(176, 125, 20, .06);
+  pointer-events: none;
+}
+
+/* En vedhaeftning i teksten skal kunne skelnes fra et link ud af huset. */
+.note-body a.vedhaeft { border-bottom: 1px dotted var(--accent); }
+.note-body a.vedhaeft::before { content: "📎 "; }
+
+.plads { display: flex; flex-direction: column; gap: 6px; }
+.plads-bar { height: 6px; border-radius: var(--pill); background: var(--card-hover); overflow: hidden; }
+.plads-fyld { height: 100%; background: var(--accent); border-radius: var(--pill); }
+.plads-fyld.fuld { background: var(--danger); }
+
+@media (max-width: 900px) {
+  .fil { flex-wrap: wrap; }
+  .fil-navn { flex: 1 1 100%; }
+}
+
+/* Et billede udefra bliver et link, fordi CSP'en ikke henter fremmede vaerter
+   (og det er med vilje: paa wikien ville det lade en forfatter spore sine
+   laesere). Linket skal SIGE hvad der skete - et oedelagt ikon forklarer intet. */
+.note-body a.ekstern-billede {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-body a.ekstern-billede::before { content: "🖼"; }
+.note-body a.ekstern-billede:hover { color: var(--text); border-color: var(--accent); }
+
+/* ------------------------------------------------------- import (F5) */
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 20px;
+  margin-top: 14px;
+  border: 2px dashed var(--border);
+  border-radius: var(--r);
+  text-align: center;
+}
+
+.dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.forhaand { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.forhaand h3 { margin: 0 0 10px; font-size: 15px; }
+.forhaand table.data td { padding: 5px 10px 5px 0; }
+.forhaand ul { margin: 8px 0 0; padding-left: 18px; }
+.forhaand li { margin: 3px 0; }
+.forhaand code { font-size: 11px; }
+
+.nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 14px;
+}
+
+.nudge span { flex: 1; min-width: 0; }
+
+/* ==================================================== wiki (F6) ==========
+   Den OFFENTLIGE side. Egen skabelon, ingen app-JS - men SAMME designsprog:
+   tokens, tema og alt indhold i noten arver `.note-body` ovenfor, saa en note
+   ser ens ud i appen og i wikien. En wiki, der ser anderledes ud end det, man
+   skrev, er en wiki, man ikke tror paa.
+   ======================================================================== */
+
+body.wiki {
+  display: block;
+  height: auto;
+  min-height: 100%;
+  background: var(--bg);
+}
+
+.wtop {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 18px;
+  background: var(--sidebar);
+  border-bottom: 1px solid var(--border);
+}
+
+.wbrand {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 650; font-size: 15.5px; color: var(--text); text-decoration: none;
+  /* En importeret titel kan vaere 90 tegn. Uden loftet skubber den
+     soegefeltet ud af skaermen (RUNE-ERFARINGER, Sagu F0). */
+  max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wicon { flex: none; font-size: 16px; }
+
+.wsearch { display: flex; gap: 8px; margin-left: auto; min-width: 0; }
+.wsearch input {
+  min-width: 0; width: min(340px, 42vw);
+  padding: 7px 12px; border-radius: var(--pill);
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+  font: inherit; font-size: 14px;
+}
+.wsearch input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.wtheme {
+  flex: none; width: 32px; height: 32px; border-radius: var(--pill);
+  border: 1px solid var(--border); background: var(--card); color: var(--muted);
+  cursor: pointer; font-size: 14px; line-height: 1;
+}
+
+/* minmax(0, …) paa hvert spor: uden det vokser en kolonne til sit indholds
+   min-bredde, og en lang kodeblok skubber hele siden sidelaens (tovo v13). */
+.wwrap {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 200px;
+  gap: 28px;
+  max-width: 1280px; margin: 0 auto; padding: 26px 18px 60px;
+  align-items: start;
+}
+/*
+ * Hvert af de tre skal ligge i SIT spor - ikke i det, kildeordenen giver.
+ *
+ * Baade navigationen (under to sider) og sideoversigten (under to
+ * overskrifter) udelades med vilje. Uden en eksplicit placering rykkede
+ * indholdet saa op i NAVIGATIONENS 240 px-spor, og en udgivelse med én side
+ * blev en 240 px smal spalte paa en 1280 px skaerm - mens sideoversigten fik
+ * de 748 px. Intet fejlede; det saa bare forkert ud. Fundet i F7, da
+ * kommentarformularen laa i samme spalte og var lige saa smal.
+ *
+ * Reglen er den samme som `.meta`-faelden: skriv hvad elementet ER, ikke hvor
+ * det tilfaeldigvis staar (RUNE-ERFARINGER, tools v1+v2 og Sagu F6).
+ */
+.wwrap > .wnav { grid-column: 1; }
+.wwrap > .wmain { grid-column: 2; }
+.wwrap > .wtoc { grid-column: 3; }
+/*
+ * Mangler en af naboerne, skal indholdet BREDE sig - ikke efterlade en tom
+ * rende. `:first-child` betyder her praecis »der er ingen navigation«, og
+ * `:last-child` »der er ingen sideoversigt«; de fire tilfaelde er alle fire
+ * rigtige tilstande, ikke undtagelser.
+ */
+.wwrap > .wmain:first-child { grid-column: 1 / 3; }
+.wwrap > .wmain:last-child { grid-column: 2 / 4; }
+.wwrap > .wmain:first-child:last-child { grid-column: 1 / 4; }
+
+.wnav { position: sticky; top: 66px; max-height: calc(100dvh - 90px); overflow-y: auto; }
+.wnav-fold > summary {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); padding: 4px 10px; cursor: pointer;
+}
+/* Paa en skaerm med plads er der intet at folde - trekanten ville bare
+   invitere til at skjule navigationen. */
+@media (min-width: 901px) {
+  .wnav-fold > summary { list-style: none; cursor: default; }
+  .wnav-fold > summary::-webkit-details-marker { display: none; }
+}
+
+.wnav-item {
+  /* flex + gap, ikke bare et mellemrum i markup: uden det klistrer emojien
+     op ad titlen, og paa afstand ligner den et klippet bogstav. */
+  display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: var(--r-sm);
+  color: var(--muted); text-decoration: none; font-size: 14px;
+  overflow: hidden;
+}
+/* Afkortningen hoerer paa TEKSTEN, ikke paa flex-containeren: ellers klippes
+   en lang importeret titel haardt, uden de tre prikker, der siger, at der er
+   mere. `min-width: 0`, ellers naegter flex-barnet at blive smallere end sit
+   indhold (samme regel som tovo v13's grid-spor). */
+.wnav-tekst { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* KUN ikonet er ufleksibelt. Skrives reglen bredt (`> span`), rammer den
+   ogsaa titlen, og saa kan den ikke afkortes - en regel skrevet efter
+   PLACERING i stedet for efter hvad elementet ER (tools v1's .meta-fejl i en
+   ny forklaedning). */
+.wnav-item > .wicon { flex: none; }
+.wnav-item > .wnav-tekst { flex: 1 1 auto; min-width: 0; }
+.wnav-item:hover { background: var(--card-hover); color: var(--text); }
+.wnav-item.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+
+.wmain { min-width: 0; }
+.wkrummer { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.wkrummer a { color: var(--muted); text-decoration: none; }
+.wkrummer a:hover { color: var(--text); }
+.wsep { margin: 0 6px; opacity: .6; }
+
+.wtitel { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 30px; line-height: 1.2; }
+.wmeta { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+.wgammel {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: var(--pill);
+  background: var(--accent-soft); color: var(--accent-text); font-size: 12px;
+}
+
+.wprops { border-collapse: collapse; margin: 0 0 22px; font-size: 14px; }
+.wprops th { text-align: left; padding: 4px 18px 4px 0; color: var(--muted); font-weight: 500; vertical-align: top; }
+.wprops td { padding: 4px 0; max-width: 32rem; }
+
+.wnote { margin-bottom: 40px; }
+/* Maerket vises foerst paa hover: en raekke af havelaager i marginen er stoej. */
+.wankermaerke { margin-left: 8px; color: var(--muted); text-decoration: none; opacity: 0; font-weight: 400; }
+.wnote h1:hover .wankermaerke, .wnote h2:hover .wankermaerke,
+.wnote h3:hover .wankermaerke, .wnote h4:hover .wankermaerke { opacity: .55; }
+/* Uden hover kan maerket ikke fremkaldes, saa det staar der - men daempet.
+   En raekke havelaager i fuld styrke er stoej i en tekst. */
+@media (hover: none) { .wankermaerke { opacity: .28; font-size: .8em; } }
+
+.wbagud { border-top: 1px solid var(--border); padding-top: 18px; }
+.wbagud h2 { font-size: 15px; margin: 0 0 8px; }
+.wbagud ul { margin: 0; padding-left: 20px; font-size: 14.5px; }
+.wbagud a { color: var(--accent-text); }
+
+.wfod { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 13px; }
+.wfod a { color: var(--muted); }
+
+.wtoc { position: sticky; top: 66px; max-height: calc(100dvh - 90px); overflow-y: auto; }
+.wtoc-hoved { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+.wtoc-link {
+  display: block; padding: 3px 0; font-size: 13.5px; color: var(--muted);
+  text-decoration: none; line-height: 1.4;
+}
+.wtoc-link:hover { color: var(--text); }
+.wtoc-link.n3 { padding-left: 12px; font-size: 13px; }
+
+.wtraeffer { list-style: none; margin: 0; padding: 0; }
+.wtraef { padding: 14px 0; border-bottom: 1px solid var(--border-soft); }
+.wtraef-titel { font-size: 16px; font-weight: 600; color: var(--text); text-decoration: none; }
+.wtraef-titel:hover { color: var(--accent-text); }
+.wtraef-uddrag { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.wtraef mark { background: var(--accent-soft); color: var(--accent-text); padding: 0 2px; border-radius: 3px; }
+
+.wlaas { max-width: 26rem; margin: 14vh auto; padding: 0 5vw; }
+.wfejl { color: var(--danger); font-size: 14px; margin: 8px 0 0; }
+
+@media (max-width: 900px) {
+  /* Sideoversigten ville ligge oven i teksten paa en telefon; navigationen
+     folder browseren selv sammen via <details>. */
+  .wtoc { display: none; }
+  .wwrap { grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 18px 14px 50px; }
+  /* Ét spor: alt ligger i kolonne 1, og raekkefoelgen styres af `order`. */
+  .wwrap > .wnav, .wwrap > .wmain, .wwrap > .wtoc { grid-column: 1; }
+  /* Artiklen FOERST paa en telefon. En laeser, der aabner et link fra en
+     kollega, skal moede siden - ikke en liste over alle de andre. Listen
+     staar under, hvor den er en naturlig »hvad er der ellers«. */
+  .wmain { order: 1; }
+  .wnav { order: 2; position: static; max-height: none; border-top: 1px solid var(--border); padding-top: 12px; }
+  .wtop { flex-wrap: wrap; }
+  .wbrand { max-width: 70vw; }
+  .wsearch { width: 100%; margin-left: 0; }
+  .wsearch input { width: 100%; }
+  .wtitel { font-size: 25px; }
+}
+
+@media print {
+  .wtop, .wnav, .wtoc, .kodeblok-top, .wankermaerke, .wtheme { display: none !important; }
+  .wwrap { display: block; max-width: none; padding: 0; }
+}
+
+/* ------------------------------------------------- udgivelsesruden (F6) */
+
+/* Knappen lyser, naar noten ER udgivet. En funktion, man ikke kan SE, bliver
+   meldt som manglende (RUNE-ERFARINGER, tovo v8). */
+.iconbtn.paa { color: var(--accent-text); background: var(--accent-soft); }
+
+.modal-krop { padding: 18px; overflow-y: auto; }
+.udgiv-hoved { font-size: 14px; margin: 22px 0 8px; }
+.udgiv-link { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* min-width: 0, ellers kan feltet ikke klemmes under sin egen indholdsbredde,
+   og ruden bliver bredere end en telefon (doda v33). */
+.udgiv-link .input { flex: 1 1 220px; min-width: 0; font-family: var(--mono); font-size: 13px; }
+.udgiv-adresse { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.udgiv-adresse .input { flex: 1 1 160px; min-width: 0; }
+.linkknap { border: 0; background: none; padding: 0; font: inherit; color: var(--accent-text); cursor: pointer; }
+/* `.meta` er en VERSAL ETIKET, ikke en tekstklasse (RUNE-ERFARINGER, tools v1).
+   Et afsnitsnavn er et navn - »§ VPN-adgang« maa ikke blive til »§ VPN-ADGANG«. */
+.wtraef-afsnit { color: var(--muted); font-size: 13px; margin-left: 8px; }
+/* En ADRESSE er ikke en etiket. `.meta` er versal (RUNE-ERFARINGER, tools v1),
+   og en URL i versaler er en adresse, der ikke findes. */
+.adressepraefiks { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+
+/* En UBESTEMT bjaelke. Bruges dér, hvor serveren er optaget og ikke KAN sige,
+   hvor langt den er - en opdigtet procent, der staar stille, er værre end en
+   stribe, der aabenlyst bare arbejder. */
+.plads-bar.ubestemt .plads-fyld {
+  width: 35%;
+  animation: vandre 1.1s ease-in-out infinite;
+}
+@keyframes vandre {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+/* Respektér den, der har slaaet bevaegelse fra: saa staar striben i stedet
+   fuldt ud og siger »i gang« med farve alene. */
+@media (prefers-reduced-motion: reduce) {
+  .plads-bar.ubestemt .plads-fyld { width: 100%; animation: none; opacity: .5; }
+}
+
+/* Notesbogs-sektionens overskrift. Folder HELE sektionen - ét klik i stedet
+   for tredive, naar et importeret arkiv har fyldt sidebaren. */
+.tree-sektion { display: flex; align-items: center; gap: 4px; padding: 10px 8px 4px; }
+.tree-sektion-navn {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+  border: 0; background: none; cursor: pointer; padding: 2px 2px;
+  font: inherit; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
+}
+.tree-sektion-navn:hover { color: var(--text); }
+.tree-sektion-tal { margin-left: auto; letter-spacing: normal; opacity: .7; }
+.tree-sektion-add {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--muted); cursor: pointer; opacity: 0;
+}
+.tree-sektion:hover .tree-sektion-add { opacity: 1; }
+/* Uden hover kan knappen ikke fremkaldes - saa staar den der (doda F3). */
+@media (hover: none) { .tree-sektion-add { opacity: 1; } }
+.tree-sektion-add:hover { background: var(--card-hover); color: var(--text); }
+
+/* Et maerke med en slette-knap. `.chip-navn` er selve navnet, saa et klik paa
+   navnet filtrerer og et klik paa krydset sletter - to handlinger, to flader. */
+.chip.maerke { display: inline-flex; align-items: center; gap: 4px; padding-right: 4px; }
+.chip-navn { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.chip-x {
+  border: 0; background: none; padding: 0 2px; cursor: pointer;
+  color: inherit; opacity: .55; font-size: 13px; line-height: 1;
+}
+.chip-x:hover { opacity: 1; }
+.chip.tilfoej { border: 1px dashed var(--border); background: none; color: var(--muted); cursor: pointer; }
+.chip.tilfoej:hover { color: var(--text); border-color: var(--muted); }
+.chip-felt {
+  border: 1px solid var(--border); border-radius: var(--pill); background: var(--card);
+  color: var(--text); font: inherit; font-size: 12px; padding: 3px 10px; max-width: 160px;
+}
+.note-maerker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
+
+/* Globus paa en notesbog: samme ikon som paa en side, saa »del det her« ser
+   ens ud, uanset hvad man deler. */
+.tree-del {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--muted); cursor: pointer; opacity: 0;
+}
+.tree-row:hover .tree-del { opacity: 1; }
+.tree-del:hover { background: var(--card-hover); color: var(--text); }
+/* En udgivet bog skal kunne SES uden at man hoverer - ellers ved man ikke,
+   hvad der ligger offentligt (tovo v8). */
+.tree-del.paa { opacity: 1; color: var(--accent-text); }
+@media (hover: none) { .tree-del { opacity: 1; } }
+
+
+/* Forsidens store soegefelt. Det er wikiens vigtigste funktion (SAGU-PLAN §5:
+   »Notions wiki-soegning finder reelt kun overskrifter«), saa det skal fylde
+   noget paa den side, folk lander paa. */
+.wsoegstor { display: flex; gap: 10px; margin: 22px 0 14px; }
+.wsoegstor input {
+  flex: 1; min-width: 0; padding: 14px 20px; font: inherit; font-size: 16px;
+  border-radius: var(--pill); border: 1px solid var(--border);
+  background: var(--card); color: var(--text);
+}
+.wsoegstor input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wsoegstor .btn { padding: 0 22px; }
+.wafsnit { font-size: 15px; margin: 30px 0 4px; }
+@media (max-width: 900px) {
+  .wsoegstor { flex-direction: column; }
+  .wsoegstor .btn { padding: 10px 22px; }
+}
+
+/* Den levende traefferliste under wikiens soegefelt. */
+.wsearch, .wsoegstor { position: relative; }
+.wtraefliste {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40;
+  max-height: min(60vh, 420px); overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--r);
+  background: var(--card); box-shadow: var(--shadow-lift);
+}
+.wtraefliste-et {
+  display: block; padding: 10px 14px; text-decoration: none; color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+}
+.wtraefliste-et:last-child { border-bottom: 0; }
+.wtraefliste-et.paa, .wtraefliste-et:hover { background: var(--card-hover); }
+.wtraefliste-titel { display: block; font-weight: 600; font-size: 14.5px; }
+.wtraefliste-uddrag {
+  display: block; margin-top: 2px; color: var(--muted); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wtraefliste-uddrag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; }
+.wtraefliste-tom { margin: 0; padding: 12px 14px; color: var(--muted); font-size: 13.5px; }
+
+/* Traek i traeet. Linjen viser, hvor noten LANDER - ikke bare at der traekkes. */
+body.traekker { cursor: grabbing; user-select: none; }
+.tree-row.traekkes { opacity: .45; }
+.tree-row.drop-i { background: var(--accent-soft); }
+.tree-indsaet {
+  position: fixed; height: 2px; background: var(--accent); border-radius: 2px;
+  z-index: 60; pointer-events: none;
+}
+
+/* Vejen hjem. Maerket i toppen linker ogsaa hjem, men det LIGNER ikke en
+   knap - og en laeser, der er landet dybt nede fra et link, leder efter
+   noget at trykke paa. */
+.whjem {
+  display: inline-block; margin: 0 0 12px;
+  padding: 4px 12px; border-radius: var(--pill);
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--muted); text-decoration: none; font-size: 13px;
+}
+.whjem:hover { color: var(--text); border-color: var(--muted); background: var(--card-hover); }
+@media print { .whjem { display: none !important; } }
+
+/* ==================================================== kommentarer (F7) ====
+ *
+ * To flader deler klasserne: kommentarafsnittet under en note i appen, og det
+ * samme afsnit paa den offentlige wiki. Det er med vilje ÉT saet - lagde
+ * wikien sin egen CSS ved siden af, ville de to drive fra hinanden, og en
+ * rettelse ville kun ramme det ene sted (samme grund som at wikien renderer
+ * ind i `.note-body` i stedet for sin egen ramme).
+ */
+
+/* En knap, der ligner et link. Findes fordi kommentarernes handlinger er
+   sekundaere: de maa kunne naas, uden at raabe hoejere end teksten. */
+.linkbtn {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.linkbtn:hover { color: var(--accent-text); text-decoration: underline; }
+.linkbtn.fare:hover { color: #b4442f; }
+.linkbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.kommentarer, .wkommentarer {
+  margin-top: 44px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.kommentarer h2, .wkommentarer h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kom-liste, .wkom-liste { list-style: none; margin: 14px 0 0; padding: 0; }
+.kom, .wkom {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r);
+}
+/* En kommentar, der venter eller er afvist, skal kunne SES som noget andet -
+   ellers ligner koeen den offentlige side. */
+.kom.daempet { opacity: .72; border-style: dashed; }
+
+.kom-svar, .wkom-svar { list-style: none; margin: 10px 0 0 0; padding: 0 0 0 16px; border-left: 2px solid var(--border); }
+.kom-svar .kom, .wkom-svar .wkom { background: none; border: 0; padding: 8px 0; margin: 0; }
+
+.kom-top, .wkom-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+.kom-navn, .wkom-navn { font-weight: 600; color: var(--text); }
+.kom-krop, .wkom-krop { margin: 6px 0 0; }
+/* Overskrifter i en kommentar maa ikke kunne raabe hoejere end sidens egne. */
+.kom-krop h1, .kom-krop h2, .kom-krop h3,
+.wkom-krop h1, .wkom-krop h2, .wkom-krop h3 { font-size: 1em; margin: .6em 0 .2em; }
+.kom-krop > :first-child, .wkom-krop > :first-child { margin-top: 0; }
+.kom-krop > :last-child, .wkom-krop > :last-child { margin-bottom: 0; }
+
+.kom-handlinger { display: flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+.kom-skriv, .kom-ret { margin-top: 12px; }
+.kom-felt {
+  width: 100%;
+  /* Uden min-width: 0 kan en textarea's indbyggede cols-bredde skubbe sin
+     foraelder ud - og saa er kortet bredere end skaermen (doda v33). */
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.kom-felt:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.kom-knapper { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+
+/* Et maerke er ET ORD om hvad kommentaren ER - derfor `span.meta`-formen med
+   versaler, og ikke den prosa-regel, `.meta` ellers forbyder (tools v1+v2). */
+.kom-maerke, .wkom-gaest, .wkom-forslag {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--card-hover);
+  color: var(--muted);
+  border: 1px solid var(--border-soft);
+}
+.kom-maerke.venter { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+.kom-maerke.afvist { text-decoration: line-through; }
+.kom-maerke.forslag, .wkom-forslag { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+
+.fanerakke { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.udgiv-venter { margin: 6px 0 0; }
+
+/* --- wikiens formular ---------------------------------------------------- */
+
+.wkomform { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+.wkomform label { font-size: 13px; color: var(--muted); }
+.wkomform textarea, .wkomform input[type="text"], .wkomform input:not([type]) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.wkomform-navn { display: flex; flex-direction: column; gap: 6px; max-width: 22rem; }
+/* Knapper i en fodraekke SKAL kunne bryde - fire knapper er for meget til én
+   linje paa en telefon (doda v33). */
+.wkomform-knapper { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.wkom-svarlink { font-size: 13px; color: var(--muted); }
+.wkom-svarer { font-size: 13px; color: var(--muted); margin: 0; }
+.wkom-kvit {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.wkom-antal { font-weight: 400; }
+
+/*
+ * Honningkrukken.
+ *
+ * Feltet skal vaere umuligt for et menneske at ramme og let for en robot at
+ * finde. `display: none` er den daarlige loesning: mange robotter springer
+ * skjulte felter over. Det her flytter det ud af skaermen i stedet.
+ */
+.wkom-krukke {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

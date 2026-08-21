@@ -1,0 +1,156 @@
+# Sagu — projektregler
+
+Noteapp og wiki. Yggdrasil-rune. **Flerbruger.** Erstatter notion.so.
+Søskende til doda (opgaver) og tovo (tid) — bundet sammen med **links, aldrig synkronisering**.
+
+## Før du gør noget
+
+1. `~/ClaudeMacBook/RUNE-ERFARINGER.md` — hele filen. **Læs den FØR og EFTER** et stykke
+   arbejde. Ny generel lærdom skrives nederst under »Log«, og repoet committes+pushes.
+2. `SAGU-PLAN.md` — fasen du er i gang med, og status.
+3. `docs/HANDOVER.md` — kravkilden.
+4. `DESIGN.md` — alle trufne beslutninger. Ændres noget, rettes det **her først**.
+5. `docs/OVERDRAGELSE.md` — hvor arbejdet står lige nu, og hvad der venter på Andreas.
+
+Ved projektstart læses også kildekoden i `~/ClaudeMacBook/doda`: `app/parts/p2_omni.js`
+(søgefeltet), `app/mcp.js` + `app/oauth.js` (MCP og connector), `app/notion.js` (den
+integration, Sagu afløser), `app/server.js` omkring `link_url` (m10 — feltet er bevidst
+generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
+
+## Ufravigeligt
+
+- **Interfacet er ENGELSK** — som doda, og også den ramme, kollegaerne ser i wikien.
+  Kode, kommentarer, commit-beskeder og disse dokumenter er **dansk**.
+- **Nul npm-pakker, nul CDN.** Node ≥22: `node:http`, `node:sqlite`, `node:crypto`, `node:zlib`.
+- **`user_id`-filteret ligger i `hentNote` / `hentNoter` / `gemNote` / `gemBulk` selv** —
+  aldrig i kaldstederne. Admin er ingen undtagelse. `note_acl` gælder også admin.
+- **Endepunkter uden login** (`/w/:slug`, `/s/:token`, filer i et delt træ) må aldrig
+  scanne datasættet, og svarer **404** ved forkert token — ikke 401 eller 403.
+- **Udgivelsens noter beregnes ét sted** (`udgivelsensNoter`), og hver eneste offentlige
+  rute — side, søgning, fil, feed, ændringsliste — spørger den. To lister betyder, at
+  den ene glemmer en spærring. Uden kodeord svarer **kun forsiden**, og den nævner ikke
+  engang wikiens titel.
+- **Offentlige sider serveres af deres egen skabelon uden app-JS.** En besøgende må
+  hverken hente app-koden eller kunne kalde app-API'et. Kollegaerne har **ingen konti** —
+  en udgivelse er offentlig som udgangspunkt.
+- **Den offentlige adresse er et FELT** (`public_url`, scope `*`, kun admin). Sagu kan
+  nås på flere værtsnavne; feltet bestemmer, hvad links skrives med og hvad `canonical`
+  siger. Den bruges **aldrig** til en omdirigering — kun til at vise. Tom = kaldets egen
+  vært, præcis som før.
+- **At slå kodeord til på en udgivelse må aldrig ændre `slug` eller `token`.** Linket i
+  kollegaernes bogmærker skal overleve, at siden bliver beskyttet.
+- **`body_md` kommer aldrig med i et listesvar.** Lister får titel, mærker og tællere.
+- **Markdown renderes af `app/shared/markdown.js`** — et UMD-modul, som BÅDE
+  browseren og den server-renderede wiki (F6) bruger. Escape først, match
+  bagefter; `esc()` til tekst og `attr()` til attributter; `sikkerUrl()` er en
+  hvidliste. Ingen rå HTML igennem, nogensinde.
+  **Angrebssuiten (`tests/markdown.test.mjs`) køres i hver fase, der rører
+  rendereren eller importerer indhold** — F3, F5, F6 og F7. Den parser de rigtige
+  tags frem for at regex'e efter `on…=`; et regex kan ikke se forskel på en
+  attribut og tekst, der ligner en.
+- **Kommentarer har ÉN vej ind** (`opretKommentar`), og `origin` afgør reglerne. En
+  gæst på wikien er ikke en bruger: hans kommentar lander i moderationskøen, og **en
+  gæstekommentar med et link modereres altid** — også når køen er slået fra. Tråden er
+  ét niveau; et svar på et svar hænger på toppen.
+- **Ethvert træ skal have en cyklus-vagt.** En note flyttet ind under sit eget
+  barn giver en ring, hvor begge forsvinder fra sidebaren — og gemningen
+  lykkes, så intet fejler.
+- **Adgangsnøgler har en `user_id`** og et scope. En nøgle når sin egen brugers data og
+  intet andet.
+- **`settings` har `(scope, key)`**, hvor scope er brugerens id eller `*` for installationen.
+  Kun admin skriver `*`-nøgler. Hemmeligheder (`github_token`, `doda_key`, …) er
+  `secret: true` og forlader **aldrig** serveren — frontenden får `connected: true`.
+- `app/public/app.js` og `runes/sagu.yaml` er **genererede** — redigér dem aldrig i hånden.
+- **Søgningen har en `folded`-kolonne, og den er ikke pynt.** FTS5's
+  `remove_diacritics 2` folder `Å`, men **ikke `ø` og `æ`** — de er
+  selvstændige bogstaver i Unicode. Uden kolonnen kan »grøn« ikke findes ved at
+  taste »gron«. Kortlægningen er **dansk**; et nyt sprog er en ny kortlægning.
+- **Repoet `andreasdinesen/sagu` er OFFENTLIGT** (Andreas, 2026-08-21), og
+  **install-scriptet henter app-koden derfra** i stedet for at bære den
+  (DESIGN.md måling 1). Tre følger, som ikke må glemmes:
+  - **En hemmelighed må aldrig i en kildefil.** Tokens hører i `settings` som
+    `secret: true` eller i en rune-variabel. Auditten står i DESIGN.md §13.
+  - **Det, GitHub har, er det, der installeres.** De genererede filer
+    (`app/public/app.js`, ikonet) SKAL være committet; `tjek_git()` i build'et
+    fælder ellers.
+  - **En udgivelse er tre trin, ikke ét:** commit → `git tag v<N>` →
+    `git push --tags`. Runens version N henter `refs/tags/vN`. Uden taggen
+    installerer runen ingenting — og siger det højt.
+- GitHub svarer **404, ikke 403** — både når adressen ikke findes, og når der
+  ikke er adgang. Enhver fejlbesked om en mislykket hentning skal nævne begge,
+  ellers fejlsøger man et token, der er helt i orden.
+- **Notions eksportformat udledes af de stier, der FINDES — det gættes aldrig.**
+  Dokumentationen siger `Titel <32 hex>/` om undersidernes mappe; i Andreas'
+  rigtige eksport har **0 af 97 mapper** et hex, og navnet er afkortet ved ~48
+  tegn. Begge former skal virke. Af samme grund slås en databaserække op på
+  notens **rigtige** titel (`# Titel` inde i filen), ikke på filnavnets — CSV'en
+  har den fulde, filnavnet den klippede.
+- **Nøglen til en importeret side er hex-id'et, aldrig titlen.** Eksporten har
+  12 dublettitler, én af dem seks gange. Id'et er også det, der gør en gentaget
+  import idempotent (`ext_id`).
+- **En udledt tabel eksporteres aldrig.** `note_links` udledes af notens tekst
+  og genopbygges fra teksten ved gendannelsen — ellers kan den vende tilbage i
+  utakt med det, den er udledt af.
+- Kildefiler må ikke indeholde `{{STORE_BOGSTAVER}}` eller `YGG_PAYLOAD_EOF`.
+- Echo-linjer i install-scriptet: **ASCII** (æøå → ae/oe/aa).
+
+## Arbejdsgang
+
+- **Bump aldrig `APP_VERSION` undervejs.** Kun ved udgivelse, efter Andreas har sagt ja.
+- **Commit og push kræver et udtrykkeligt ja.** Et push er en udgivelse.
+- Efter hver ændring: byg, test, opsummer — og vent.
+- **Rapportér den målte payload-størrelse efter hver `build_rune.py`.** Den er ikke
+  længere et loft — install-scriptet henter koden og er 1.640 tegn — men tallet er
+  fortsat målet på, hvor stor appen er blevet, og build'et skriver det.
+  `HENT_FRA_GITHUB = False` giver den indlejrede rune tilbage; den er den eneste,
+  der virker uden net ved installationen.
+- Ny generel lærdom → `RUNE-ERFARINGER.md`. Projekt-specifik → denne fil.
+
+## Faldgruber, der allerede har kostet tid i andre runer
+
+- `crypto.randomUUID()` findes ikke over http (panelets IP:port) — brug altid
+  `crypto.getRandomValues`-fallback.
+- CSS skal have `[hidden]{display:none!important}`.
+- Mobilgrænsen er **900 px** og bor i én konstant, brugt af både `matchMedia()` og `@media`.
+- `render()` må ikke `scrollTo(0,0)` ved gentegning af samme side.
+- `overflow-wrap: break-word` på `body` — importerede titler og URL'er er lange og ubrudte.
+- Print-HTML må aldrig bruge `var(--…)`-farver; `@page { margin: 0 }` fjerner browserens
+  sidehoved og -fod; baggrunde kræver `print-color-adjust: exact`.
+- `Object.assign({headers}, opts)` er shallow — sæt headers **efter** merge.
+- Cache-bust: `app.js?v=N` stemplet af build'et, **skriv HTML'en tilbage til disk**, og
+  server HTML `no-store`. Cloudflare edge-cacher `.js` i timer og ignorerer `no-cache`.
+- Serveren logger `server.address().port`, ikke `BIND_PORT`.
+- **Læg aldrig billeder i de items, listen henter** (Kokkeri: 247 MB login-svar).
+
+## Lokal kørsel
+
+```sh
+BIND_PORT=8913 DATA_DIR=/tmp/sagudata SAGU_DEV=1 node app/server.js
+python3 build_rune.py
+node --test tests/*.test.mjs
+```
+
+Dev-serveren hedder `sagu` i den **globale** `~/.claude/launch.json` (port **8913** —
+8910 er dodas, 8911 tovos, 8912 er optaget). `SAGU_DEV=1` slår `immutable`-cachen fra.
+
+## Test
+
+- Kør altid med `BIND_PORT=0`; tag serverens stderr med i timeout-beskeden.
+- **Isolationstesten køres i hver fase**, ikke kun én gang: to brugere, 404 overalt.
+  Den skal have været set fejle (fjern `AND user_id = ?` → røde tests).
+- **Delingstesten er lige så vigtig:** en besøgende uden kodeord skal få 404 på side,
+  søgning, billeder og vedhæftninger — også dem, der ligger dybt i et delt træ.
+- Rundturs-testen (eksportér, slet databasen og filmappen fysisk, importér, sammenlign
+  felt for felt og filer byte for byte) er projektets vigtigste test.
+- Tastaturnavigation kan ikke testes gennem browser-panelet (tom `e.key`) — dispatch en
+  rigtig `KeyboardEvent`. Mål efter animationer, ikke under dem. **Et klik på en
+  submit-knap i panelet sender ikke formularen** — kald `form.requestSubmit()`.
+- **`tests/form.test.mjs` er formregler på kilden**, ikke på adfærden: `.meta` er en
+  versal etiket og må aldrig bære prosa eller en adresse, hvert `apiFejl` skal have
+  en maskinkode og en sætning, og **en handler bundet ved navn skal tage hændelsen som
+  første parameter** (`addEventListener('click', visUdgivPanel)` gjorde klikket til
+  funktionens `maal`). En note virker kun, mens man husker at læse den — en
+  formregel gælder også det, man skriver om et halvt år (tools v2).
+- **Delingstesten skal ses fejle i BEGGE ender:** sabotér låsen (`erLaastOp`) og sabotér
+  udgivelsens id-liste (`filIUdgivelse`, `hentUdgivetNote`, `soegIUdgivelse`) hver for
+  sig. Den anden sabotage afslørede, at filvagten slet ikke var dækket.
