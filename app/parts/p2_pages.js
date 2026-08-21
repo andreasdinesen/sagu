@@ -349,16 +349,19 @@ async function sideSettings() {
     let a = null;
     try { a = await api('GET', '/api/v1/admin'); } catch { /* vist som tom */ }
     if (a) {
+      /*
+       * To afsnit, ikke ét.
+       *
+       * »Public address« er et valg om, hvad LINKS skrives med - den handler
+       * om det, kollegaerne faar at se. »Server« handler om, hvem der maa
+       * logge ind. De to laa i samme kort med adressen klemt inde mellem et
+       * flueben og en kontoliste, og saa laeses den som en detalje ved
+       * kontostyringen (Andreas, 2026-08-21).
+       */
       adminDel = `
-      <h2>Server</h2>
+      <h2>Public address</h2>
       <div class="card">
-        <label class="switch">
-          <input type="checkbox" id="tilladReg" ${a.allowRegistration ? 'checked' : ''}>
-          <span>Let anyone create an account on this server</span></label>
-        <p class="meta saetning">Off means only you can sign in. Your colleagues do not need accounts —
-        a published wiki is read without one.</p>
-
-        <label class="field" style="margin-top:16px"><span>Public address</span>
+        <label class="field"><span>The address links are written with</span>
           <input class="input" id="offentligUrl" value="${esc(state.publicUrl || '')}"
             placeholder="${esc(location.origin)}" autocomplete="off" autocapitalize="none"
             autocorrect="off" inputmode="url" spellcheck="false"></label>
@@ -370,6 +373,15 @@ async function sideSettings() {
         published links are written with, and the one search engines are told is the real one.
         <strong>Clear it</strong> removes the fixed address again, so links use whichever
         address you happen to be on.</p>
+      </div>
+
+      <h2>Server</h2>
+      <div class="card">
+        <label class="switch">
+          <input type="checkbox" id="tilladReg" ${a.allowRegistration ? 'checked' : ''}>
+          <span>Let anyone create an account on this server</span></label>
+        <p class="meta saetning">Off means only you can sign in. Your colleagues do not need accounts —
+        a published wiki is read without one.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
           <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
           <tbody>${a.users.map((u) => `<tr><td>${esc(pentBruger(u.username))}</td>
@@ -396,7 +408,11 @@ async function sideSettings() {
         placeholder="https://doda.example.com" autocomplete="off" spellcheck="false"></label>
     <label class="field" style="margin-top:10px"><span>API key from doda</span>
       <input class="input" id="dodaKey" type="password" autocomplete="off"
-        placeholder="${d.connected ? 'Saved — leave empty to keep it' : 'doda_…'}"></label>
+        placeholder="${d.connected ? 'Leave empty to keep the saved key' : 'doda_…'}"></label>
+    ${d.connected ? `<p class="gemt-noegle">${icon('laas', 14)}
+      <span><strong>An API key is saved</strong> on the server. It never leaves it again —
+      not even to this page, which is why the field looks empty. Paste a new one only if
+      you want to replace it.</span></p>` : ''}
     <div class="btnrow" style="margin-top:10px">
       <button class="btn primary" id="dodaGem">${d.connected ? 'Save and test' : 'Connect'}</button>
       ${d.connected ? '<button class="btn" id="dodaFjern">Disconnect</button>' : ''}
@@ -421,7 +437,10 @@ async function sideSettings() {
     ${g.connected ? `<p class="doda-forbundet">Connected as <strong>${esc(g.login || 'GitHub')}</strong></p>` : ''}
     <label class="field"><span>Personal access token</span>
       <input class="input" id="ghToken" type="password" autocomplete="off"
-        placeholder="${g.connected ? 'Saved — leave empty to keep it' : 'github_pat_… or ghp_…'}"></label>
+        placeholder="${g.connected ? 'Leave empty to keep the saved token' : 'github_pat_… or ghp_…'}"></label>
+    ${g.connected ? `<p class="gemt-noegle">${icon('laas', 14)}
+      <span><strong>A token is saved</strong> on the server. It never leaves it again —
+      not even to this page, which is why the field looks empty.</span></p>` : ''}
     <div class="btnrow" style="margin-top:10px">
       <button class="btn primary" id="ghGem">${g.connected ? 'Save and test' : 'Connect'}</button>
       ${g.connected ? '<button class="btn" id="ghFjern">Disconnect</button>' : ''}
@@ -888,6 +907,12 @@ function sideImport() {
         <p class="meta saetning" style="margin-top:8px">or drag it onto this box</p>
       </div>
       <div id="importSvar"></div>
+      <p class="meta saetning"><strong>Is the archive bigger than 100 MB?</strong>
+      Then send it straight to the server instead of through your tunnel.
+      Cloudflare's free plan refuses request bodies over 100 MB, and a big Notion export
+      is well past that — the upload climbs and then stops. Open Sagu on the server's own
+      address on your network (something like <code>http://192.168.1.50:8080</code>) and
+      import there. It is also many times faster, because nothing leaves the house.</p>
     </div>
 
     <h2>Export</h2>

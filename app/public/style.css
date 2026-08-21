@@ -834,6 +834,35 @@ a.gh-navn:hover { text-decoration: underline; }
   border-radius: var(--r-sm);
   background: var(--bg);
 }
+/* Antallet, naar en sektion er foldet - saa man kan se, at der ER noget. */
+/*
+ * »Der ER gemt en noegle«.
+ *
+ * Feltet staar tomt, fordi hemmeligheden aldrig forlader serveren - og et
+ * tomt felt laeses som »der er ingen«. Sig det i stedet for at lade
+ * pladsholderen om det: en graa tekst inde i et felt er ikke en oplysning,
+ * den er en gaet (Andreas, 2026-08-21).
+ */
+.gemt-noegle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.gemt-noegle svg { color: var(--accent); flex: none; margin-top: 2px; }
+
+.tree-antal { font-size: 11px; color: var(--muted); padding: 0 8px; flex: none; }
+/* Menuen paa en notesbog laegger sig under sin egen raekke. */
+.tree-row { position: relative; }
+.tree-row .notemenu { top: 100%; right: 4px; }
+
 .noegle-vaerdi code {
   font-size: 14px;
   line-height: 1.6;

@@ -2549,3 +2549,72 @@ kommentarer. Kun det første tegn ændres: »andreasD« bliver »AndreasD«, ikk
 
 Se §24 — rettelsen hører i `aabnNote()`, og **før** vagten mod »samme note
 igen«.
+
+## 27 · Fire ting mere fra brugen
+
+### Piletasterne kunne ikke skifte linje
+
+Editoren åbner **ét afsnit ad gangen** som rå markdown; resten står renderet
+omkring det. Stod man på den sidste linje i feltet, gjorde en piletast derfor
+ingenting — der var ingen næste linje *inde i feltet*, og den næste linje i
+noten var et helt andet element. For den, der skriver, ser det ud, som om
+piletasterne ikke virker.
+
+Pilene krydser nu blokgrænsen. Målemetoden er valgt med omhu: **browseren får
+lov at prøve først.** Kunne den flytte markøren — fordi afsnittet har flere
+linjer, eller fordi en lang linje er ombrudt over flere visuelle — så er det
+dét, brugeren mente, og vi rører ingenting. Er markøren *ikke* flyttet
+bagefter, var der ingen vej inde i feltet, og så springer vi.
+
+Alternativet var at tælle `\n` i teksten, og det ville have været forkert:
+et **ombrudt** afsnit har flere visuelle linjer end linjeskift, så en sådan
+regel ville springe ud af feltet midt i et afsnit.
+
+Markøren lander dér, bevægelsen pegede hen: går man nedad, i begyndelsen af
+den næste blok — ikke i slutningen, hvor man så skulle taste sig tilbage.
+
+### En notesbog kunne ikke slettes
+
+Serveren har kunnet det siden F1 — `PATCH` og `DELETE` på
+`/api/v1/notebooks/:id`, med noterne i papirkurven så bog og noter kan
+gendannes sammen. Der var bare ingen knap. Andreas spurgte, hvordan man gør,
+og det korte svar var »det kan du ikke«.
+
+**En rute uden en knap er ikke en funktion.** Notesbogen har nu en menu med
+omdøb, udgiv og slet — og sletningen siger, *hvor mange noter* der følger med,
+før man trykker. »Slet notesbogen?« lyder som om det kun er selve bogen.
+
+### »Not in a notebook« kunne ikke foldes
+
+Den var den eneste række i træet uden en fold, og med tredive løse noter er
+den en mur under bøgerne. Valget gemmes samme sted som alle de andre
+foldninger — to måder at folde på i samme app er to steder at rette.
+
+### Et tomt felt læses som »der er ingen«
+
+doda-kortet sagde »Connected to …«, men nøglefeltet stod tomt med en grå
+pladsholder. Hemmeligheden forlader aldrig serveren — det er reglen — så
+feltet *kan* ikke fyldes ud. Men et tomt felt er ikke en oplysning; det er
+noget, man gætter på.
+
+Der står nu en linje ved siden af: **»An API key is saved on the server. It
+never leaves it again — not even to this page, which is why the field looks
+empty.«** Samme linje ved GitHub-tokenet. Ingen del af hemmeligheden vises —
+heller ikke et præfiks. Reglen er ikke bøjet; den er bare **forklaret**.
+
+### »Public address« lå det forkerte sted
+
+Den stod klemt inde i Server-kortet mellem et flueben om kontooprettelse og en
+liste over konti — og blev derfor læst som en detalje ved kontostyringen.
+Den handler om noget andet: hvad **links** skrives med, altså det kollegaerne
+får at se. Den har sit eget afsnit nu, over Server.
+
+### Import af et stort arkiv gik i stå
+
+En Notion-eksport på 226 MB gennem en Cloudflare-tunnel. **Cloudflares gratis
+plan afviser forespørgselskroppe over 100 MB**, så uploaden klatrer op og
+stopper. Sagus eget loft er 1 GB; det er ikke dét, der rammer.
+
+Rådet står nu på selve import-skærmen: åbn Sagu på serverens egen adresse på
+netværket og importér der. Det er samme genvej som doda-broens (§16) — peger
+man forbi tunnelen, forsvinder både grænsen og ventetiden uden en linje kode.

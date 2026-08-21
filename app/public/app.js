@@ -2521,7 +2521,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3815,16 +3815,19 @@ async function sideSettings() {
     let a = null;
     try { a = await api('GET', '/api/v1/admin'); } catch { /* vist som tom */ }
     if (a) {
+      /*
+       * To afsnit, ikke ét.
+       *
+       * »Public address« er et valg om, hvad LINKS skrives med - den handler
+       * om det, kollegaerne faar at se. »Server« handler om, hvem der maa
+       * logge ind. De to laa i samme kort med adressen klemt inde mellem et
+       * flueben og en kontoliste, og saa laeses den som en detalje ved
+       * kontostyringen (Andreas, 2026-08-21).
+       */
       adminDel = `
-      <h2>Server</h2>
+      <h2>Public address</h2>
       <div class="card">
-        <label class="switch">
-          <input type="checkbox" id="tilladReg" ${a.allowRegistration ? 'checked' : ''}>
-          <span>Let anyone create an account on this server</span></label>
-        <p class="meta saetning">Off means only you can sign in. Your colleagues do not need accounts —
-        a published wiki is read without one.</p>
-
-        <label class="field" style="margin-top:16px"><span>Public address</span>
+        <label class="field"><span>The address links are written with</span>
           <input class="input" id="offentligUrl" value="${esc(state.publicUrl || '')}"
             placeholder="${esc(location.origin)}" autocomplete="off" autocapitalize="none"
             autocorrect="off" inputmode="url" spellcheck="false"></label>
@@ -3836,6 +3839,15 @@ async function sideSettings() {
         published links are written with, and the one search engines are told is the real one.
         <strong>Clear it</strong> removes the fixed address again, so links use whichever
         address you happen to be on.</p>
+      </div>
+
+      <h2>Server</h2>
+      <div class="card">
+        <label class="switch">
+          <input type="checkbox" id="tilladReg" ${a.allowRegistration ? 'checked' : ''}>
+          <span>Let anyone create an account on this server</span></label>
+        <p class="meta saetning">Off means only you can sign in. Your colleagues do not need accounts —
+        a published wiki is read without one.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
           <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
           <tbody>${a.users.map((u) => `<tr><td>${esc(pentBruger(u.username))}</td>
@@ -3862,7 +3874,11 @@ async function sideSettings() {
         placeholder="https://doda.example.com" autocomplete="off" spellcheck="false"></label>
     <label class="field" style="margin-top:10px"><span>API key from doda</span>
       <input class="input" id="dodaKey" type="password" autocomplete="off"
-        placeholder="${d.connected ? 'Saved — leave empty to keep it' : 'doda_…'}"></label>
+        placeholder="${d.connected ? 'Leave empty to keep the saved key' : 'doda_…'}"></label>
+    ${d.connected ? `<p class="gemt-noegle">${icon('laas', 14)}
+      <span><strong>An API key is saved</strong> on the server. It never leaves it again —
+      not even to this page, which is why the field looks empty. Paste a new one only if
+      you want to replace it.</span></p>` : ''}
     <div class="btnrow" style="margin-top:10px">
       <button class="btn primary" id="dodaGem">${d.connected ? 'Save and test' : 'Connect'}</button>
       ${d.connected ? '<button class="btn" id="dodaFjern">Disconnect</button>' : ''}
@@ -3887,7 +3903,10 @@ async function sideSettings() {
     ${g.connected ? `<p class="doda-forbundet">Connected as <strong>${esc(g.login || 'GitHub')}</strong></p>` : ''}
     <label class="field"><span>Personal access token</span>
       <input class="input" id="ghToken" type="password" autocomplete="off"
-        placeholder="${g.connected ? 'Saved — leave empty to keep it' : 'github_pat_… or ghp_…'}"></label>
+        placeholder="${g.connected ? 'Leave empty to keep the saved token' : 'github_pat_… or ghp_…'}"></label>
+    ${g.connected ? `<p class="gemt-noegle">${icon('laas', 14)}
+      <span><strong>A token is saved</strong> on the server. It never leaves it again —
+      not even to this page, which is why the field looks empty.</span></p>` : ''}
     <div class="btnrow" style="margin-top:10px">
       <button class="btn primary" id="ghGem">${g.connected ? 'Save and test' : 'Connect'}</button>
       ${g.connected ? '<button class="btn" id="ghFjern">Disconnect</button>' : ''}
@@ -4354,6 +4373,12 @@ function sideImport() {
         <p class="meta saetning" style="margin-top:8px">or drag it onto this box</p>
       </div>
       <div id="importSvar"></div>
+      <p class="meta saetning"><strong>Is the archive bigger than 100 MB?</strong>
+      Then send it straight to the server instead of through your tunnel.
+      Cloudflare's free plan refuses request bodies over 100 MB, and a big Notion export
+      is well past that — the upload climbs and then stops. Open Sagu on the server's own
+      address on your network (something like <code>http://192.168.1.50:8080</code>) and
+      import there. It is also many times faster, because nothing leaves the house.</p>
     </div>
 
     <h2>Export</h2>
@@ -4669,6 +4694,8 @@ const editor = {
   gemmer: false,
   // F15: rettelsen ligger i koen og venter paa net.
   parkeret: false,
+  // Hvor markoeren skal staa, naar naeste blok aabnes ('start' | null).
+  markoerTil: null,
   beskidt: false,
   sidstGemt: 0,
   konflikt: null,
@@ -4702,6 +4729,9 @@ function laesFoldede() {
  * undertrae ud inde i en bog, skal have det, som han forlod det.
  */
 const SEKTION_BOEGER = 'sektion:notebooks';
+
+/** Samme mekanik for de loese noter - ét saet, ét sted det gemmes. */
+const SEKTION_LOESE = 'sektion:loose';
 
 /**
  * Er ALLE notesboeger foldet sammen?
@@ -4795,6 +4825,8 @@ function traeHtml() {
             >${icon('globe', 13)}</button>
           <button class="tree-add" data-in="${esc(b.id)}" aria-label="New note here"
             title="New note here">${icon('plus', 13)}</button>
+          <button class="tree-add" data-bogmenu="${esc(b.id)}" data-navn="${esc(b.name)}"
+            aria-label="More" title="Rename or delete">${icon('dots', 13)}</button>
         </div>
         ${foldet ? '' : boern.map((x) => gren(x, 1)).join('')}
       </div>`;
@@ -4826,10 +4858,26 @@ function traeHtml() {
           title="New notebook">${icon('plus', 13)}</button>
       </div>
       ${sektionFoldet ? '' : boeger.map(bogHtml).join('')}
-      ${sektionFoldet || !loese.length ? '' : `<div class="tree-book open">
-        <div class="tree-row book"><span class="tree-fold empty"></span>
-          <span class="tree-name meta" style="cursor:default">Not in a notebook</span></div>
-        ${loese.map((x) => gren(x, 1)).join('')}</div>`}
+      ${sektionFoldet || !loese.length ? '' : (() => {
+    /*
+     * »Not in a notebook« kan foldes som alt andet i traeet.
+     *
+     * Den var den ENESTE raekke uden en fold, og med tredive loese noter er
+     * den en mur under boegerne. Valget gemmes samme sted som alle de andre
+     * foldninger - to maader at folde paa i samme app er to steder at rette
+     * (RUNE-ERFARINGER, tovo v11).
+     */
+    const foldet = editor.foldede.has(SEKTION_LOESE);
+    return `<div class="tree-book${foldet ? '' : ' open'}">
+        <div class="tree-row book">
+          <button class="tree-fold${foldet ? '' : ' open'}" data-fold="${SEKTION_LOESE}"
+            aria-label="${foldet ? 'Expand' : 'Collapse'}">${icon('caret', 12)}</button>
+          <button class="tree-name meta" data-fold="${SEKTION_LOESE}"
+            title="Not in a notebook"><span>Not in a notebook</span></button>
+          ${foldet ? `<span class="tree-antal">${loese.length}</span>` : ''}
+        </div>
+        ${foldet ? '' : loese.map((x) => gren(x, 1)).join('')}</div>`;
+  })()}
       <div class="tree-actions">
         <button class="btn ghost" id="nyNoteTop">${icon('plus', 14)} New note</button>
         <button class="btn ghost" id="dagensNote">${icon('kalender', 14)} Today's note</button>
@@ -4837,6 +4885,83 @@ function traeHtml() {
         <button class="btn ghost" id="nyBogTop">${icon('book', 14)} New notebook</button>
       </div>
     </div>`;
+}
+
+/*
+ * Notesbogens menu: omdoeb og slet.
+ *
+ * Serveren har kunnet begge dele siden F1 (`PATCH` og `DELETE` paa
+ * `/api/v1/notebooks/:id`) - der var bare ingen vej derhen i fladen. Andreas
+ * spurgte, hvordan man sletter en notesbog, og det korte svar var »det kan du
+ * ikke« (2026-08-21). **En rute uden en knap er ikke en funktion.**
+ */
+function visBogMenu(anker, id, navn) {
+  const gammel = document.getElementById('bogMenu');
+  if (gammel) { gammel.remove(); return; }
+  const raekke = anker.closest('.tree-row');
+  if (!raekke) return;
+
+  const host = document.createElement('div');
+  host.className = 'usermenu notemenu';
+  host.id = 'bogMenu';
+  host.innerHTML = `
+    <button class="usermenu-item" data-do="navn">${icon('notes', 16)}<span>Rename…</span></button>
+    <button class="usermenu-item" data-do="bog-udgiv">${icon('globe', 16)}<span>Publish this notebook</span></button>
+    <button class="usermenu-item danger" data-do="slet">${icon('trash', 16)}<span>Move to trash</span></button>`;
+  raekke.appendChild(host);
+
+  const luk = () => host.remove();
+  host.querySelectorAll('[data-do]').forEach((el) => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const hvad = el.dataset.do;
+      luk();
+      try {
+        if (hvad === 'navn') {
+          const nyt = prompt('Name of the notebook', navn);
+          if (nyt === null || !nyt.trim()) return;
+          await api('PATCH', `/api/v1/notebooks/${id}`, { name: nyt.trim() });
+        } else if (hvad === 'bog-udgiv') {
+          visUdgivPanel({ slags: 'bog', id, titel: navn });
+          return;
+        } else if (hvad === 'slet') {
+          /*
+           * Sig HVOR MANGE noter der foelger med.
+           *
+           * En notesbog er ikke tom, og »slet notesbogen?« lyder som om det
+           * kun er selve bogen. Noterne gaar i papirkurven SAMMEN med den og
+           * kan gendannes sammen med den - men det skal staa der, foer man
+           * trykker, ikke bagefter.
+           */
+          const antal = (state.tree || []).filter((n) => n.notebookId === id).length;
+          const spoergsmaal = antal
+            ? `Move “${navn}” and its ${antal} note${antal === 1 ? '' : 's'} to the trash?\n\n`
+              + 'They can be restored together from the trash.'
+            : `Move “${navn}” to the trash?`;
+          if (!confirm(spoergsmaal)) return;
+          const d = await api('DELETE', `/api/v1/notebooks/${id}`);
+          toast(d.notes
+            ? `Notebook and ${d.notes} note${d.notes === 1 ? '' : 's'} moved to the trash.`
+            : 'Notebook moved to the trash.');
+          // Stod man i en note fra bogen, er den vaek nu.
+          if (editor.note && editor.note.notebookId === id) gaaTil('notes');
+        }
+        await hentTrae();
+        await hentState();
+        tegnTrae();
+        opdaterNav();
+      } catch (ex) { toast(ex.message); }
+    });
+  });
+
+  setTimeout(() => {
+    document.addEventListener('click', function udenfor(e) {
+      if (host.isConnected && !host.contains(e.target) && e.target !== anker) {
+        luk();
+        document.removeEventListener('click', udenfor);
+      }
+    });
+  }, 0);
 }
 
 function bindTrae() {
@@ -4896,6 +5021,13 @@ function bindTrae() {
       else editor.foldede.add(id);
       gemFoldede();
       tegnTrae();
+    });
+  });
+
+  host.querySelectorAll('[data-bogmenu]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      visBogMenu(el, el.dataset.bogmenu, el.dataset.navn);
     });
   });
 
@@ -5737,8 +5869,17 @@ function tegnMedAabenBlok(host, n) {
   if (!felt) return;
   autoHoejde(felt);
   felt.focus();
-  // Markoeren i slutningen, saa man kan skrive videre med det samme.
-  felt.setSelectionRange(felt.value.length, felt.value.length);
+  /*
+   * Markoeren i slutningen - saa man kan skrive videre med det samme.
+   *
+   * Undtagelsen er, naar man er kommet hertil med pil NED: saa skal den staa
+   * i begyndelsen, dér hvor bevaegelsen pegede hen. Hintet bruges ÉN gang og
+   * ryddes, ellers ville det ogsaa gaelde det naeste klik.
+   */
+  const tilStart = editor.markoerTil === 'start';
+  editor.markoerTil = null;
+  const pos = tilStart ? 0 : felt.value.length;
+  felt.setSelectionRange(pos, pos);
 
   felt.addEventListener('input', () => {
     autoHoejde(felt);
@@ -5760,6 +5901,44 @@ function tegnMedAabenBlok(host, n) {
     // Escape hele blokken i stedet for kun listen.
     if (wikiTast(e)) return;
     if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+
+    /*
+     * Piletasterne skal kunne KRYDSE blokgraensen.
+     *
+     * Editoren aabner ét afsnit ad gangen som raa markdown; resten af noten
+     * staar renderet omkring det. Naar man stod paa den sidste linje i
+     * feltet, gjorde en piletast derfor ingenting - der var ikke nogen naeste
+     * linje INDE i feltet, og den naeste linje i NOTEN var et andet element.
+     * For den, der skriver, ser det ud som om piletasterne ikke virker
+     * (Andreas, 2026-08-21).
+     *
+     * **Browseren faar lov at proeve foerst.** Kunne den flytte markoeren -
+     * fordi afsnittet har flere linjer, eller fordi en lang linje er ombrudt
+     * over flere - saa er det dét, brugeren mente, og vi roerer ingenting.
+     * Er markoeren IKKE flyttet bagefter, var der ingen vej inde i feltet, og
+     * saa springer vi til naboblokken.
+     *
+     * Den maalemetode er valgt frem for at regne paa linjer i teksten: et
+     * OMBRUDT afsnit har flere visuelle linjer end `\n`-tegn, og en regel,
+     * der taeller `\n`, ville springe ud af feltet midt i et afsnit.
+     */
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const foer = felt.selectionStart;
+      const ned = e.key === 'ArrowDown';
+      const vaerdi = felt.value;
+      // Kun fra den yderste LOGISKE linje - ellers er der helt sikkert en vej
+      // inde i feltet, og saa er der ingen grund til at maale noget.
+      const yderst = ned
+        ? !vaerdi.slice(foer).includes('\n')
+        : !vaerdi.slice(0, foer).includes('\n');
+      if (!yderst || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return;
+      setTimeout(() => {
+        if (!document.getElementById('blokFelt')) return;
+        if (felt.selectionStart !== foer) return;   // browseren flyttede den
+        springTilNaboBlok(ned);
+      }, 0);
+      return;
+    }
     // ⌘/Ctrl+Enter gemmer og lukker blokken. Feltet stopper tasten selv, saa
     // en container-genvej ikke ogsaa fyrer (doda v29/v31/v34).
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -5822,6 +6001,28 @@ function aabnSidste() {
     return;
   }
   aabnBlok(b[b.length - 1].fra);
+}
+
+/**
+ * Aabner blokken foer eller efter den, der staar aaben.
+ *
+ * Markoeren laegges dér, man kom fra: gaar man NEDAD, skal den staa i
+ * begyndelsen af den naeste blok - ikke i slutningen, hvor man saa skulle
+ * taste sig tilbage. Det er den eneste rigtige plads, og den er let at
+ * glemme, fordi feltet ellers altid aabner med markoeren til sidst.
+ */
+function springTilNaboBlok(ned) {
+  const n = editor.note;
+  if (!n) return;
+  const b = saguMarkdown.blokke(n.body);
+  const i = b.findIndex((x) => x.fra === editor.aabenBlok);
+  if (i === -1) return;
+  const maal = b[i + (ned ? 1 : -1)];
+  // Ingen nabo: bliv staaende. At lukke blokken, fordi man trykkede pil op i
+  // den foerste linje, ville vaere at straffe en helt almindelig bevaegelse.
+  if (!maal) return;
+  editor.markoerTil = ned ? 'start' : 'slut';
+  aabnBlok(maal.fra);
 }
 
 function lukBlok() {

@@ -73,6 +73,10 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   VISNINGSregel; alt der sammenlignes eller sendes, skal være det, brugeren tastede.
 - **En værdi, man kun får at se én gang, hører i en rude** — ikke i et felt på en side,
   en optegning kan tegne væk. Og den rude lukker ikke på et klik ved siden af.
+- **En rute uden en knap er ikke en funktion.** Notesbogens sletning fandtes på serveren
+  fra F1 og var uopnåelig i fladen i fem versioner.
+- **Piletaster ved en blokgrænse: lad browseren prøve FØRST.** Flyttede den markøren, var
+  det dét, brugeren mente. At tælle `\n` ville springe ud af et ombrudt afsnit midt i.
 - **Knappen ved en markering lytter på `mousedown`/`touchstart`, ikke `click`.** Et klik
   rydder markeringen, før handleren når at læse den.
 - **Wikien caches aldrig offline.** En offentlig side hører til den besøgende, og en kopi
