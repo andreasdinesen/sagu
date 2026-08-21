@@ -200,12 +200,27 @@
     });
   });
 
-  /* --- »/« giver soegefeltet fokus --------------------------------------- */
+  /* --- »/« og »Cmd/Ctrl+K« giver soegefeltet fokus -----------------------
+   *
+   * Samme to taster som i appen, og af samme grund: den, der laeser wikien,
+   * er som regel den samme, der skriver den, og en genvej, der kun virker det
+   * ene sted, er en genvej man holder op med at bruge.
+   *
+   * `Cmd/Ctrl+K` bryder med reglen om at lade browserens egne genveje vaere
+   * (i Chrome er den adressefeltets soegning). Prisen er den samme som i
+   * appen, og den staar skrevet dér ved genvejen selv; her er det nok at
+   * sige, at den er BEVIDST og er den eneste af sin slags.
+   */
 
   document.addEventListener('keydown', function (e) {
-    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-    var m = e.target;
-    if (m && (m.tagName === 'INPUT' || m.tagName === 'TEXTAREA' || m.isContentEditable)) return;
+    var iFelt = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.target.isContentEditable);
+    var medTast = (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K');
+    // `/` kun uden modifikator og kun uden for et skrivefelt - ellers spiser
+    // den et skraatstreg, man var ved at taste. `Cmd/Ctrl+K` maa derimod
+    // gerne komme MIDT i et felt: det er hele pointen med den.
+    var skraa = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !iFelt;
+    if (!medTast && !skraa) return;
     var felt = document.getElementById('wq');
     if (!felt) return;
     e.preventDefault();

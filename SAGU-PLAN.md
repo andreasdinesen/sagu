@@ -186,6 +186,11 @@ tre ønsker** — fuld bredde (pr. note, i databasen), fokus-tilstand (`F`/`Esc`
 pr. skærm) og browserens egen fuldskærm (tilvalg i note-menuen). Se `DESIGN.md`
 §5.
 
+**Fuld bredde er fjernet igen i v13** — »denne funktion kan fjernes, da jeg
+ikke kommer til at bruge den« (Andreas, 2026-08-21). Kolonnen `full_width`
+bliver i databasen, og eksport/gendannelse bærer den fortsat; den læses bare
+ikke af fladen. Tilbage står to ønsker, ikke tre.
+
 **Accept:**
 
 | Krav | Resultat |
@@ -252,7 +257,8 @@ Kodeblokke med sprogmærke og kopier-knap · billeder (paste, træk, upload) med
 lightbox · tabeller · tjeklister · citater og callouts · vandrette streger ·
 `[[note-titel]]` med autoudfyldning · backlinks · linkhåndtering · paste af
 HTML fra en browser bliver til markdown · »vis som markdown«-panel med
-kopier-knap · fuld bredde pr. note · emoji-ikon pr. note og notesbog ·
+kopier-knap · ~~fuld bredde pr. note~~ (fjernet i v13) · emoji-ikon pr. note
+og notesbog ·
 skabeloner (mødereferat, ugelog, projektnote) · dagens note.
 
 **F4's kerne er trukket frem hertil.** F3's accept kræver billed-upload, og et

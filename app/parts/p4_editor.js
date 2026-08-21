@@ -1048,8 +1048,6 @@ function sideNote() {
         <span id="gemMaerke">${gemMaerke()}</span>
         <button class="iconbtn" id="kopiNote"
           title="Copy the whole note as markdown">${icon('copy', 15)}</button>
-        <button class="iconbtn" id="bredBtn" aria-pressed="${n.fullWidth ? 'true' : 'false'}"
-          title="${n.fullWidth ? 'Use reading width' : 'Use the full width'}">${icon('width', 16)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
         ${favoritKnapHtml(n)}
         ${delKnapHtml(n)}
@@ -1565,19 +1563,29 @@ async function gemNu() {
 /* ------------------------------------------------------------ fuldskaerm */
 
 /*
- * »Fuld skaerm« er tre forskellige oensker, og de loeses hver for sig:
+ * »Fuld skaerm« var tre forskellige oensker. Det er nu to:
  *
- *  1. **Fuld bredde** - notens tekstspalte bruger hele siden i stedet for
- *     laesebredden paa 820 px. Godt til tabeller og kode; skidt til prosa,
- *     fordi lange linjer er svaere at laese. Derfor et valg PR. NOTE, gemt i
- *     databasen (`full_width`), saa det foelger noten til enhver skaerm.
- *  2. **Fokus** - alt andet end noten forsvinder: sidebar, broedkrummer,
+ *  1. **Fokus** - alt andet end noten forsvinder: sidebar, broedkrummer,
  *     vaerktoejer. Det er en tilstand ved SKAERMEN, ikke ved noten, saa den
  *     gemmes ikke. Esc gaar tilbage.
- *  3. **Browserens fuldskaerm** - ogsaa uden faner og adressefelt. Kraever en
+ *  2. **Browserens fuldskaerm** - ogsaa uden faner og adressefelt. Kraever en
  *     brugerhandling, saa den kan kun taendes fra en knap, og den fejler
  *     stille i en iframe. Derfor er den et TILVALG oven paa fokus og ikke
  *     det, F-tasten goer.
+ *
+ * ── Den tredje er fjernet ─────────────────────────────────────────────────
+ *
+ * **Fuld bredde** gav notens tekstspalte hele siden i stedet for
+ * laesebredden paa 820 px. »Denne funktion kan fjernes, da jeg ikke kommer
+ * til at bruge den« (Andreas, 2026-08-21), og en knap, ingen troer paa, er
+ * stoej i en vaerktoejsraekke, hvor hver plads skal fortjenes.
+ *
+ * Kolonnen `full_width` BLIVER i databasen, og eksport/gendannelse baerer den
+ * fortsat. To grunde: migreringer er historie og skrives ikke om, og en
+ * sikkerhedskopi fra i gaar skal stadig kunne laeses i morgen. Vaerdien
+ * bliver bare ikke laest af fladen laengere - `bred-note` saettes ingen
+ * steder, saa en note, der ALLEREDE stod gemt som bred, ikke haenger fast i
+ * en visning, der ikke har nogen knap at slaa fra.
  */
 function saetFokus(til) {
   document.body.classList.toggle('fokus', til);
@@ -1648,19 +1656,6 @@ function bindNoteSide() {
         // Enter i titlen gaar ned i teksten - det er den vane, alle har.
         aabnSidste();
       }
-    });
-  }
-
-  const bred = document.getElementById('bredBtn');
-  if (bred) {
-    bred.addEventListener('click', async () => {
-      n.fullWidth = !n.fullWidth;
-      document.body.classList.toggle('bred-note', n.fullWidth);
-      bred.setAttribute('aria-pressed', n.fullWidth ? 'true' : 'false');
-      bred.title = n.fullWidth ? 'Use reading width' : 'Use the full width';
-      try {
-        await api('PATCH', `/api/v1/notes/${n.id}`, { fullWidth: n.fullWidth });
-      } catch (ex) { toast(ex.message); }
     });
   }
 
@@ -1760,7 +1755,6 @@ function bindNoteSide() {
   bindMaerker();
   bindFiler();
   bindDropZone(document.querySelector('.main'));
-  document.body.classList.toggle('bred-note', !!n.fullWidth);
   tegnKrop();
 }
 

@@ -1107,19 +1107,20 @@ kbd {
 .linkknap { border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; padding: 0; }
 .linkknap:hover { color: var(--accent-text); text-decoration: underline; }
 
-/* ------------------------------------------------- bredde og fuldskaerm */
+/* ------------------------------------------------------------ fuldskaerm */
 
 /*
- * Tre forskellige oensker, tre forskellige mekanismer:
+ * To oensker, to mekanismer:
  *
- *  - `body.bred-note`   notens spalte bruger hele siden. Et valg PR. NOTE,
- *                       gemt i databasen, saa det foelger noten til enhver skaerm.
  *  - `body.fokus`       alt andet forsvinder. En tilstand ved SKAERMEN, ikke
  *                       ved noten - den gemmes derfor ikke.
  *  - :fullscreen        browserens egen. Kraever en brugerhandling og er
  *                       derfor et tilvalg oven paa fokus.
+ *
+ * `body.bred-note` var den tredje og er fjernet sammen med sin knap
+ * (Andreas, 2026-08-21). Reglerne gaar med: en klasse, ingen saetter, er en
+ * fremtidig fejlsoegning, hvor man leder efter det, der taender den.
  */
-body.bred-note #pageHost { max-width: none; }
 
 body.fokus .sidebar,
 body.fokus .navtoggle,
@@ -1128,7 +1129,6 @@ body.fokus .backlinks { display: none; }
 
 body.fokus .main { padding: 56px 32px 96px; }
 body.fokus #pageHost { max-width: 760px; }
-body.fokus.bred-note #pageHost { max-width: 1100px; }
 /* Vaerktoejerne bliver - man skal kunne komme UD igen. En udvej skal virke
    praecis dér, hvor man er (RUNE-ERFARINGER, doda v39). */
 body.fokus .note-tools { opacity: .35; transition: opacity .15s; }

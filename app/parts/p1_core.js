@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -229,7 +229,6 @@ const ICONS = {
   moon: '<path d="M20 14.6A8.6 8.6 0 019.4 4 8.6 8.6 0 1020 14.6z"/>',
   key: '<circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H20M17 12v3M20 12v2.5"/>',
   caret: '<path d="M9 6l6 6-6 6"/>',
-  width: '<path d="M3 12h18"/><path d="M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
   focus: '<path d="M4 9V5.5A1.5 1.5 0 015.5 4H9"/><path d="M15 4h3.5A1.5 1.5 0 0120 5.5V9"/><path d="M20 15v3.5a1.5 1.5 0 01-1.5 1.5H15"/><path d="M9 20H5.5A1.5 1.5 0 014 18.5V15"/>',
   dots: '<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>',
   comment: '<path d="M20 12.5a6.5 6.5 0 01-6.5 6.5H9l-4 2.5v-4A6.5 6.5 0 016.5 6h7A6.5 6.5 0 0120 12.5z"/>',
@@ -595,7 +594,7 @@ function gaaTil(view, opt) {
   state.filterTag = null;
   state.openNotebook = null;
   if (typeof editor === 'object') { editor.note = null; editor.aabenBlok = null; }
-  document.body.classList.remove('fokus', 'bred-note');
+  document.body.classList.remove('fokus');
   if (opt && opt.tag !== undefined) state.filterTag = opt.tag;
   if (opt && opt.notebook !== undefined) state.openNotebook = opt.notebook;
   document.body.classList.remove('navopen');
