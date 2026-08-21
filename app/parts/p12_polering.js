@@ -25,6 +25,18 @@
  * `naar` afgør, om genvejen overhovedet gælder lige nu — så oversigten kan
  * vise, hvad der virker HER, og ikke en liste, hvor halvdelen ikke gør noget.
  */
+/**
+ * Hedder tasten Cmd eller Ctrl paa DEN her maskine?
+ *
+ * Oversigten skal vise det, der staar paa brugerens eget tastatur. Skriver
+ * den »Ctrl« til en Mac, leder man efter en tast, der ikke er der.
+ */
+function modTast() {
+  const nav = window.navigator || {};
+  const kilde = String((nav.userAgentData && nav.userAgentData.platform) || nav.platform || '');
+  return /mac|iphone|ipad|ipod/i.test(kilde) ? '\u2318' : 'Ctrl+';
+}
+
 const GENVEJE = [
   {
     tast: '?', vis: '?', hvad: 'Show this list',
@@ -32,6 +44,25 @@ const GENVEJE = [
   },
   {
     tast: '/', vis: '/', hvad: 'Jump to the search field',
+    gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
+  },
+  {
+    /*
+     * Den ENESTE genvej med modifikator - og den er en bevidst undtagelse
+     * fra reglen tre skaerme laengere nede.
+     *
+     * `Cmd`/`Ctrl+K` er blevet den maade, man aabner soegningen paa (Notion,
+     * Linear, Slack, GitHub), og en app, der ikke svarer paa den, foeles
+     * gaaet i staa. Prisen er aerlig: i Chrome staar `Ctrl/Cmd+K` for
+     * adressefeltets soegning, saa vi TAGER noget, browseren havde. Det er
+     * vurderingen vaerd, fordi den, der taster den her, mener sin egen app -
+     * men det er en undtagelse, ikke en aabning for flere.
+     *
+     * Den virker OGSAA midt i en note. Netop dér er den mest vaerd: man er
+     * ved at skrive, skal slaa noget op, og skal ikke foerst finde musen.
+     */
+    tast: 'k', modifikator: true, vis: modTast() + 'K',
+    hvad: 'Search — from anywhere, even mid-sentence',
     gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
   },
   {
@@ -83,14 +114,32 @@ const genvejGaelder = (g) => !g.kunVist && (!g.naar || g.naar());
  *
  * Og genvejene er enkelttaster UDEN modifikator med vilje — `Cmd`/`Ctrl`
  * hører browseren til, og at stjæle dem er at ødelægge noget, der virkede.
+ * Den ene undtagelse er `Cmd/Ctrl+K`; begrundelsen står ved genvejen selv,
+ * så den, der får lyst til at tilføje nummer to, læser prisen først.
  */
 document.addEventListener('keydown', (e) => {
   if (!state.user) return;
+  const passer = (x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase());
+
+  /*
+   * Genveje MED modifikator afgoeres foerst, og de spoerger hverken om
+   * skrivefelter eller om noget andet: de er netop lavet til at kunne bruges
+   * midt i en saetning. `altKey` er ikke med - `Alt+K` skriver et tegn paa
+   * flere tastaturer, og en genvej maa ikke aede et bogstav.
+   */
+  if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+    const m = GENVEJE.find((x) => x.modifikator && passer(x));
+    if (!m || !genvejGaelder(m)) return;
+    e.preventDefault();
+    try { m.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }
+    return;
+  }
+
   const iFelt = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
   if (iFelt(e.target) || iFelt(document.activeElement)) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-  const g = GENVEJE.find((x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase()));
+  const g = GENVEJE.find((x) => !x.modifikator && passer(x));
   if (!g || !genvejGaelder(g)) return;
   e.preventDefault();
   try { g.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }

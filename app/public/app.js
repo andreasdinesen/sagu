@@ -806,6 +806,88 @@
   }
 
   /**
+   * Flytter en blok hen foran en anden. Ren tekst ind, ren tekst ud.
+   *
+   * Den bor HER og ikke i editoren af samme grund som `saetTjek`: det er en
+   * operation paa markdown, og markdown er sandheden. Saa kan den proeves
+   * uden en browser - og traek-og-slip i fladen bliver et spoergsmaal om
+   * hvilke to tal, den skal kaldes med.
+   *
+   * **Linjerne SPLEJSES, de sammensaettes ikke.** Et alternativ var at dele
+   * teksten op i blokke og saette dem sammen igen med tomme linjer imellem -
+   * men saa ville to tomme linjer blive til én, og en overskydende
+   * indrykning forsvinde. En editor, der stiltiende skriver om paa det, nogen
+   * har skrevet, er en editor man holder op med at stole paa (Verdandes spec).
+   *
+   * @param {number} fra  blokkens nummer i `blokke()`
+   * @param {number} til  nummeret paa den blok, den skal ligge FORAN.
+   *                      `blokke().length` betyder »nederst«.
+   */
+  function flytBlok(md, fra, til) {
+    const tekst = String(md == null ? '' : md);
+    const b = blokke(tekst);
+    if (!b[fra] || fra === til || til < 0 || til > b.length) return tekst;
+    // At flytte en blok hen foran sig selv er ingen flytning.
+    if (til === fra + 1) return tekst;
+
+    const linjer = tekst.split('\n');
+    const kilde = b[fra];
+    const stykke = linjer.slice(kilde.fra, kilde.til + 1);
+
+    /*
+     * **Separatoren foelger med blokken.**
+     *
+     * Fjerner man kun selve blokkens linjer, bliver den tomme linje, der
+     * skilte den fra den naeste, tilbage - og saa hober tomme linjer sig op
+     * ét sted, mens der mangler én et andet. Det saa man foerst efter tre-fire
+     * flytninger, hvor noten stille blev luftigere.
+     *
+     * Den tomme linje EFTER blokken hoerer til den; er der ingen (blokken er
+     * den sidste), tages den foran i stedet.
+     */
+    let start = kilde.fra;
+    let antal = kilde.til - kilde.fra + 1;
+    if (kilde.til + 1 < linjer.length && !String(linjer[kilde.til + 1]).trim()) {
+      antal += 1;                                   // den tomme linje efter
+    } else if (kilde.fra > 0 && !String(linjer[kilde.fra - 1]).trim()) {
+      start -= 1;                                   // ... ellers den foran
+      antal += 1;
+    }
+
+    // Indsaettelsespunktet regnes i den OPRINDELIGE nummerering og rettes
+    // bagefter for de linjer, der forsvandt. Regner man det efter fjernelsen,
+    // peger tallene paa noget andet, end man valgte.
+    let indsaet = til >= b.length ? linjer.length : b[til].fra;
+    linjer.splice(start, antal);
+    if (indsaet > start) indsaet -= antal;
+    if (indsaet > linjer.length) indsaet = linjer.length;
+
+    // ... og saettes ind igen MED sin separator, saa to blokke ikke smelter
+    // sammen til én.
+    const med = stykke.slice();
+    if (indsaet >= linjer.length) {
+      /*
+       * Nederst betyder »efter sidste blok« - ikke »efter sidste LINJE«.
+       *
+       * En markdownfil slutter paa et linjeskift, og `split('\n')` goer det
+       * til en tom linje til sidst. Satte man blokken efter DEN, forsvandt
+       * filens afsluttende linjeskift ved hver tur nederst - saa en blok,
+       * der blev trukket ned og op igen, kom tilbage med en tekst, der ikke
+       * var helt den samme (maalt i browseren, 2026-08-21).
+       *
+       * Vi gaar derfor tilbage forbi de tomme linjer og saetter blokken ind
+       * DÉR. Halen faar lov at blive, hvor den er.
+       */
+      while (indsaet > 0 && !String(linjer[indsaet - 1]).trim()) indsaet -= 1;
+      if (indsaet > 0) med.unshift('');   // en tom linje foran, hvis der staar noget over
+    } else {
+      med.push('');
+    }
+    linjer.splice(indsaet, 0, ...med);
+    return linjer.join('\n');
+  }
+
+  /**
    * Et brugernavn, som det skal SES.
    *
    * Kun det foerste tegn, og resten roeres ikke: »andreasD« bliver
@@ -855,7 +937,7 @@
   }
 
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, pentNavn, pentBrugernavn };
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, pentNavn, pentBrugernavn };
 }));
 
 /* ---- shared/notion.js ---- */
@@ -1443,10 +1525,21 @@ function maaRette(n) {
   return !n || n.mine !== false || n.level === 'write';
 }
 
-/** Knappen i notens vaerktoejsraekke. Kun paa MINE noter - kun ejeren deler. */
+/**
+ * Knappen i notens vaerktoejsraekke. Kun paa MINE noter - kun ejeren deler.
+ *
+ * Og kun paa en server, hvor der ER nogen at dele med. Paa en énbrugerserver
+ * aabnede knappen en rude, hvor den eneste mulige modtager var én selv - den
+ * lovede noget, appen ikke kunne holde (Andreas, 2026-08-21).
+ *
+ * Er noten ALLEREDE delt, bliver knappen staaende, uanset hvad. Ellers ville
+ * en deling, man har lavet, blive usynlig i samme oejeblik den anden konto
+ * slettes - og saa kunne den hverken ses eller trakkes tilbage.
+ */
 function delKnapHtml(n) {
   if (!n || n.mine === false) return '';
   const paa = !!n.sharedWith;
+  if (!paa && !state.flereBrugere) return '';
   return `<button class="iconbtn${paa ? ' paa' : ''}" id="delBtn"
     aria-pressed="${paa ? 'true' : 'false'}"
     title="${paa ? 'Shared with other accounts' : 'Share with another account'}">${icon('shared', 16)}</button>`;
@@ -1959,6 +2052,18 @@ async function frysGhAdresser() {
  * `naar` afgør, om genvejen overhovedet gælder lige nu — så oversigten kan
  * vise, hvad der virker HER, og ikke en liste, hvor halvdelen ikke gør noget.
  */
+/**
+ * Hedder tasten Cmd eller Ctrl paa DEN her maskine?
+ *
+ * Oversigten skal vise det, der staar paa brugerens eget tastatur. Skriver
+ * den »Ctrl« til en Mac, leder man efter en tast, der ikke er der.
+ */
+function modTast() {
+  const nav = window.navigator || {};
+  const kilde = String((nav.userAgentData && nav.userAgentData.platform) || nav.platform || '');
+  return /mac|iphone|ipad|ipod/i.test(kilde) ? '\u2318' : 'Ctrl+';
+}
+
 const GENVEJE = [
   {
     tast: '?', vis: '?', hvad: 'Show this list',
@@ -1966,6 +2071,25 @@ const GENVEJE = [
   },
   {
     tast: '/', vis: '/', hvad: 'Jump to the search field',
+    gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
+  },
+  {
+    /*
+     * Den ENESTE genvej med modifikator - og den er en bevidst undtagelse
+     * fra reglen tre skaerme laengere nede.
+     *
+     * `Cmd`/`Ctrl+K` er blevet den maade, man aabner soegningen paa (Notion,
+     * Linear, Slack, GitHub), og en app, der ikke svarer paa den, foeles
+     * gaaet i staa. Prisen er aerlig: i Chrome staar `Ctrl/Cmd+K` for
+     * adressefeltets soegning, saa vi TAGER noget, browseren havde. Det er
+     * vurderingen vaerd, fordi den, der taster den her, mener sin egen app -
+     * men det er en undtagelse, ikke en aabning for flere.
+     *
+     * Den virker OGSAA midt i en note. Netop dér er den mest vaerd: man er
+     * ved at skrive, skal slaa noget op, og skal ikke foerst finde musen.
+     */
+    tast: 'k', modifikator: true, vis: modTast() + 'K',
+    hvad: 'Search — from anywhere, even mid-sentence',
     gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
   },
   {
@@ -2017,14 +2141,32 @@ const genvejGaelder = (g) => !g.kunVist && (!g.naar || g.naar());
  *
  * Og genvejene er enkelttaster UDEN modifikator med vilje — `Cmd`/`Ctrl`
  * hører browseren til, og at stjæle dem er at ødelægge noget, der virkede.
+ * Den ene undtagelse er `Cmd/Ctrl+K`; begrundelsen står ved genvejen selv,
+ * så den, der får lyst til at tilføje nummer to, læser prisen først.
  */
 document.addEventListener('keydown', (e) => {
   if (!state.user) return;
+  const passer = (x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase());
+
+  /*
+   * Genveje MED modifikator afgoeres foerst, og de spoerger hverken om
+   * skrivefelter eller om noget andet: de er netop lavet til at kunne bruges
+   * midt i en saetning. `altKey` er ikke med - `Alt+K` skriver et tegn paa
+   * flere tastaturer, og en genvej maa ikke aede et bogstav.
+   */
+  if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+    const m = GENVEJE.find((x) => x.modifikator && passer(x));
+    if (!m || !genvejGaelder(m)) return;
+    e.preventDefault();
+    try { m.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }
+    return;
+  }
+
   const iFelt = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
   if (iFelt(e.target) || iFelt(document.activeElement)) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-  const g = GENVEJE.find((x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase()));
+  const g = GENVEJE.find((x) => !x.modifikator && passer(x));
   if (!g || !genvejGaelder(g)) return;
   e.preventDefault();
   try { g.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }
@@ -2521,7 +2663,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3517,6 +3659,7 @@ function fortsaetTilConnector() {
     document.title = state.config.appName || 'Sagu';
     const me = await api('GET', '/api/me');
     state.user = me.user;
+    state.flereBrugere = !!me.flereBrugere;
     // Var jeg allerede logget ind, da connectoren sendte mig herhen, skal jeg
     // slet ikke se appen - kun samtykkesiden.
     if (state.user && fortsaetTilConnector()) return;
@@ -4797,7 +4940,18 @@ const editor = {
   beskidt: false,
   sidstGemt: 0,
   konflikt: null,
-  foldede: new Set(),
+  /*
+   * Foldningen LAESES her, ikke bare skrives.
+   *
+   * `laesFoldede()` fandtes, men blev aldrig kaldt: hver eneste foldning blev
+   * skrevet trofast i localStorage og aldrig hentet frem igen. Det saa
+   * rigtigt ud, saa laenge man blev paa siden, og var vaek ved naeste
+   * genindlaesning - en indstilling, appen lod som om den huskede.
+   *
+   * Fundet, fordi de nyfoldede notesboeger stod aabne igen efter en
+   * genindlaesning (Andreas, 2026-08-21).
+   */
+  foldede: laesFoldede(),
 };
 
 /* ------------------------------------------------------------- foldning */
@@ -4863,6 +5017,60 @@ function gemFoldede() {
   try { localStorage.setItem('sagu_foldede', JSON.stringify([...editor.foldede])); } catch { /* privat */ }
 }
 
+/*
+ * ── En notesbog, man ikke har set foer, starter FOLDET ─────────────────────
+ *
+ * Med syv boeger og tredive importerede sider er sidebaren en mur, foerste
+ * gang man aabner appen paa en ny skaerm. Andreas bad om det modsatte
+ * udgangspunkt: alt lukket, saa man selv folder ud, hvad man skal bruge
+ * (2026-08-21).
+ *
+ * Det naive var at folde alle boeger ved hver indlaesning. Men saettet
+ * husker de FOLDEDE, saa en bog, man har aabnet med vilje, ville blive
+ * lukket igen ved naeste besoeg - appen ville glemme et valg, brugeren har
+ * truffet, og det er vaerre end en lang liste.
+ *
+ * Derfor huskes ogsaa, hvilke boeger vi har SET. Er en bog kendt, staar
+ * brugerens valg; er den ny, folder vi den. Saa gaelder reglen ogsaa den
+ * bog, en import lige har lagt ind.
+ */
+const SETE_NOEGLE = 'sagu_sete_boeger';
+
+function laesSete() {
+  try { return new Set(JSON.parse(localStorage.getItem(SETE_NOEGLE) || '[]')); } catch { return new Set(); }
+}
+
+/**
+ * Folder de notesboeger sammen, vi ikke har moedt foer.
+ *
+ * @returns {boolean} true, hvis noget blev foldet - saa kalderen ved, om
+ *                    traeet skal tegnes om.
+ */
+function foldNyeBoeger() {
+  const sete = laesSete();
+  let aendret = false;
+  for (const b of state.notebooks || []) {
+    if (sete.has(b.id)) continue;
+    sete.add(b.id);
+    editor.foldede.add(b.id);
+    aendret = true;
+  }
+  if (aendret) {
+    try { localStorage.setItem(SETE_NOEGLE, JSON.stringify([...sete])); } catch { /* privat */ }
+    gemFoldede();
+  }
+  return aendret;
+}
+
+/** En bog, brugeren selv har lavet, skal staa aaben - han skal jo bruge den. */
+function markerSetOgAaben(id) {
+  const sete = laesSete();
+  sete.add(id);
+  try { localStorage.setItem(SETE_NOEGLE, JSON.stringify([...sete])); } catch { /* privat */ }
+  editor.foldede.delete(id);
+  gemFoldede();
+}
+
 /* --------------------------------------------------------------- traeet */
 
 async function hentTrae() {
@@ -4870,6 +5078,7 @@ async function hentTrae() {
     const d = await api('GET', '/api/v1/tree');
     state.notebooks = d.notebooks;
     state.tree = d.notes;
+    foldNyeBoeger();
   } catch (ex) {
     if (ex.status !== 401) toast(ex.message);
     state.tree = state.tree || [];
@@ -5181,8 +5390,11 @@ function bindTrae() {
       const navn = prompt('Name of the notebook');
       if (!navn) return;
       try {
-        await api('POST', '/api/v1/notebooks', { name: navn });
+        const d = await api('POST', '/api/v1/notebooks', { name: navn });
         await hentTrae();
+        // En bog, man lige har bedt om, skal staa aaben - ellers ser det ud,
+        // som om der ikke skete noget.
+        if (d && d.notebook) markerSetOgAaben(d.notebook.id);
         tegnTrae();
       } catch (ex) { toast(ex.message); }
     });
@@ -5745,6 +5957,8 @@ function sideNote() {
         ${maaRette(n) ? '' : 'readonly'}>
       <div class="note-tools">
         <span id="gemMaerke">${gemMaerke()}</span>
+        <button class="iconbtn" id="kopiNote"
+          title="Copy the whole note as markdown">${icon('copy', 15)}</button>
         <button class="iconbtn" id="bredBtn" aria-pressed="${n.fullWidth ? 'true' : 'false'}"
           title="${n.fullWidth ? 'Use reading width' : 'Use the full width'}">${icon('width', 16)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
@@ -5821,6 +6035,7 @@ function tegnKrop() {
     if (window.console) console.error('render fejlede', ex);
   }
   bindKrop();
+  tegnGreb(host);
   byggToc();
 }
 
@@ -5982,6 +6197,9 @@ function tegnMedAabenBlok(host, n) {
   bindTjek(host);
   bindBilleder(host);
   fyldGhIndlejringer(host);
+  // Den AABNE blok har ingen `data-blok` og faar derfor intet haandtag - man
+  // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
+  tegnGreb(host);
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;
@@ -6378,6 +6596,36 @@ function bindNoteSide() {
   const favKnap = document.getElementById('favBtn');
   if (favKnap) favKnap.addEventListener('click', () => skiftFavorit());
 
+  /*
+   * Hele noten som markdown i udklipsholderen.
+   *
+   * Markdown ER det, der ligger i databasen (DESIGN.md §2), saa der er intet
+   * at konvertere - og derfor heller intet, der kan tabes undervejs. Titlen
+   * kommer med som en overskrift, hvis teksten ikke selv har en: en note
+   * indsat i en mail uden sit navn er svaer at forstaa.
+   *
+   * `navigator.clipboard` kraever et secure context, og Sagu kan naas over
+   * ren http paa LAN-adressen. Knappen falder derfor tilbage til at MARKERE
+   * teksten i en rude, man selv kan kopiere fra - frem for at fejle, naar man
+   * trykker (RUNE-ERFARINGER, tools v1).
+   */
+  const kopiKnap = document.getElementById('kopiNote');
+  if (kopiKnap) {
+    kopiKnap.addEventListener('click', async () => {
+      const note = editor.note;
+      if (!note) return;
+      const md = noteSomMarkdown(note);
+      try {
+        if (!navigator.clipboard) throw new Error('ingen udklipsholder');
+        await navigator.clipboard.writeText(md);
+        toast('The note is on your clipboard as markdown.');
+      } catch {
+        visMarkdownPanel();
+        toast('The browser would not let me copy — here it is to take by hand.');
+      }
+    });
+  }
+
   document.querySelectorAll('[data-krumme]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.krumme));
   });
@@ -6715,7 +6963,8 @@ function tegnLegend() {
     return `<span class="legend-item"><kbd>${esc(d.slice(0, mellemrum))}</kbd>${esc(d.slice(mellemrum + 1))}</span>`;
   }).join('<span class="legend-dot">·</span>')}</span>
     <span class="legend-nav"><span class="legend-item">↑ ↓ Navigate</span>
-      <span class="legend-item">↵ ${esc(enter)}</span></span>`;
+      <span class="legend-item">↵ ${esc(enter)}</span>
+      <span class="legend-item">⌘↵ New tab</span></span>`;
 }
 
 /** Chips under feltet: hvad filtrene BETYDER, mens man skriver dem. */
@@ -6861,7 +7110,20 @@ function tegnPanel() {
   host.innerHTML = omni.raekker.map((r, i) => {
     const paa = i === omni.valgt ? ' on' : '';
     if (r.slags === 'note') {
-      return `<button class="omni-row${paa}" data-row="${i}">
+      /*
+       * En note-raekke er et RIGTIGT link.
+       *
+       * Den var en `<button>`, og saa kan browserens egen »aabn i ny fane«
+       * ikke bruges: ⌘-klik, midterklik og »Aabn link i ny fane« gjorde
+       * ingenting. Man maatte forlade sin soegning for at se et resultat og
+       * begynde forfra bagefter (Andreas, 2026-08-21).
+       *
+       * `tabindex="-1"`, fordi listen styres med piletasterne - et link i
+       * tabuleringsraekkefoelgen ville lave en anden slags navigation ved
+       * siden af den, der allerede er.
+       */
+      return `<a class="omni-row${paa}" data-row="${i}" tabindex="-1"
+          href="#note-${esc(r.id)}">
           <span class="omni-row-ikon">${icon('notes', 16)}</span>
           <span class="omni-row-tekst">
             <span class="omni-row-titel">${esc(r.etiket)}</span>
@@ -6869,7 +7131,7 @@ function tegnPanel() {
           </span>
           <span class="omni-row-meta meta">${r.afsnitTitel ? esc(r.afsnitTitel)
     : (r.meta ? esc(r.meta) : '')}</span>
-        </button>`;
+        </a>`;
     }
     const ikon = { ny: 'plus', nybog: 'book', bog: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
     return `<button class="omni-row${paa}${r.slags === 'fejl' ? ' fejl' : ''}" data-row="${i}">
@@ -6882,7 +7144,16 @@ function tegnPanel() {
 
   host.querySelectorAll('[data-row]').forEach((el) => {
     el.addEventListener('mousedown', (e) => e.preventDefault());   // behold fokus i feltet
-    el.addEventListener('click', () => vaelgRaekke(Number(el.dataset.row)));
+    el.addEventListener('click', (e) => {
+      /*
+       * ⌘/Ctrl-klik, midterklik og shift-klik er browserens egne. Kalder vi
+       * `preventDefault()` paa dem, aabner den nye fane aldrig - og saa har
+       * linket kun set ud som et link.
+       */
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      vaelgRaekke(Number(el.dataset.row));
+    });
   });
 }
 
@@ -6911,8 +7182,9 @@ async function vaelgRaekke(i) {
   }
   if (r.slags === 'nybog') {
     try {
-      await api('POST', '/api/v1/notebooks', { name: r.tekst });
+      const d = await api('POST', '/api/v1/notebooks', { name: r.tekst });
       await hentTrae();
+      if (d && d.notebook) markerSetOgAaben(d.notebook.id);
       tegnTrae();
       ryd();
       toast(`Notebook "${r.tekst}" created.`);
@@ -7019,7 +7291,19 @@ function bindOmni() {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); omni.valgt++; tegnPanel(); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); omni.valgt--; tegnPanel(); return; }
-    if (e.key === 'Enter') { e.preventDefault(); vaelgRaekke(omni.valgt); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      /*
+       * ⌘/Ctrl+Enter aabner i en ny fane og lader soegningen staa. Det er
+       * tastaturets udgave af ⌘-klik, og linjen under feltet lover det.
+       */
+      if (e.metaKey || e.ctrlKey) {
+        const r = omni.raekker[omni.valgt];
+        if (r && r.slags === 'note' && r.id) { window.open(`#note-${r.id}`, '_blank'); return; }
+      }
+      vaelgRaekke(omni.valgt);
+      return;
+    }
     if (e.key === 'Escape') { e.preventDefault(); ryd(); }
   });
 
@@ -7291,6 +7575,26 @@ async function haandterIndsaet(e, felt) {
   }
   if (url && !markeret) {
     e.preventDefault();
+    /*
+     * En adresse ALENE paa en linje bliver staaende bar.
+     *
+     * To af Sagus egne funktioner arbejdede mod hinanden: F3 goer en indsat
+     * adresse til et paent link (`[navn](url)`), og F12 goer en BAR
+     * GitHub-adresse paa sin egen linje til selve koden. Saa snart man
+     * indsatte et GitHub-link, lavede F3 det om - og indlejringen kunne
+     * aldrig ske. »Hvad goer jeg forkert?« var det rigtige spoergsmaal, og
+     * svaret var: ingenting (Andreas, 2026-08-21).
+     *
+     * Reglen er den samme, som indlejringen selv bruger: et link INDE i en
+     * saetning skal have et navn, en adresse alene paa en linje skal ikke.
+     */
+    const foer = felt.value.slice(0, felt.selectionStart);
+    const efter = felt.value.slice(felt.selectionEnd);
+    const alenePaaLinjen = !/[^\n]$/.test(foer) && !/^[^\n]/.test(efter);
+    if (alenePaaLinjen && saguGithub.tolk(url)) {
+      indsaetITekst(felt, url);
+      return true;
+    }
     indsaetITekst(felt, `[${saguMarkdown.pentNavn(url)}](${url})`);
     return true;
   }
@@ -7663,9 +7967,27 @@ function visIkonVaelger(anker, nuvaerende, gem) {
 
 /* ------------------------------------------------- »vis som markdown« */
 
+/**
+ * Hele noten som markdown - ÉT sted.
+ *
+ * Markdown ER det, der ligger i databasen (DESIGN.md §2), saa der er intet at
+ * konvertere og derfor heller intet at tabe. Titlen kommer med som en
+ * overskrift, hvis teksten ikke selv har en: en note indsat i en mail uden
+ * sit navn er svaer at forstaa.
+ *
+ * Baade kopiér-knappen og »Show as markdown« bruger den, saa de to ikke kan
+ * give hver sit svar paa »hvad ER noten«.
+ */
+function noteSomMarkdown(n) {
+  const krop = String((n && n.body) || '');
+  if (/^#\s+/.test(krop.trimStart())) return krop;
+  return `# ${(n && n.title) || 'Untitled'}\n\n${krop}`;
+}
+
 function visMarkdownPanel() {
   const n = editor.note;
   if (!n) return;
+  const md = noteSomMarkdown(n);
   const gammel = document.getElementById('mdpanel');
   if (gammel) { gammel.remove(); return; }
 
@@ -7678,9 +8000,9 @@ function visMarkdownPanel() {
         <h2>${esc(n.title || 'Untitled')} — as markdown</h2>
         <button class="iconbtn" id="mdLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
-      <pre class="mdkilde" id="mdKilde">${esc(n.body)}</pre>
+      <pre class="mdkilde" id="mdKilde">${esc(md)}</pre>
       <div class="modal-fod btnrow">
-        <span class="meta saetning" id="mdSvar">${n.body.length.toLocaleString('en-GB')} characters</span>
+        <span class="meta saetning" id="mdSvar">${md.length.toLocaleString('en-GB')} characters</span>
         <span style="flex:1"></span>
         <button class="btn" id="mdMarker">Select all</button>
         <button class="btn primary" id="mdKopi">Copy</button>
@@ -7700,7 +8022,7 @@ function visMarkdownPanel() {
     svar.textContent = markerTekst(kilde) ? 'Selected — press ⌘C' : 'Could not select';
   });
   host.querySelector('#mdKopi').addEventListener('click', async () => {
-    if (await kopier(n.body)) { svar.textContent = 'Copied.'; return; }
+    if (await kopier(md)) { svar.textContent = 'Copied.'; return; }
     // Ingen blindgyde: markér, saa brugeren selv kan trykke ⌘C.
     svar.textContent = markerTekst(kilde) ? 'Selected — press ⌘C' : 'Could not copy.';
   });
@@ -7860,6 +8182,191 @@ function vaelgFiler() {
     if (filer.length) await tilfoejFiler(filer);
   });
   felt.click();
+}
+
+/* ============================================================ trækhåndtag
+ *
+ * »Fx i notion der kommer der ud for hvert element 6 prikker som man kan
+ * bruge til at trække rundt i noten med« (Andreas, 2026-08-21).
+ *
+ * ── Hvorfor det ligger her og ikke i editoren ─────────────────────────────
+ *
+ * Selve flytningen er `saguMarkdown.flytBlok()` - en ren tekstoperation i det
+ * delte modul, hvor den kan prøves uden en browser. Det her er kun fladen:
+ * hvor håndtaget står, og hvilke to tal trækket ender med at kalde den med.
+ *
+ * ── POINTER-events, ikke HTML5 drag & drop ────────────────────────────────
+ *
+ * Samme valg som træet og lightboxen: HTML5-træk findes ikke på touch. Med
+ * `pointerdown` + `setPointerCapture` er mus, pen og finger den samme kode -
+ * og `touch-action: none` på håndtaget (og kun dér) betyder, at man stadig
+ * kan rulle noten alle andre steder.
+ *
+ * ── Håndtagene tegnes UDEN OM markdown'en ─────────────────────────────────
+ *
+ * Rendereren kunne have skrevet dem ud, men den er delt med serveren og med
+ * de udgivne sider - en offentlig side skal ikke have knapper, ingen kan
+ * bruge. De lægges derfor ovenpå, ud fra `offsetTop` på de blokke, der ER
+ * tegnet. En `ResizeObserver` flytter dem igen, når et billede lander eller
+ * vinduet skifter bredde; uden den ville håndtagene stå ét sted og teksten
+ * et andet, så snart noten voksede.
+ */
+
+const greb = { fra: null, til: null, aktiv: false };
+let grebObs = null;
+
+/** Blokkens nummer i `blokke()` ud fra dens FØRSTE linje (`data-blok`). */
+function blokNrForLinje(linje) {
+  return saguMarkdown.blokke(editor.note.body).findIndex((b) => b.fra === linje);
+}
+
+function ryddGreb(host) {
+  host.querySelectorAll('.blok-greb, .blok-indsaet').forEach((el) => el.remove());
+  if (grebObs) { grebObs.disconnect(); grebObs = null; }
+}
+
+/** Sætter et håndtag ud for hver tegnet blok. */
+function tegnGreb(host) {
+  ryddGreb(host);
+  // Ingen håndtag på en note, man kun må læse: en knap, der ikke kan gøre
+  // noget, er et løfte, appen ikke holder (F11).
+  if (!editor.note || !maaRette(editor.note)) return;
+
+  const blokke = [...host.querySelectorAll('[data-blok]')];
+  if (blokke.length < 2) return;        // ét element kan ikke flyttes nogen steder
+
+  for (const el of blokke) {
+    const g = document.createElement('button');
+    g.className = 'blok-greb';
+    g.type = 'button';
+    g.dataset.greb = el.dataset.blok;
+    g.setAttribute('aria-label', 'Drag to move this block');
+    g.title = 'Drag to move';
+    g.innerHTML = '<span></span><span></span><span></span>'
+      + '<span></span><span></span><span></span>';
+    host.appendChild(g);
+    g.addEventListener('pointerdown', (e) => startTraek(e, host, g));
+  }
+  placerGreb(host);
+
+  if (window.ResizeObserver) {
+    grebObs = new ResizeObserver(() => placerGreb(host));
+    grebObs.observe(host);
+    blokke.forEach((b) => grebObs.observe(b));
+  }
+}
+
+/** Håndtaget følger sin blok - også når noten vokser under den. */
+function placerGreb(host) {
+  host.querySelectorAll('.blok-greb').forEach((g) => {
+    const el = host.querySelector(`[data-blok="${g.dataset.greb}"]`);
+    if (!el) { g.style.display = 'none'; return; }
+    g.style.display = '';
+    // Første tekstlinje frem for blokkens midte: ud for en lang liste skal
+    // håndtaget stå ØVERST, dér hvor listen begynder.
+    g.style.top = `${el.offsetTop + 1}px`;
+  });
+}
+
+/* ------------------------------------------------------------ selve trækket */
+
+function startTraek(e, host, g) {
+  if (e.button != null && e.button > 0) return;   // kun venstre knap
+  e.preventDefault();
+  e.stopPropagation();
+  greb.fra = Number(g.dataset.greb);
+  greb.til = null;
+  greb.aktiv = false;
+  g.setPointerCapture(e.pointerId);
+
+  const startY = e.clientY;
+
+  const linje = document.createElement('div');
+  linje.className = 'blok-indsaet';
+
+  const flyt = (ev) => {
+    /*
+     * Et træk begynder først efter 4 px.
+     *
+     * Uden tærsklen bliver hvert eneste KLIK på håndtaget til et træk på nul
+     * pixel, og så blinker indsætningslinjen ved hver berøring. Det er den
+     * samme grænse, træet i sidebaren bruger.
+     */
+    if (!greb.aktiv) {
+      if (Math.abs(ev.clientY - startY) < 4) return;
+      greb.aktiv = true;
+      host.classList.add('traekker-blok');
+      g.classList.add('greb-aktiv');
+      host.appendChild(linje);
+    }
+    greb.til = maalFor(host, ev.clientY);
+    visLinje(host, linje, greb.til);
+  };
+
+  const slut = () => {
+    g.releasePointerCapture(e.pointerId);
+    g.removeEventListener('pointermove', flyt);
+    g.removeEventListener('pointerup', slut);
+    g.removeEventListener('pointercancel', slut);
+    linje.remove();
+    host.classList.remove('traekker-blok');
+    g.classList.remove('greb-aktiv');
+    if (greb.aktiv && greb.til !== null) fuldfoerTraek();
+    greb.fra = null; greb.til = null; greb.aktiv = false;
+  };
+
+  g.addEventListener('pointermove', flyt);
+  g.addEventListener('pointerup', slut);
+  g.addEventListener('pointercancel', slut);
+}
+
+/**
+ * Hvilken blok skal den lægges FORAN?
+ *
+ * Grænsen går ved hver bloks midte, ikke ved dens kant: så svarer fladen på
+ * det, øjet ser - er markøren i den øverste halvdel af en blok, lander
+ * teksten over den.
+ *
+ * @returns {number} et linjenummer (`data-blok`) eller `Infinity` for »nederst«.
+ */
+function maalFor(host, y) {
+  const blokke = [...host.querySelectorAll('[data-blok]')];
+  for (const el of blokke) {
+    const r = el.getBoundingClientRect();
+    if (y < r.top + r.height / 2) return Number(el.dataset.blok);
+  }
+  return Infinity;
+}
+
+function visLinje(host, linje, maalLinje) {
+  const el = maalLinje === Infinity ? null : host.querySelector(`[data-blok="${maalLinje}"]`);
+  const sidste = [...host.querySelectorAll('[data-blok]')].pop();
+  linje.style.top = el
+    ? `${el.offsetTop - 5}px`
+    : `${sidste.offsetTop + sidste.offsetHeight + 3}px`;
+}
+
+function fuldfoerTraek() {
+  const n = editor.note;
+  if (!n) return;
+  const fraNr = blokNrForLinje(greb.fra);
+  const alle = saguMarkdown.blokke(n.body);
+  const tilNr = greb.til === Infinity ? alle.length : blokNrForLinje(greb.til);
+  if (fraNr < 0 || tilNr < 0) return;
+
+  const ny = saguMarkdown.flytBlok(n.body, fraNr, tilNr);
+  if (ny === n.body) return;            // trækket var ingen flytning
+  n.body = ny;
+  markerBeskidt();
+  /*
+   * Hele noten tegnes om, og det er med vilje.
+   *
+   * Blokkenes linjenumre er FLYTTET af operationen, så hvert eneste
+   * `data-blok` er forældet i samme øjeblik. Et forsøg på kun at flytte ét
+   * element ville lade resten pege på linjer, der nu hører til noget andet.
+   */
+  editor.aabenBlok = null;
+  tegnKrop();
 }
 
 /* ---- p7_udgiv.js ---- */

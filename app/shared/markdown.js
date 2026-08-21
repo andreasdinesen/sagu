@@ -565,6 +565,88 @@
   }
 
   /**
+   * Flytter en blok hen foran en anden. Ren tekst ind, ren tekst ud.
+   *
+   * Den bor HER og ikke i editoren af samme grund som `saetTjek`: det er en
+   * operation paa markdown, og markdown er sandheden. Saa kan den proeves
+   * uden en browser - og traek-og-slip i fladen bliver et spoergsmaal om
+   * hvilke to tal, den skal kaldes med.
+   *
+   * **Linjerne SPLEJSES, de sammensaettes ikke.** Et alternativ var at dele
+   * teksten op i blokke og saette dem sammen igen med tomme linjer imellem -
+   * men saa ville to tomme linjer blive til én, og en overskydende
+   * indrykning forsvinde. En editor, der stiltiende skriver om paa det, nogen
+   * har skrevet, er en editor man holder op med at stole paa (Verdandes spec).
+   *
+   * @param {number} fra  blokkens nummer i `blokke()`
+   * @param {number} til  nummeret paa den blok, den skal ligge FORAN.
+   *                      `blokke().length` betyder »nederst«.
+   */
+  function flytBlok(md, fra, til) {
+    const tekst = String(md == null ? '' : md);
+    const b = blokke(tekst);
+    if (!b[fra] || fra === til || til < 0 || til > b.length) return tekst;
+    // At flytte en blok hen foran sig selv er ingen flytning.
+    if (til === fra + 1) return tekst;
+
+    const linjer = tekst.split('\n');
+    const kilde = b[fra];
+    const stykke = linjer.slice(kilde.fra, kilde.til + 1);
+
+    /*
+     * **Separatoren foelger med blokken.**
+     *
+     * Fjerner man kun selve blokkens linjer, bliver den tomme linje, der
+     * skilte den fra den naeste, tilbage - og saa hober tomme linjer sig op
+     * ét sted, mens der mangler én et andet. Det saa man foerst efter tre-fire
+     * flytninger, hvor noten stille blev luftigere.
+     *
+     * Den tomme linje EFTER blokken hoerer til den; er der ingen (blokken er
+     * den sidste), tages den foran i stedet.
+     */
+    let start = kilde.fra;
+    let antal = kilde.til - kilde.fra + 1;
+    if (kilde.til + 1 < linjer.length && !String(linjer[kilde.til + 1]).trim()) {
+      antal += 1;                                   // den tomme linje efter
+    } else if (kilde.fra > 0 && !String(linjer[kilde.fra - 1]).trim()) {
+      start -= 1;                                   // ... ellers den foran
+      antal += 1;
+    }
+
+    // Indsaettelsespunktet regnes i den OPRINDELIGE nummerering og rettes
+    // bagefter for de linjer, der forsvandt. Regner man det efter fjernelsen,
+    // peger tallene paa noget andet, end man valgte.
+    let indsaet = til >= b.length ? linjer.length : b[til].fra;
+    linjer.splice(start, antal);
+    if (indsaet > start) indsaet -= antal;
+    if (indsaet > linjer.length) indsaet = linjer.length;
+
+    // ... og saettes ind igen MED sin separator, saa to blokke ikke smelter
+    // sammen til én.
+    const med = stykke.slice();
+    if (indsaet >= linjer.length) {
+      /*
+       * Nederst betyder »efter sidste blok« - ikke »efter sidste LINJE«.
+       *
+       * En markdownfil slutter paa et linjeskift, og `split('\n')` goer det
+       * til en tom linje til sidst. Satte man blokken efter DEN, forsvandt
+       * filens afsluttende linjeskift ved hver tur nederst - saa en blok,
+       * der blev trukket ned og op igen, kom tilbage med en tekst, der ikke
+       * var helt den samme (maalt i browseren, 2026-08-21).
+       *
+       * Vi gaar derfor tilbage forbi de tomme linjer og saetter blokken ind
+       * DÉR. Halen faar lov at blive, hvor den er.
+       */
+      while (indsaet > 0 && !String(linjer[indsaet - 1]).trim()) indsaet -= 1;
+      if (indsaet > 0) med.unshift('');   // en tom linje foran, hvis der staar noget over
+    } else {
+      med.push('');
+    }
+    linjer.splice(indsaet, 0, ...med);
+    return linjer.join('\n');
+  }
+
+  /**
    * Et brugernavn, som det skal SES.
    *
    * Kun det foerste tegn, og resten roeres ikke: »andreasD« bliver
@@ -614,5 +696,5 @@
   }
 
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, pentNavn, pentBrugernavn };
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, pentNavn, pentBrugernavn };
 }));

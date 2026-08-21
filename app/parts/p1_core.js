@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -1001,6 +1001,7 @@ function fortsaetTilConnector() {
     document.title = state.config.appName || 'Sagu';
     const me = await api('GET', '/api/me');
     state.user = me.user;
+    state.flereBrugere = !!me.flereBrugere;
     // Var jeg allerede logget ind, da connectoren sendte mig herhen, skal jeg
     // slet ikke se appen - kun samtykkesiden.
     if (state.user && fortsaetTilConnector()) return;

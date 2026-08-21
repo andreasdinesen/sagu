@@ -500,3 +500,71 @@ test('blokke() giver INGEN blokke for en tom eller kun-blank note', () => {
   // ... men ét enkelt tegn ER en blok.
   assert.equal(md.blokke('x').length, 1);
 });
+
+/*
+ * ── flytBlok ──────────────────────────────────────────────────────────────
+ *
+ * Traekhaandtagene i fladen goer én ting: kalder den her med to tal. Derfor
+ * proeves flytningen HER og ikke gennem en browser.
+ *
+ * Den strengeste proeve er ikke, at resultatet ser rigtigt ud, men at teksten
+ * er DEN SAMME efter en tur frem og tilbage. En editor, der lader noten
+ * skifte lidt, hver gang man rykker rundt, aeder det, folk har skrevet - og
+ * det opdager man foerst efter tyve flytninger, hvor skaden er sket.
+ */
+const NOTE = 'Foerste afsnit.\n\n## En overskrift\n\nTredje afsnit.\n\n- a\n- b\n';
+
+test('flytBlok flytter en blok hen foran en anden', () => {
+  assert.equal(md.flytBlok(NOTE, 2, 0),
+    'Tredje afsnit.\n\nFoerste afsnit.\n\n## En overskrift\n\n- a\n- b\n');
+});
+
+test('flytBlok kan lægge en blok nederst — og noten beholder sit sidste linjeskift', () => {
+  assert.equal(md.flytBlok(NOTE, 0, 4),
+    '## En overskrift\n\nTredje afsnit.\n\n- a\n- b\n\nFoerste afsnit.\n');
+});
+
+test('flytBlok: ned i bunden og op igen giver den samme tekst', () => {
+  // Den tur, der afsloerede det manglende linjeskift. Uden den ville hver
+  // rejse forbi bunden barbere ét tegn af noten.
+  const nederst = md.flytBlok(NOTE, 0, 4);
+  assert.equal(md.flytBlok(nederst, 3, 0), NOTE);
+});
+
+test('flytBlok flytter en flerlinjet blok samlet', () => {
+  assert.equal(md.flytBlok(NOTE, 3, 1),
+    'Foerste afsnit.\n\n- a\n- b\n\n## En overskrift\n\nTredje afsnit.\n');
+});
+
+test('flytBlok hverken taber eller tilføjer blokke', () => {
+  const foer = md.blokke(NOTE).length;
+  for (let f = 0; f < foer; f += 1) {
+    for (let t = 0; t <= foer; t += 1) {
+      const ud = md.flytBlok(NOTE, f, t);
+      assert.equal(md.blokke(ud).length, foer, `flyt ${f} -> ${t}`);
+      assert.ok(!/\n\n\n/.test(ud), `tomme linjer hobede sig op: ${f} -> ${t}`);
+    }
+  }
+});
+
+test('flytBlok frem og tilbage giver den samme tekst', () => {
+  // Ned og op igen: blok 0 laegges foran blok 2, og hentes saa tilbage.
+  const ned = md.flytBlok(NOTE, 0, 2);
+  assert.equal(md.flytBlok(ned, 1, 0), NOTE);
+});
+
+test('flytBlok rører ikke teksten, når flytningen ingenting er', () => {
+  assert.equal(md.flytBlok(NOTE, 1, 1), NOTE);   // hen foran sig selv
+  assert.equal(md.flytBlok(NOTE, 1, 2), NOTE);   // hen bagved sig selv
+  assert.equal(md.flytBlok(NOTE, 9, 0), NOTE);   // en blok, der ikke findes
+  assert.equal(md.flytBlok(NOTE, 0, 99), NOTE);  // et sted, der ikke findes
+  assert.equal(md.flytBlok('', 0, 1), '');
+});
+
+test('flytBlok bevarer indrykning og kodeblokke ord for ord', () => {
+  const kode = 'Om noget.\n\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\nSlut.\n';
+  const ud = md.flytBlok(kode, 2, 0);
+  assert.ok(ud.startsWith('Slut.\n\nOm noget.\n\n```js'), ud);
+  // Den tomme linje INDE i kodeblokken maa ikke vaere roert.
+  assert.ok(ud.includes('const a = 1;\n\nconst b = 2;'), ud);
+});

@@ -93,7 +93,8 @@ function tegnLegend() {
     return `<span class="legend-item"><kbd>${esc(d.slice(0, mellemrum))}</kbd>${esc(d.slice(mellemrum + 1))}</span>`;
   }).join('<span class="legend-dot">·</span>')}</span>
     <span class="legend-nav"><span class="legend-item">↑ ↓ Navigate</span>
-      <span class="legend-item">↵ ${esc(enter)}</span></span>`;
+      <span class="legend-item">↵ ${esc(enter)}</span>
+      <span class="legend-item">⌘↵ New tab</span></span>`;
 }
 
 /** Chips under feltet: hvad filtrene BETYDER, mens man skriver dem. */
@@ -239,7 +240,20 @@ function tegnPanel() {
   host.innerHTML = omni.raekker.map((r, i) => {
     const paa = i === omni.valgt ? ' on' : '';
     if (r.slags === 'note') {
-      return `<button class="omni-row${paa}" data-row="${i}">
+      /*
+       * En note-raekke er et RIGTIGT link.
+       *
+       * Den var en `<button>`, og saa kan browserens egen »aabn i ny fane«
+       * ikke bruges: ⌘-klik, midterklik og »Aabn link i ny fane« gjorde
+       * ingenting. Man maatte forlade sin soegning for at se et resultat og
+       * begynde forfra bagefter (Andreas, 2026-08-21).
+       *
+       * `tabindex="-1"`, fordi listen styres med piletasterne - et link i
+       * tabuleringsraekkefoelgen ville lave en anden slags navigation ved
+       * siden af den, der allerede er.
+       */
+      return `<a class="omni-row${paa}" data-row="${i}" tabindex="-1"
+          href="#note-${esc(r.id)}">
           <span class="omni-row-ikon">${icon('notes', 16)}</span>
           <span class="omni-row-tekst">
             <span class="omni-row-titel">${esc(r.etiket)}</span>
@@ -247,7 +261,7 @@ function tegnPanel() {
           </span>
           <span class="omni-row-meta meta">${r.afsnitTitel ? esc(r.afsnitTitel)
     : (r.meta ? esc(r.meta) : '')}</span>
-        </button>`;
+        </a>`;
     }
     const ikon = { ny: 'plus', nybog: 'book', bog: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
     return `<button class="omni-row${paa}${r.slags === 'fejl' ? ' fejl' : ''}" data-row="${i}">
@@ -260,7 +274,16 @@ function tegnPanel() {
 
   host.querySelectorAll('[data-row]').forEach((el) => {
     el.addEventListener('mousedown', (e) => e.preventDefault());   // behold fokus i feltet
-    el.addEventListener('click', () => vaelgRaekke(Number(el.dataset.row)));
+    el.addEventListener('click', (e) => {
+      /*
+       * ⌘/Ctrl-klik, midterklik og shift-klik er browserens egne. Kalder vi
+       * `preventDefault()` paa dem, aabner den nye fane aldrig - og saa har
+       * linket kun set ud som et link.
+       */
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      vaelgRaekke(Number(el.dataset.row));
+    });
   });
 }
 
@@ -289,8 +312,9 @@ async function vaelgRaekke(i) {
   }
   if (r.slags === 'nybog') {
     try {
-      await api('POST', '/api/v1/notebooks', { name: r.tekst });
+      const d = await api('POST', '/api/v1/notebooks', { name: r.tekst });
       await hentTrae();
+      if (d && d.notebook) markerSetOgAaben(d.notebook.id);
       tegnTrae();
       ryd();
       toast(`Notebook "${r.tekst}" created.`);
@@ -397,7 +421,19 @@ function bindOmni() {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); omni.valgt++; tegnPanel(); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); omni.valgt--; tegnPanel(); return; }
-    if (e.key === 'Enter') { e.preventDefault(); vaelgRaekke(omni.valgt); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      /*
+       * ⌘/Ctrl+Enter aabner i en ny fane og lader soegningen staa. Det er
+       * tastaturets udgave af ⌘-klik, og linjen under feltet lover det.
+       */
+      if (e.metaKey || e.ctrlKey) {
+        const r = omni.raekker[omni.valgt];
+        if (r && r.slags === 'note' && r.id) { window.open(`#note-${r.id}`, '_blank'); return; }
+      }
+      vaelgRaekke(omni.valgt);
+      return;
+    }
     if (e.key === 'Escape') { e.preventDefault(); ryd(); }
   });
 

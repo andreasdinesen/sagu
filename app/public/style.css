@@ -1238,6 +1238,9 @@ kbd {
   overscroll-behavior: contain;
 }
 
+/* Note-raekker er `<a>`, resten `<button>`. Reglen skal daekke begge, og et
+   link skal ikke se ud som et link her (F17). */
+a.omni-row { text-decoration: none; }
 .omni-row {
   display: flex;
   align-items: flex-start;
@@ -2251,4 +2254,67 @@ body.traekker { cursor: grabbing; user-select: none; }
 .opskrift-felter code {
   overflow-wrap: anywhere;
   font-size: 12.5px;
+}
+
+/* ------------------------------------------------------ trækhåndtag (F17)
+ *
+ * Håndtaget står i MARGENEN til venstre for teksten, ikke i den. Notion gør
+ * det samme, og grunden er den samme: en note skal se ud som en note, indtil
+ * man vil flytte rundt i den.
+ */
+#noteBody { position: relative; }
+
+.blok-greb {
+  position: absolute;
+  left: -30px;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 3px);
+  grid-auto-rows: 3px;
+  gap: 3px;
+  align-content: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity .12s ease, background .12s ease;
+  /* Kun HER slår vi rulning fra - alle andre steder i noten skal fingeren
+     stadig kunne rulle. */
+  touch-action: none;
+}
+.blok-greb span { width: 3px; height: 3px; border-radius: 50%; background: var(--muted); }
+
+/* Musen: håndtagene dukker op, når man er inde i noten. På en telefon findes
+   hover ikke, så dér står de fremme hele tiden - ellers var funktionen
+   usynlig præcis dér, hvor der ikke er et tastatur at flytte med. */
+#noteBody:hover .blok-greb { opacity: .45; }
+.blok-greb:hover, .blok-greb:focus-visible, .blok-greb.greb-aktiv {
+  opacity: 1;
+  background: var(--hover);
+}
+.blok-greb.greb-aktiv { cursor: grabbing; }
+@media (pointer: coarse) {
+  .blok-greb { opacity: .4; }
+}
+
+/* Under trækket: en linje dér, hvor blokken lander. */
+.blok-indsaet {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+#noteBody.traekker-blok { user-select: none; }
+
+/* Er der ikke plads i margenen - en smal skærm - lægger håndtaget sig ind
+   over kanten af teksten i stedet for at blive klippet væk. */
+@media (max-width: 720px) {
+  .blok-greb { left: -24px; }
 }

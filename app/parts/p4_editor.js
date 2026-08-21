@@ -29,7 +29,18 @@ const editor = {
   beskidt: false,
   sidstGemt: 0,
   konflikt: null,
-  foldede: new Set(),
+  /*
+   * Foldningen LAESES her, ikke bare skrives.
+   *
+   * `laesFoldede()` fandtes, men blev aldrig kaldt: hver eneste foldning blev
+   * skrevet trofast i localStorage og aldrig hentet frem igen. Det saa
+   * rigtigt ud, saa laenge man blev paa siden, og var vaek ved naeste
+   * genindlaesning - en indstilling, appen lod som om den huskede.
+   *
+   * Fundet, fordi de nyfoldede notesboeger stod aabne igen efter en
+   * genindlaesning (Andreas, 2026-08-21).
+   */
+  foldede: laesFoldede(),
 };
 
 /* ------------------------------------------------------------- foldning */
@@ -95,6 +106,60 @@ function gemFoldede() {
   try { localStorage.setItem('sagu_foldede', JSON.stringify([...editor.foldede])); } catch { /* privat */ }
 }
 
+/*
+ * ── En notesbog, man ikke har set foer, starter FOLDET ─────────────────────
+ *
+ * Med syv boeger og tredive importerede sider er sidebaren en mur, foerste
+ * gang man aabner appen paa en ny skaerm. Andreas bad om det modsatte
+ * udgangspunkt: alt lukket, saa man selv folder ud, hvad man skal bruge
+ * (2026-08-21).
+ *
+ * Det naive var at folde alle boeger ved hver indlaesning. Men saettet
+ * husker de FOLDEDE, saa en bog, man har aabnet med vilje, ville blive
+ * lukket igen ved naeste besoeg - appen ville glemme et valg, brugeren har
+ * truffet, og det er vaerre end en lang liste.
+ *
+ * Derfor huskes ogsaa, hvilke boeger vi har SET. Er en bog kendt, staar
+ * brugerens valg; er den ny, folder vi den. Saa gaelder reglen ogsaa den
+ * bog, en import lige har lagt ind.
+ */
+const SETE_NOEGLE = 'sagu_sete_boeger';
+
+function laesSete() {
+  try { return new Set(JSON.parse(localStorage.getItem(SETE_NOEGLE) || '[]')); } catch { return new Set(); }
+}
+
+/**
+ * Folder de notesboeger sammen, vi ikke har moedt foer.
+ *
+ * @returns {boolean} true, hvis noget blev foldet - saa kalderen ved, om
+ *                    traeet skal tegnes om.
+ */
+function foldNyeBoeger() {
+  const sete = laesSete();
+  let aendret = false;
+  for (const b of state.notebooks || []) {
+    if (sete.has(b.id)) continue;
+    sete.add(b.id);
+    editor.foldede.add(b.id);
+    aendret = true;
+  }
+  if (aendret) {
+    try { localStorage.setItem(SETE_NOEGLE, JSON.stringify([...sete])); } catch { /* privat */ }
+    gemFoldede();
+  }
+  return aendret;
+}
+
+/** En bog, brugeren selv har lavet, skal staa aaben - han skal jo bruge den. */
+function markerSetOgAaben(id) {
+  const sete = laesSete();
+  sete.add(id);
+  try { localStorage.setItem(SETE_NOEGLE, JSON.stringify([...sete])); } catch { /* privat */ }
+  editor.foldede.delete(id);
+  gemFoldede();
+}
+
 /* --------------------------------------------------------------- traeet */
 
 async function hentTrae() {
@@ -102,6 +167,7 @@ async function hentTrae() {
     const d = await api('GET', '/api/v1/tree');
     state.notebooks = d.notebooks;
     state.tree = d.notes;
+    foldNyeBoeger();
   } catch (ex) {
     if (ex.status !== 401) toast(ex.message);
     state.tree = state.tree || [];
@@ -413,8 +479,11 @@ function bindTrae() {
       const navn = prompt('Name of the notebook');
       if (!navn) return;
       try {
-        await api('POST', '/api/v1/notebooks', { name: navn });
+        const d = await api('POST', '/api/v1/notebooks', { name: navn });
         await hentTrae();
+        // En bog, man lige har bedt om, skal staa aaben - ellers ser det ud,
+        // som om der ikke skete noget.
+        if (d && d.notebook) markerSetOgAaben(d.notebook.id);
         tegnTrae();
       } catch (ex) { toast(ex.message); }
     });
@@ -977,6 +1046,8 @@ function sideNote() {
         ${maaRette(n) ? '' : 'readonly'}>
       <div class="note-tools">
         <span id="gemMaerke">${gemMaerke()}</span>
+        <button class="iconbtn" id="kopiNote"
+          title="Copy the whole note as markdown">${icon('copy', 15)}</button>
         <button class="iconbtn" id="bredBtn" aria-pressed="${n.fullWidth ? 'true' : 'false'}"
           title="${n.fullWidth ? 'Use reading width' : 'Use the full width'}">${icon('width', 16)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
@@ -1053,6 +1124,7 @@ function tegnKrop() {
     if (window.console) console.error('render fejlede', ex);
   }
   bindKrop();
+  tegnGreb(host);
   byggToc();
 }
 
@@ -1214,6 +1286,9 @@ function tegnMedAabenBlok(host, n) {
   bindTjek(host);
   bindBilleder(host);
   fyldGhIndlejringer(host);
+  // Den AABNE blok har ingen `data-blok` og faar derfor intet haandtag - man
+  // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
+  tegnGreb(host);
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;
@@ -1609,6 +1684,36 @@ function bindNoteSide() {
   if (delKnap) delKnap.addEventListener('click', () => visDelPanel());
   const favKnap = document.getElementById('favBtn');
   if (favKnap) favKnap.addEventListener('click', () => skiftFavorit());
+
+  /*
+   * Hele noten som markdown i udklipsholderen.
+   *
+   * Markdown ER det, der ligger i databasen (DESIGN.md §2), saa der er intet
+   * at konvertere - og derfor heller intet, der kan tabes undervejs. Titlen
+   * kommer med som en overskrift, hvis teksten ikke selv har en: en note
+   * indsat i en mail uden sit navn er svaer at forstaa.
+   *
+   * `navigator.clipboard` kraever et secure context, og Sagu kan naas over
+   * ren http paa LAN-adressen. Knappen falder derfor tilbage til at MARKERE
+   * teksten i en rude, man selv kan kopiere fra - frem for at fejle, naar man
+   * trykker (RUNE-ERFARINGER, tools v1).
+   */
+  const kopiKnap = document.getElementById('kopiNote');
+  if (kopiKnap) {
+    kopiKnap.addEventListener('click', async () => {
+      const note = editor.note;
+      if (!note) return;
+      const md = noteSomMarkdown(note);
+      try {
+        if (!navigator.clipboard) throw new Error('ingen udklipsholder');
+        await navigator.clipboard.writeText(md);
+        toast('The note is on your clipboard as markdown.');
+      } catch {
+        visMarkdownPanel();
+        toast('The browser would not let me copy — here it is to take by hand.');
+      }
+    });
+  }
 
   document.querySelectorAll('[data-krumme]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.krumme));

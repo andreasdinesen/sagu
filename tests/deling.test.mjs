@@ -466,3 +466,39 @@ test('brugernavnet VISES med stort — men gemmes og matches uændret', async ()
   assert.equal(r.data.delt.username, 'bob', 'svaret baerer kontoens rigtige navn');
   assert.equal((await b.kald('GET', `/api/v1/notes/${t.rod.id}`)).status, 200);
 });
+
+/* ============================ er der nogen at dele MED? ================= */
+
+/*
+ * Dele-knappen skal ikke staa paa en server, hvor man er alene: den aabnede
+ * en rude, hvis eneste mulige modtager var én selv (Andreas, 2026-08-21).
+ *
+ * Fladen kan ikke selv taelle konti - kontolisten kraever en session og siger
+ * ikke noget om, hvor mange der er, foer man beder om den. Derfor svarer
+ * `/api/me` paa spoergsmaalet, og det er DET svar, der proeves her.
+ *
+ * Bemaerk hvad der IKKE staar i svaret: et antal. Fladen skal traeffe ét valg
+ * - vis knappen eller lad vaere - og til det er ja/nej nok. Et tal ville
+ * fortaelle enhver bruger, hvor mange konti serveren har.
+ */
+test('/api/me siger, om der er andre konti — som et ja/nej, ikke et tal', async () => {
+  const svar = (await a.kald('GET', '/api/me')).data;
+  assert.equal(svar.flereBrugere, true, 'alice, bob og carol findes alle tre');
+  assert.equal(svar.users, undefined, 'antallet er ikke fladens sag');
+  assert.equal(svar.usernames, undefined);
+});
+
+test('en server med én konto svarer nej — så knappen forsvinder', async () => {
+  const alene = await startServer();
+  try {
+    const en = klient(alene.base);
+    await en.opret('solo', 'kodeord-1234');
+    assert.equal((await en.kald('GET', '/api/me')).data.flereBrugere, false);
+
+    // ... og saa snart der ER en at dele med, skifter svaret. Uden DEN
+    // halvdel kunne serveren svare nej til alt og stadig bestaa proeven.
+    await en.kald('POST', '/api/v1/admin', { allowRegistration: true });
+    await klient(alene.base).opret('nummer-to', 'kodeord-1234');
+    assert.equal((await en.kald('GET', '/api/me')).data.flereBrugere, true);
+  } finally { alene.stop(); }
+});

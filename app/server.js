@@ -3067,7 +3067,16 @@ const ROUTES = {
 
   'GET /api/me': (req, res) => {
     const user = sessionUser(req);
-    sendJson(res, 200, user ? { user } : { user: null });
+    /*
+     * `flereBrugere` er et JA/NEJ, ikke et tal og slet ikke en liste.
+     *
+     * Fladen skal bruge det til én ting: at lade vaere med at vise
+     * dele-knappen paa en server, hvor der ikke ER nogen at dele med
+     * (Andreas, 2026-08-21). Til dét er et boolsk svar nok - og et antal
+     * ville fortaelle enhver bruger, hvor mange konti serveren har, uden at
+     * nogen havde brug for det.
+     */
+    sendJson(res, 200, user ? { user, flereBrugere: userCount() > 1 } : { user: null });
   },
 
   'POST /api/register': async (req, res) => {

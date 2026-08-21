@@ -36,10 +36,21 @@ function maaRette(n) {
   return !n || n.mine !== false || n.level === 'write';
 }
 
-/** Knappen i notens vaerktoejsraekke. Kun paa MINE noter - kun ejeren deler. */
+/**
+ * Knappen i notens vaerktoejsraekke. Kun paa MINE noter - kun ejeren deler.
+ *
+ * Og kun paa en server, hvor der ER nogen at dele med. Paa en énbrugerserver
+ * aabnede knappen en rude, hvor den eneste mulige modtager var én selv - den
+ * lovede noget, appen ikke kunne holde (Andreas, 2026-08-21).
+ *
+ * Er noten ALLEREDE delt, bliver knappen staaende, uanset hvad. Ellers ville
+ * en deling, man har lavet, blive usynlig i samme oejeblik den anden konto
+ * slettes - og saa kunne den hverken ses eller trakkes tilbage.
+ */
 function delKnapHtml(n) {
   if (!n || n.mine === false) return '';
   const paa = !!n.sharedWith;
+  if (!paa && !state.flereBrugere) return '';
   return `<button class="iconbtn${paa ? ' paa' : ''}" id="delBtn"
     aria-pressed="${paa ? 'true' : 'false'}"
     title="${paa ? 'Shared with other accounts' : 'Share with another account'}">${icon('shared', 16)}</button>`;

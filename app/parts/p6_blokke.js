@@ -217,6 +217,26 @@ async function haandterIndsaet(e, felt) {
   }
   if (url && !markeret) {
     e.preventDefault();
+    /*
+     * En adresse ALENE paa en linje bliver staaende bar.
+     *
+     * To af Sagus egne funktioner arbejdede mod hinanden: F3 goer en indsat
+     * adresse til et paent link (`[navn](url)`), og F12 goer en BAR
+     * GitHub-adresse paa sin egen linje til selve koden. Saa snart man
+     * indsatte et GitHub-link, lavede F3 det om - og indlejringen kunne
+     * aldrig ske. »Hvad goer jeg forkert?« var det rigtige spoergsmaal, og
+     * svaret var: ingenting (Andreas, 2026-08-21).
+     *
+     * Reglen er den samme, som indlejringen selv bruger: et link INDE i en
+     * saetning skal have et navn, en adresse alene paa en linje skal ikke.
+     */
+    const foer = felt.value.slice(0, felt.selectionStart);
+    const efter = felt.value.slice(felt.selectionEnd);
+    const alenePaaLinjen = !/[^\n]$/.test(foer) && !/^[^\n]/.test(efter);
+    if (alenePaaLinjen && saguGithub.tolk(url)) {
+      indsaetITekst(felt, url);
+      return true;
+    }
     indsaetITekst(felt, `[${saguMarkdown.pentNavn(url)}](${url})`);
     return true;
   }
@@ -589,9 +609,27 @@ function visIkonVaelger(anker, nuvaerende, gem) {
 
 /* ------------------------------------------------- »vis som markdown« */
 
+/**
+ * Hele noten som markdown - ÉT sted.
+ *
+ * Markdown ER det, der ligger i databasen (DESIGN.md §2), saa der er intet at
+ * konvertere og derfor heller intet at tabe. Titlen kommer med som en
+ * overskrift, hvis teksten ikke selv har en: en note indsat i en mail uden
+ * sit navn er svaer at forstaa.
+ *
+ * Baade kopiér-knappen og »Show as markdown« bruger den, saa de to ikke kan
+ * give hver sit svar paa »hvad ER noten«.
+ */
+function noteSomMarkdown(n) {
+  const krop = String((n && n.body) || '');
+  if (/^#\s+/.test(krop.trimStart())) return krop;
+  return `# ${(n && n.title) || 'Untitled'}\n\n${krop}`;
+}
+
 function visMarkdownPanel() {
   const n = editor.note;
   if (!n) return;
+  const md = noteSomMarkdown(n);
   const gammel = document.getElementById('mdpanel');
   if (gammel) { gammel.remove(); return; }
 
@@ -604,9 +642,9 @@ function visMarkdownPanel() {
         <h2>${esc(n.title || 'Untitled')} — as markdown</h2>
         <button class="iconbtn" id="mdLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
-      <pre class="mdkilde" id="mdKilde">${esc(n.body)}</pre>
+      <pre class="mdkilde" id="mdKilde">${esc(md)}</pre>
       <div class="modal-fod btnrow">
-        <span class="meta saetning" id="mdSvar">${n.body.length.toLocaleString('en-GB')} characters</span>
+        <span class="meta saetning" id="mdSvar">${md.length.toLocaleString('en-GB')} characters</span>
         <span style="flex:1"></span>
         <button class="btn" id="mdMarker">Select all</button>
         <button class="btn primary" id="mdKopi">Copy</button>
@@ -626,7 +664,7 @@ function visMarkdownPanel() {
     svar.textContent = markerTekst(kilde) ? 'Selected — press ⌘C' : 'Could not select';
   });
   host.querySelector('#mdKopi').addEventListener('click', async () => {
-    if (await kopier(n.body)) { svar.textContent = 'Copied.'; return; }
+    if (await kopier(md)) { svar.textContent = 'Copied.'; return; }
     // Ingen blindgyde: markér, saa brugeren selv kan trykke ⌘C.
     svar.textContent = markerTekst(kilde) ? 'Selected — press ⌘C' : 'Could not copy.';
   });
@@ -786,4 +824,189 @@ function vaelgFiler() {
     if (filer.length) await tilfoejFiler(filer);
   });
   felt.click();
+}
+
+/* ============================================================ trækhåndtag
+ *
+ * »Fx i notion der kommer der ud for hvert element 6 prikker som man kan
+ * bruge til at trække rundt i noten med« (Andreas, 2026-08-21).
+ *
+ * ── Hvorfor det ligger her og ikke i editoren ─────────────────────────────
+ *
+ * Selve flytningen er `saguMarkdown.flytBlok()` - en ren tekstoperation i det
+ * delte modul, hvor den kan prøves uden en browser. Det her er kun fladen:
+ * hvor håndtaget står, og hvilke to tal trækket ender med at kalde den med.
+ *
+ * ── POINTER-events, ikke HTML5 drag & drop ────────────────────────────────
+ *
+ * Samme valg som træet og lightboxen: HTML5-træk findes ikke på touch. Med
+ * `pointerdown` + `setPointerCapture` er mus, pen og finger den samme kode -
+ * og `touch-action: none` på håndtaget (og kun dér) betyder, at man stadig
+ * kan rulle noten alle andre steder.
+ *
+ * ── Håndtagene tegnes UDEN OM markdown'en ─────────────────────────────────
+ *
+ * Rendereren kunne have skrevet dem ud, men den er delt med serveren og med
+ * de udgivne sider - en offentlig side skal ikke have knapper, ingen kan
+ * bruge. De lægges derfor ovenpå, ud fra `offsetTop` på de blokke, der ER
+ * tegnet. En `ResizeObserver` flytter dem igen, når et billede lander eller
+ * vinduet skifter bredde; uden den ville håndtagene stå ét sted og teksten
+ * et andet, så snart noten voksede.
+ */
+
+const greb = { fra: null, til: null, aktiv: false };
+let grebObs = null;
+
+/** Blokkens nummer i `blokke()` ud fra dens FØRSTE linje (`data-blok`). */
+function blokNrForLinje(linje) {
+  return saguMarkdown.blokke(editor.note.body).findIndex((b) => b.fra === linje);
+}
+
+function ryddGreb(host) {
+  host.querySelectorAll('.blok-greb, .blok-indsaet').forEach((el) => el.remove());
+  if (grebObs) { grebObs.disconnect(); grebObs = null; }
+}
+
+/** Sætter et håndtag ud for hver tegnet blok. */
+function tegnGreb(host) {
+  ryddGreb(host);
+  // Ingen håndtag på en note, man kun må læse: en knap, der ikke kan gøre
+  // noget, er et løfte, appen ikke holder (F11).
+  if (!editor.note || !maaRette(editor.note)) return;
+
+  const blokke = [...host.querySelectorAll('[data-blok]')];
+  if (blokke.length < 2) return;        // ét element kan ikke flyttes nogen steder
+
+  for (const el of blokke) {
+    const g = document.createElement('button');
+    g.className = 'blok-greb';
+    g.type = 'button';
+    g.dataset.greb = el.dataset.blok;
+    g.setAttribute('aria-label', 'Drag to move this block');
+    g.title = 'Drag to move';
+    g.innerHTML = '<span></span><span></span><span></span>'
+      + '<span></span><span></span><span></span>';
+    host.appendChild(g);
+    g.addEventListener('pointerdown', (e) => startTraek(e, host, g));
+  }
+  placerGreb(host);
+
+  if (window.ResizeObserver) {
+    grebObs = new ResizeObserver(() => placerGreb(host));
+    grebObs.observe(host);
+    blokke.forEach((b) => grebObs.observe(b));
+  }
+}
+
+/** Håndtaget følger sin blok - også når noten vokser under den. */
+function placerGreb(host) {
+  host.querySelectorAll('.blok-greb').forEach((g) => {
+    const el = host.querySelector(`[data-blok="${g.dataset.greb}"]`);
+    if (!el) { g.style.display = 'none'; return; }
+    g.style.display = '';
+    // Første tekstlinje frem for blokkens midte: ud for en lang liste skal
+    // håndtaget stå ØVERST, dér hvor listen begynder.
+    g.style.top = `${el.offsetTop + 1}px`;
+  });
+}
+
+/* ------------------------------------------------------------ selve trækket */
+
+function startTraek(e, host, g) {
+  if (e.button != null && e.button > 0) return;   // kun venstre knap
+  e.preventDefault();
+  e.stopPropagation();
+  greb.fra = Number(g.dataset.greb);
+  greb.til = null;
+  greb.aktiv = false;
+  g.setPointerCapture(e.pointerId);
+
+  const startY = e.clientY;
+
+  const linje = document.createElement('div');
+  linje.className = 'blok-indsaet';
+
+  const flyt = (ev) => {
+    /*
+     * Et træk begynder først efter 4 px.
+     *
+     * Uden tærsklen bliver hvert eneste KLIK på håndtaget til et træk på nul
+     * pixel, og så blinker indsætningslinjen ved hver berøring. Det er den
+     * samme grænse, træet i sidebaren bruger.
+     */
+    if (!greb.aktiv) {
+      if (Math.abs(ev.clientY - startY) < 4) return;
+      greb.aktiv = true;
+      host.classList.add('traekker-blok');
+      g.classList.add('greb-aktiv');
+      host.appendChild(linje);
+    }
+    greb.til = maalFor(host, ev.clientY);
+    visLinje(host, linje, greb.til);
+  };
+
+  const slut = () => {
+    g.releasePointerCapture(e.pointerId);
+    g.removeEventListener('pointermove', flyt);
+    g.removeEventListener('pointerup', slut);
+    g.removeEventListener('pointercancel', slut);
+    linje.remove();
+    host.classList.remove('traekker-blok');
+    g.classList.remove('greb-aktiv');
+    if (greb.aktiv && greb.til !== null) fuldfoerTraek();
+    greb.fra = null; greb.til = null; greb.aktiv = false;
+  };
+
+  g.addEventListener('pointermove', flyt);
+  g.addEventListener('pointerup', slut);
+  g.addEventListener('pointercancel', slut);
+}
+
+/**
+ * Hvilken blok skal den lægges FORAN?
+ *
+ * Grænsen går ved hver bloks midte, ikke ved dens kant: så svarer fladen på
+ * det, øjet ser - er markøren i den øverste halvdel af en blok, lander
+ * teksten over den.
+ *
+ * @returns {number} et linjenummer (`data-blok`) eller `Infinity` for »nederst«.
+ */
+function maalFor(host, y) {
+  const blokke = [...host.querySelectorAll('[data-blok]')];
+  for (const el of blokke) {
+    const r = el.getBoundingClientRect();
+    if (y < r.top + r.height / 2) return Number(el.dataset.blok);
+  }
+  return Infinity;
+}
+
+function visLinje(host, linje, maalLinje) {
+  const el = maalLinje === Infinity ? null : host.querySelector(`[data-blok="${maalLinje}"]`);
+  const sidste = [...host.querySelectorAll('[data-blok]')].pop();
+  linje.style.top = el
+    ? `${el.offsetTop - 5}px`
+    : `${sidste.offsetTop + sidste.offsetHeight + 3}px`;
+}
+
+function fuldfoerTraek() {
+  const n = editor.note;
+  if (!n) return;
+  const fraNr = blokNrForLinje(greb.fra);
+  const alle = saguMarkdown.blokke(n.body);
+  const tilNr = greb.til === Infinity ? alle.length : blokNrForLinje(greb.til);
+  if (fraNr < 0 || tilNr < 0) return;
+
+  const ny = saguMarkdown.flytBlok(n.body, fraNr, tilNr);
+  if (ny === n.body) return;            // trækket var ingen flytning
+  n.body = ny;
+  markerBeskidt();
+  /*
+   * Hele noten tegnes om, og det er med vilje.
+   *
+   * Blokkenes linjenumre er FLYTTET af operationen, så hvert eneste
+   * `data-blok` er forældet i samme øjeblik. Et forsøg på kun at flytte ét
+   * element ville lade resten pege på linjer, der nu hører til noget andet.
+   */
+  editor.aabenBlok = null;
+  tegnKrop();
 }
