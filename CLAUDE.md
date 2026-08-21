@@ -42,6 +42,13 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **Søgeindekset har INGEN `user_id`** (m12). Et indeks afgrænser ikke adgang — `SYNLIG`
   gør, på `notes`. Filteret kunne aldrig finde en delt note, og kolonnen, der blev
   tilbage, lignede en spærring uden at være en. En formregel holder filteret væk.
+- **Ét sted tegner OG binder.** `tegnGenveje()`/`tegnTrae()` fylder deres element og
+  binder i samme åndedrag; markup'en må ikke ALDRIG også laves af `shellHtml()`. Gør den
+  det, står punkterne uden klik-handler efter hver sideindlæsning — de ser rigtige ud og
+  gør ingenting, til noget andet tilfældigvis tegner dem om.
+- **En markering er ikke en anmodning om at redigere.** Klikket, der afslutter et træk hen
+  over teksten, må ikke åbne den rå blok: så kan man hverken kopiere tekst eller nå
+  »Send to doda«-knappen.
 - **`maaRette()` er ét sted**, brugt af de fire steder en redigering kan begynde:
   titelfeltet, at åbne en blok, tjekbokse og mærkerækken. `aabnSidste()` har sin egen
   kopi af vagten, fordi dens tomme gren går uden om `aabnBlok()`.

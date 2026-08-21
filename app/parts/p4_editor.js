@@ -1116,6 +1116,26 @@ function bindKrop() {
   // selv efter foerste klik, saa man kunne aabne én blok pr. optegning og
   // derefter ingenting - og fejlen ville ligne "editoren gaar i staa".
   host.addEventListener('click', (e) => {
+    /*
+     * **Har man MARKERET noget, aabner klikket ikke redigeringen.**
+     *
+     * Et traek hen over teksten ender med et `click` paa afsnittet, og saa
+     * gjorde den hybride editor det, den plejer: aabnede afsnittet raat. Det
+     * ryddede markeringen i samme oejeblik, den var faerdig.
+     *
+     * To ting var i stykker af det, og den foerste er den vigtigste:
+     *  - **man kunne ikke markere tekst for at KOPIERE den** - fladen hoppede
+     *    i redigering, hver gang man proevede,
+     *  - og F16's »Send to doda«-knap kunne aldrig naa at komme frem, fordi
+     *    den netop naegter at vise sig, mens en blok er aaben.
+     *
+     * Et markeret stykke tekst er en handling i sig selv. Klikket, der
+     * afslutter den, er ikke en anmodning om at redigere.
+     */
+    const valg = window.getSelection();
+    if (valg && !valg.isCollapsed && String(valg).trim().length > 1
+        && host.contains(valg.getRangeAt(0).commonAncestorContainer)) return;
+
     // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
     // ellers har man byttet én irritation for en vaerre (doda v37).
     const a = e.target.closest('a');

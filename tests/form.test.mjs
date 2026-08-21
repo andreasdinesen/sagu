@@ -399,3 +399,24 @@ test('sw.js og index.html baerer SAMME version som APP_VERSION', () => {
       `sw.js precacher ikke ${fil} med sin version`);
   }
 });
+
+/*
+ * Her stod en regel om, at markup med en `bind`-partner kun måtte laves af
+ * sin egen `tegn`-funktion. **Den er fjernet igen med vilje.**
+ *
+ * Den fandt den rigtige fejl (`genvejeHtml()` blev tegnet af `shellHtml()`,
+ * men kun bundet af `tegnGenveje()`, så »Recent« ikke virkede efter en
+ * sideindlæsning) — men den fældede også tre steder, der er helt i orden:
+ * `maerkerHtml`, `kommentarerHtml` og `dodaOpgaverHtml` tegnes af
+ * `sideNote()` og bindes af `bindNoteSide()`. Det er en anden, korrekt vej.
+ *
+ * At skelne dem kræver at følge kaldegrafen fra hvert tegnested til dets
+ * egen binder, og en formregel, der er så indviklet, at man ikke kan
+ * gennemskue den, er selv en byrde. **En regel, der råber op om kode, der er
+ * i orden, bliver slettet af den næste, der bliver træt af den — og så er
+ * den rigtige regel væk med den** (samme lærdom som SQL-template-reglen
+ * ovenfor, lært samme dag).
+ *
+ * Reglen står derfor i `CLAUDE.md` som noget, et menneske skal vide:
+ * ét sted tegner OG binder.
+ */

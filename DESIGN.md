@@ -2723,3 +2723,48 @@ session får den som før; en `capture`-nøgle får sit id og en linje.
 **Reglen er generel og værd at holde fast i: et svar må aldrig bære mere, end
 kaldet bad om.** Et scope, der sænkes, skal måles på svaret — ikke kun på
 adgangen.
+
+## 31 · To ting, der så rigtige ud og gjorde ingenting
+
+### »Recent« virkede ikke efter en sideindlæsning
+
+`tegnGenveje()` fylder `#navGenveje` **og** binder klik-handlerne. Men
+`shellHtml()` kaldte allerede `genvejeHtml()` direkte, så efter en fuld
+optegning — altså hver sideindlæsning — stod punkterne under »Recent« og
+»Favourites« i DOM'en uden nogen handler. De så rigtige ud og gjorde
+ingenting, indtil noget andet tilfældigvis tegnede dem om (at åbne en note
+gør det).
+
+Kuren er **ikke** et bind-kald mere ved siden af det første; det ville være
+det samme problem én linje senere. Skallen tegner nu et tomt element, og
+`bindShell()` kalder `tegnGenveje()` — nøjagtig som den allerede gjorde med
+`tegnTrae()`. **Ét sted tegner og binder, så de to ikke kan skilles ad.**
+
+### En markering var også et klik
+
+I den hybride editor åbner et klik på et afsnit det som rå markdown. Et træk
+hen over teksten ender med netop sådan et klik — så markeringen blev ryddet i
+samme øjeblik, den var færdig.
+
+To ting var i stykker af det, og den første er den vigtigste: **man kunne ikke
+markere tekst for at kopiere den.** Fladen hoppede i redigering, hver gang man
+prøvede. Og F16's »Send to doda«-knap kunne aldrig nå frem, fordi den netop
+nægter at vise sig, mens en blok er åben — så funktionen fra v5 har i praksis
+ikke kunnet bruges.
+
+Et markeret stykke tekst er en handling i sig selv. Klikket, der afslutter
+den, er ikke en anmodning om at redigere.
+
+### En formregel, der blev fjernet igen
+
+Jeg skrev en regel om, at markup med en `bind`-partner kun må laves af sin
+egen `tegn`-funktion. Den fandt den rigtige fejl — og fældede tre steder, der
+er helt i orden (`maerkerHtml`, `kommentarerHtml` og `dodaOpgaverHtml` tegnes
+af `sideNote()` og bindes af `bindNoteSide()`, en anden og korrekt vej).
+
+At skelne dem kræver at følge kaldegrafen fra hvert tegnested til dets egen
+binder, og en formregel, man ikke kan gennemskue, er selv en byrde. Reglen står
+i stedet i `CLAUDE.md` som noget, et menneske skal vide. **Samme lærdom som
+SQL-template-reglen samme dag: mål den faktiske fejl, ikke noget der ligner
+den — og en regel, der råber op om kode, der er i orden, bliver slettet af den
+næste.**

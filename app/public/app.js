@@ -2521,7 +2521,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -2948,7 +2948,8 @@ function shellHtml() {
         <button class="pinbtn" id="pinBtn" aria-label="Hide the menu"
           title="Hide the menu">${icon('pin', 16)}</button></div>
       <div id="navHost">${navHtml()}</div>
-      <div id="navGenveje">${genvejeHtml()}</div>
+      <!-- Fyldes af tegnGenveje() i bindShell, praecis som traeet nedenfor. -->
+      <div id="navGenveje"></div>
       <div id="treeHost" class="treehost"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
@@ -3053,6 +3054,20 @@ function bindShell() {
   bindTemaKnap();
   bindOmni();
   tegnLegend();
+  /*
+   * Favoritter og spor tegnes HER - ikke i `shellHtml()`.
+   *
+   * De stod som markup inde i skallen, men blev kun BUNDET af
+   * `tegnGenveje()`. Efter en fuld optegning - altsaa hver sideindlaesning -
+   * havde punkterne under »Recent« og »Favourites« derfor ingen klik-handler:
+   * de saa rigtige ud og gjorde ingenting, indtil noget andet tilfaeldigvis
+   * kaldte `tegnGenveje()` (Andreas, 2026-08-21).
+   *
+   * Kuren er ikke et kald mere ved siden af det foerste - det ville vaere
+   * det samme problem én linje senere. **Ét sted tegner OG binder**, praecis
+   * som `tegnTrae()` under her. Saa kan de to ikke skilles ad igen.
+   */
+  tegnGenveje();
   tegnTrae();
   document.getElementById('userBtn').addEventListener('click', visBrugerMenu);
   saetNavSkjult(navErSkjult());
@@ -5869,6 +5884,26 @@ function bindKrop() {
   // selv efter foerste klik, saa man kunne aabne én blok pr. optegning og
   // derefter ingenting - og fejlen ville ligne "editoren gaar i staa".
   host.addEventListener('click', (e) => {
+    /*
+     * **Har man MARKERET noget, aabner klikket ikke redigeringen.**
+     *
+     * Et traek hen over teksten ender med et `click` paa afsnittet, og saa
+     * gjorde den hybride editor det, den plejer: aabnede afsnittet raat. Det
+     * ryddede markeringen i samme oejeblik, den var faerdig.
+     *
+     * To ting var i stykker af det, og den foerste er den vigtigste:
+     *  - **man kunne ikke markere tekst for at KOPIERE den** - fladen hoppede
+     *    i redigering, hver gang man proevede,
+     *  - og F16's »Send to doda«-knap kunne aldrig naa at komme frem, fordi
+     *    den netop naegter at vise sig, mens en blok er aaben.
+     *
+     * Et markeret stykke tekst er en handling i sig selv. Klikket, der
+     * afslutter den, er ikke en anmodning om at redigere.
+     */
+    const valg = window.getSelection();
+    if (valg && !valg.isCollapsed && String(valg).trim().length > 1
+        && host.contains(valg.getRangeAt(0).commonAncestorContainer)) return;
+
     // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
     // ellers har man byttet én irritation for en vaerre (doda v37).
     const a = e.target.closest('a');

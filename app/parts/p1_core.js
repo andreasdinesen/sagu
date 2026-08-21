@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -432,7 +432,8 @@ function shellHtml() {
         <button class="pinbtn" id="pinBtn" aria-label="Hide the menu"
           title="Hide the menu">${icon('pin', 16)}</button></div>
       <div id="navHost">${navHtml()}</div>
-      <div id="navGenveje">${genvejeHtml()}</div>
+      <!-- Fyldes af tegnGenveje() i bindShell, praecis som traeet nedenfor. -->
+      <div id="navGenveje"></div>
       <div id="treeHost" class="treehost"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
@@ -537,6 +538,20 @@ function bindShell() {
   bindTemaKnap();
   bindOmni();
   tegnLegend();
+  /*
+   * Favoritter og spor tegnes HER - ikke i `shellHtml()`.
+   *
+   * De stod som markup inde i skallen, men blev kun BUNDET af
+   * `tegnGenveje()`. Efter en fuld optegning - altsaa hver sideindlaesning -
+   * havde punkterne under »Recent« og »Favourites« derfor ingen klik-handler:
+   * de saa rigtige ud og gjorde ingenting, indtil noget andet tilfaeldigvis
+   * kaldte `tegnGenveje()` (Andreas, 2026-08-21).
+   *
+   * Kuren er ikke et kald mere ved siden af det foerste - det ville vaere
+   * det samme problem én linje senere. **Ét sted tegner OG binder**, praecis
+   * som `tegnTrae()` under her. Saa kan de to ikke skilles ad igen.
+   */
+  tegnGenveje();
   tegnTrae();
   document.getElementById('userBtn').addEventListener('click', visBrugerMenu);
   saetNavSkjult(navErSkjult());
