@@ -2421,3 +2421,64 @@ kopi i ejerens browser kan vise noget, der er trukket tilbage.
 | Prøvet med serveren slukket | app, sidebar, træ, favoritter, spor og noter — alt kunne læses |
 | Tests | 374 grønne, 1 sprunget over (+2 formregler, +1 markdown-præmis) |
 | Fundet ved at prøve frem for ved at teste | 3 fejl i selve offline-laget, og 4 i det, driften rapporterede |
+
+## 24 · F15 · At skrive uden net
+
+**Bygget 2026-08-21.** Køen, F14 udskød.
+
+### Én række pr. NOTE, ikke én pr. tastetryk
+
+Retter man den samme note tre gange offline, er det den sidste tekst, der er
+meningen. En logbog ville afspille tre gemninger oven i hinanden og kunne
+genopvække en halvfærdig mellemtilstand. Samme regel som `note_visits` i F13 —
+og det er tredje gang i dette projekt, at svaret på »skal jeg gemme hændelser
+eller tilstand?« er **tilstand**.
+
+### Konflikten er den svære del, ikke køen
+
+Sagu havde konfliktvagten i forvejen: hver gemning sender `ifUpdatedAt`, og
+serveren afviser med 409, hvis noten er ændret et andet sted. Køen bruger
+**den samme** vagt frem for at opfinde en ny.
+
+Det afgørende er *hvilket* stempel den gemmer: **det, man startede fra** — ikke
+det nyeste. Skubbes det frem ved hver ny offline-rettelse, ender vagten med at
+sammenligne med sig selv og siger god for alt, og en rettelse, der har ligget i
+lommen en dag, overskriver stiltiende alt, hvad der er sket i mellemtiden.
+
+Går en synkronisering i konflikt, bliver rækken **liggende** og bliver **vist**.
+Den må aldrig kastes væk: køen er det eneste sted, den tekst findes. Panelet
+viser begge udgaver — man kan ikke vælge mellem »min« og »deres« uden at kunne
+læse dem, og det er den eneste skærm i appen, hvor et forkert klik koster noget,
+der ikke kan hentes tilbage.
+
+En note, der er **slettet** i mellemtiden, behandles som en konflikt frem for
+som en fejl. Teksten er det eneste, der er tilbage af den.
+
+### `navigator.onLine` er ikke svaret på »er jeg online?«
+
+Den kender kun netkortet. Den er sand, når man hænger på et wifi uden
+internet, og når serveren er nede — og båndet sagde derfor *»Sending 1
+change…«*, mens ingenting blev sendt.
+
+**Det, der afgør, om vi er offline, er om vi kan nå serveren.** `api()` sætter
+tilstanden på et fejlet kald og rydder den på et svar fra serveren; et svar
+fra service workerens cache tæller ikke som kontakt.
+
+### Målt
+
+| | |
+|---|---|
+| Prøvet med serveren slukket | rettelse parkeret, bånd »Offline — 1 change waiting«, mærket »Waiting for network« |
+| Ved genstart af serveren | køen tømte sig selv, teksten stod på serveren, båndet forsvandt |
+| Konflikt | provokeret med en rigtig fremmed rettelse: rækken blev liggende, panelet viste begge tekster, »Keep mine« skrev min igennem |
+
+### Det, der stadig ikke er bygget
+
+**At oprette en note offline.** Den ville skulle have et midlertidigt id, som
+derefter skulle skiftes ud overalt — i træet, i favoritterne, i `[[links]]`, i
+adresselinjen. At bygge halvdelen ville give noter, der peger på et id, som
+ikke findes.
+
+Kommentarer, filer og udgivelser køer heller ikke. De er handlinger, ikke
+tekst man har skrevet — og en handling, der udføres en time for sent, er
+sjældent den, man mente.

@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -116,6 +116,16 @@ async function api(method, path, body) {
     //
     // Ingen `status`: koden andetsteds skelner netvaerksbrud fra afslag
     // netop paa den.
+    /*
+     * Et fejlet kald ER offline, set fra appen.
+     *
+     * `navigator.onLine` kender kun netkortet - den er sand, naar man haenger
+     * paa et wifi uden internet, eller naar serveren er nede. Baandet sagde
+     * derfor »Sending 1 change…«, mens ingenting blev sendt. **Det, der
+     * afgoer, om vi er offline, er om vi kan naa serveren** - ikke hvad
+     * browseren mener om ledningen (F15).
+     */
+    saetOffline(true);
     throw Object.assign(
       new Error('No connection — this needs the network. Try again when you are back.'),
       { offline: true });
@@ -128,7 +138,11 @@ async function api(method, path, body) {
    * vaerre end en, der siger »her er intet«: man traeffer beslutninger paa
    * noget, man tror er nyt (F14).
    */
-  if (typeof saetOffline === 'function') saetOffline(res.headers.get('X-Sagu-Offline') === '1');
+  /*
+   * Kom svaret fra serveren, er vi online igen - ogsaa selv om ingen
+   * `online`-haendelse er kommet. Kom det fra cachen, er vi ikke.
+   */
+  saetOffline(res.headers.get('X-Sagu-Offline') === '1');
 
   let data = {};
   try { data = await res.json(); } catch { /* tomt svar er i orden */ }
@@ -413,9 +427,9 @@ function shellHtml() {
       </div>
     </aside>
     <main class="main">
-      <div class="offline-baand" id="offlineBaand" ${state.offline ? '' : 'hidden'}>
+      <div class="offline-baand" id="offlineBaand" hidden>
         ${icon('offline', 15)}
-        <span>Offline — showing what was loaded last. Changes are not saved until you are back.</span>
+        <span class="baand-tekst">Offline — showing what was loaded last.</span>
       </div>
       <div class="topbar">
         <div class="toprow">
@@ -678,6 +692,7 @@ function visBrugerMenu() {
        * er en helt anden aftale end den, »log ud« giver indtryk af (F14).
        */
       ryddOffline();
+      ryddKoe();
       await api('POST', '/api/logout', {});
       state.user = null;
       state.gateMode = 'login';
@@ -819,15 +834,25 @@ function ryddOffline() {
 function saetOffline(gammelt) {
   const nu = !!gammelt;
   if (state.offline === nu) return;
+  const varOffline = state.offline;
   state.offline = nu;
-  const b = document.getElementById('offlineBaand');
-  if (b) b.hidden = !nu;
+  // Kommer vi tilbage, saa send det, der venter - uden at vente paa
+  // browserens `online`-haendelse, som maaske aldrig kommer.
+  if (varOffline && !nu && typeof synkKoe === 'function') synkKoe();
+  // Baandets TEKST skrives ét sted (`visKoeBaand`), fordi den skal kunne sige
+  // baade »offline« og »der venter tre rettelser« - og de to er den samme
+  // besked set fra hver sin side.
+  visKoeBaand();
 }
 
 window.addEventListener('online', () => {
   saetOffline(false);
-  // Hent det rigtige igen med det samme - man har ventet paa det.
-  if (state.user) hentState().then(() => tegnSide()).catch(() => {});
+  // Send det, der venter, FOER vi henter: ellers henter vi den gamle udgave
+  // ned oven i den rettelse, der stod i koen (F15).
+  synkKoe().then(() => {
+    if (state.user) return hentState().then(() => tegnSide());
+    return null;
+  }).catch(() => {});
 });
 window.addEventListener('offline', () => saetOffline(true));
 
@@ -870,6 +895,12 @@ function fortsaetTilConnector() {
     if (state.user) await hentState();
     // Favoritter og spor hentes ÉN gang her - ikke ved hver optegning.
     if (state.user) await hentGenveje();
+    /*
+     * Koen laeses FOER foerste optegning, saa baandet kan sige det med det
+     * samme - og sendes bagefter. Browseren kan vaere lukket, mens den var
+     * offline, saa `online`-haendelsen kommer aldrig (F15).
+     */
+    if (state.user) { laesKoe(); }
   } catch (ex) {
     document.getElementById('root').innerHTML =
       `<div class="gate"><div class="card"><div class="brand">${icon('logo', 26)} Sagu</div>
@@ -877,6 +908,8 @@ function fortsaetTilConnector() {
     return;
   }
   render();
+  visKoeBaand();
+  if (state.user && navigator.onLine) synkKoe(true);
   aabnFraAdressen();
   // Feltet skal have fokus ved opstart - man aabner et arkiv for at finde
   // noget. Ikke paa mobil: dér ville tastaturet daekke halve skaermen.

@@ -14,8 +14,8 @@ det private notearkiv og de offentlige wiki'er på `<arbejdsrum>.notion.site`.
 
 | | |
 |---|---|
-| **Fase** | **F0–F14 bygget, 2026-08-21.** v2 er udgivet og i drift på Hjorten. |
-| **Næste** | **v3** — fire driftsfejl rettet + offline (F14). Venter på et ja. |
+| **Fase** | **F0–F15 bygget, 2026-08-21.** v2 er udgivet og i drift på Hjorten. |
+| **Næste** | **v4** — offline-køen (F15) og fire rettelser mere. Venter på et ja. |
 | **Tilstand** | 374 tests grønne (1 sprunget over). Install-scriptet **henter app-koden fra GitHub** og er **1.640 / 126.000 tegn (1,3 %)**, konstant uanset appens størrelse; runens YAML 242.624 → 5.610 b. Payloaden ville indlejret være 154.293 tegn (122,5 %) — appen er for stor til den gamle vej. |
 | **Repoet** | **Offentligt** (Andreas, 2026-08-21) efter en audit — `DESIGN.md` §13. Fire fund fjernet; intet hemmeligt fandtes. |
 | **Udgivet version** | **v2** (F0–F13), i drift på Hjorten. Rettelserne efter v2 og F14 (offline) venter på et ja til v3. |
@@ -657,6 +657,12 @@ når nogen laver en underside eller flytter en.
 
 **338 tests grønne**, 15 sabotager set fejle — og én sabotage uden røde, som afslørede
 en kolonne i søgeindekset, ingen læste (m12). Detaljerne i `DESIGN.md` §19.
+
+### F15 · At skrive uden net — **BYGGET 2026-08-21** *(kom til efter planen)*
+Køen, F14 udskød. Én række pr. note, konflikten løst med den vagt, der fandtes i
+forvejen, og begge tekster vist, før man vælger. **At oprette** en note offline er
+stadig ikke bygget — den kræver midlertidige id'er, der skal skiftes ud overalt.
+Detaljerne i `DESIGN.md` §24.
 
 ### F14 · Offline — **BYGGET 2026-08-21** *(kom til efter planen)*
 Andreas' ønske efter v2: »vigtigste er at man kan se noter offline«.

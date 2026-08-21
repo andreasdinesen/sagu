@@ -64,6 +64,11 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   cachenavnet ikke, kan workeren servere en gammel `app.js` i det uendelige (doda v39).
 - **Offline-cachen ryddes ved log ud.** En cache overlever en session; »log ud« skal
   betyde, at noterne er væk fra telefonen.
+- **Offline-køen har ÉN række pr. note**, ikke én pr. rettelse — og den gemmer det
+  `ifUpdatedAt`, man **startede** fra. Skubbes stemplet frem, sammenligner konfliktvagten
+  med sig selv og siger god for alt.
+- **En konflikt i køen kastes ALDRIG væk.** Køen er det eneste sted, den tekst findes.
+- **`navigator.onLine` afgør ikke, om vi er offline** — det gør, om serveren svarer.
 - **Wikien caches aldrig offline.** En offentlig side hører til den besøgende, og en kopi
   kan vise noget, der er trukket tilbage. En flade, der lader dig skrive
   og først afviser ved gemningen, ligner en fejl i appen — ikke en spærring.

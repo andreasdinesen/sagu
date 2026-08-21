@@ -771,6 +771,31 @@ a.gh-navn:hover { text-decoration: underline; }
   color: var(--muted);
 }
 .offline-baand svg { color: var(--accent); flex: none; }
+/* Venter der en konflikt, er baandet ikke laengere en oplysning - det er
+   noget, der skal tages stilling til (F15). */
+.offline-baand.har-strid { border-left-color: var(--danger); }
+.offline-baand.har-strid svg { color: var(--danger); }
+.offline-baand .linkbtn { padding: 0; }
+
+/* Konfliktpanelet: begge tekster skal kunne LAESES, foer man vaelger. */
+.strid { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+.strid:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.strid h3 { margin: 0 0 4px; font-size: 17px; }
+.strid h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); }
+.strid-side pre {
+  margin: 0;
+  max-height: 14em;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.strid .btnrow { margin-top: 14px; }
 
 .genvejsliste { margin-top: 2px; }
 /* Titlen ER knappen, naar sektionen kan foldes (F13/F14). Fuld bredde og

@@ -22,6 +22,8 @@ const editor = {
   aabenBlok: null,        // linjenummeret paa den blok, der redigeres raat
   gemTimer: null,
   gemmer: false,
+  // F15: rettelsen ligger i koen og venter paa net.
+  parkeret: false,
   beskidt: false,
   sidstGemt: 0,
   konflikt: null,
@@ -566,6 +568,24 @@ async function opretOgAaben(felter) {
  * overskrive det andet.
  */
 async function aabnNote(id) {
+  /*
+   * Luk sidemenuen. HER, og ikke i hvert kaldssted - og FOER den tidlige
+   * returnering nedenfor.
+   *
+   * `gaaTil()` gjorde det allerede for skaermene, men en note aabnes ad
+   * mindst seks veje - traeet, favoritterne, sporet, et soegeresultat, et
+   * baglaens link og et `[[link]]` i teksten. Paa en telefon ligger menuen
+   * hen over noten, saa man valgte en note og saa ... menuen (Andreas,
+   * 2026-08-21).
+   *
+   * Klassen fjernes ubetinget: paa en bred skaerm betyder den ingenting.
+   *
+   * Og den fjernes FOER vagten mod »samme note igen«. Trykker man paa den
+   * note, man allerede staar paa, er oensket stadig at SE den - saa en tidlig
+   * returnering, der springer lukningen over, efterlader menuen hen over
+   * netop det, man bad om.
+   */
+  document.body.classList.remove('navopen');
   if (editor.note && editor.note.id === id && !editor.indlaeser) return;
   await gemNu();
   editor.indlaeser = id;
@@ -580,6 +600,7 @@ async function aabnNote(id) {
     editor.indlaeser = null;
     editor.note = d.note;
     editor.beskidt = false;
+    editor.parkeret = false;
     editor.sidstGemt = Date.now();
     kom.svarPaa = null;
     kom.redigerer = null;
@@ -825,6 +846,9 @@ function gemMaerke() {
    */
   if (!maaRette(editor.note)) return '<span class="gem">Read only</span>';
   if (editor.konflikt) return '<span class="gem konflikt">Not saved — conflict</span>';
+  // Parkeret er hverken »gemt« eller »ikke gemt«: det ligger sikkert paa
+  // telefonen og venter paa net. Maerket skal sige praecis dét (F15).
+  if (editor.parkeret && !editor.beskidt) return '<span class="gem">Waiting for network</span>';
   if (editor.gemmer) return '<span class="gem">Saving…</span>';
   if (editor.beskidt) return '<span class="gem">Unsaved</span>';
   return '<span class="gem ok">Saved</span>';
@@ -1228,6 +1252,24 @@ async function gemNu() {
     if (ex.status === 409) {
       editor.konflikt = true;
       tegnSide();
+      return;
+    }
+    /*
+     * Uden net: PARKÉR rettelsen frem for bare at klage (F15).
+     *
+     * `ex.offline` saettes af `api()`, naar selve forbindelsen fejlede - ikke
+     * naar serveren afviste. Forskellen er hele pointen: et afslag skal man
+     * se, et netvaerksbrud skal man ikke straffes for.
+     *
+     * `beskidt` ryddes, naar det er parkeret. Ellers ville den planlagte
+     * gemning proeve igen hvert sekund og lave en ny fejlbesked hver gang -
+     * og den tekst, man skrev, ER i sikkerhed nu.
+     */
+    if (ex.offline) {
+      if (parkér(n)) {
+        editor.beskidt = false;
+        editor.parkeret = true;
+      }
       return;
     }
     toast(ex.message);
