@@ -237,7 +237,8 @@ test('/authorize afviser ukendt klient, fremmed redirect og dårlig PKCE', async
   assert.equal(ok.status, 200);
   assert.match(ok.html, /Kontrol/);
   assert.match(ok.html, /wants to connect/);
-  assert.match(ok.html, /Signed in as <strong>ejer<\/strong>/, 'jeg skal kunne se HVEM jeg godkender som');
+  // Vist med stort begyndelsesbogstav - kontoen hedder stadig »ejer«.
+  assert.match(ok.html, /Signed in as <strong>Ejer<\/strong>/, 'jeg skal kunne se HVEM jeg godkender som');
 });
 
 test('samtykkesiden kræver en session — ellers sendes man til login og tilbage', async () => {

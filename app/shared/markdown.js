@@ -565,6 +565,27 @@
   }
 
   /**
+   * Et brugernavn, som det skal SES.
+   *
+   * Kun det foerste tegn, og resten roeres ikke: »andreasD« bliver
+   * »AndreasD«, ikke »Andreasd«. Det er et navn, ikke en saetning.
+   *
+   * **Kun til visning.** Den gemte vaerdi og alt, der SAMMENLIGNES eller
+   * sendes til serveren, skal blive ved med at vaere det, brugeren tastede -
+   * ellers holder login op med at virke, og en deling til »Bo« finder ikke
+   * kontoen »bo«.
+   *
+   * `Array.from` frem for `[0]`: et navn kan begynde med et tegn, der fylder
+   * to kodeenheder, og saa ville en indeksering skaere det midt over.
+   */
+  function pentBrugernavn(navn) {
+    const s = String(navn == null ? '' : navn);
+    if (!s) return '';
+    const tegn = Array.from(s);
+    return tegn[0].toUpperCase() + tegn.slice(1).join('');
+  }
+
+  /**
    * En kendt vaert faar et paent navn, naar en adresse bliver til et link.
    *
    * »github.com/andreasdinesen/sagu« er bedre end den raa adresse i en
@@ -593,5 +614,5 @@
   }
 
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, pentNavn };
+    slug, esc, attr, sikkerUrl, saetTjek, pentNavn, pentBrugernavn };
 }));

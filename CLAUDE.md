@@ -69,6 +69,12 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   med sig selv og siger god for alt.
 - **En konflikt i køen kastes ALDRIG væk.** Køen er det eneste sted, den tekst findes.
 - **`navigator.onLine` afgør ikke, om vi er offline** — det gør, om serveren svarer.
+- **Brugernavnet vises med stort — og gemmes uændret.** `pentBrugernavn()` er en
+  VISNINGSregel; alt der sammenlignes eller sendes, skal være det, brugeren tastede.
+- **En værdi, man kun får at se én gang, hører i en rude** — ikke i et felt på en side,
+  en optegning kan tegne væk. Og den rude lukker ikke på et klik ved siden af.
+- **Knappen ved en markering lytter på `mousedown`/`touchstart`, ikke `click`.** Et klik
+  rydder markeringen, før handleren når at læse den.
 - **Wikien caches aldrig offline.** En offentlig side hører til den besøgende, og en kopi
   kan vise noget, der er trukket tilbage. En flade, der lader dig skrive
   og først afviser ved gemningen, ligner en fejl i appen — ikke en spærring.

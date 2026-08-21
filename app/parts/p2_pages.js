@@ -372,7 +372,7 @@ async function sideSettings() {
         address you happen to be on.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
           <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
-          <tbody>${a.users.map((u) => `<tr><td>${esc(u.username)}</td>
+          <tbody>${a.users.map((u) => `<tr><td>${esc(pentBruger(u.username))}</td>
             <td>${u.isAdmin ? 'Administrator' : 'Member'}</td>
             <td class="num">${esc(visTid(u.createdAt))}</td></tr>`).join('')}</tbody>
         </table></div>
@@ -442,7 +442,7 @@ async function sideSettings() {
 
   <h2>Account</h2>
   <div class="card">
-    <p class="meta saetning">Signed in as <strong>${esc(state.user.username)}</strong>${state.user.isAdmin ? ' (administrator)' : ''}.</p>
+    <p class="meta saetning">Signed in as <strong>${esc(pentBruger(state.user.username))}</strong>${state.user.isAdmin ? ' (administrator)' : ''}.</p>
     <form id="kodeordForm" style="margin-top:14px">
       <label class="field"><span>Current password</span>
         <input class="input" type="password" id="kodeNu" autocomplete="current-password"></label>
@@ -513,7 +513,6 @@ async function sideSettings() {
       </select>
       <button class="btn" id="noegleNy">Create key</button>
     </div>
-    <p id="noegleVaerdi" class="meta saetning" hidden></p>
     <div class="btnrow" style="margin-top:12px">
       <button class="btn" id="tilApi">How to use these →</button>
     </div>
@@ -566,6 +565,76 @@ function bindForbindelsesListe() {
       } catch (ex) { toast(ex.message); }
     });
   });
+}
+
+/**
+ * Den nye noegle - i en rude, man skal lukke selv.
+ *
+ * `navigator.clipboard` findes kun i et secure context, og panelet naas over
+ * ren http. Derfor BAADE en kopiér-knap og en vaerdi, der kan markeres med
+ * fingeren: knappen forsvinder, hvis den ikke kan virke, frem for at fejle
+ * naar man trykker (RUNE-ERFARINGER, tools v1).
+ */
+function visNoeglePanel(noegle, scope) {
+  const gammel = document.getElementById('noeglePanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'noeglePanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Your new ${esc(scope || 'access')} key</h2>
+        <button class="iconbtn" id="noegleLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="lead">Copy it now — <strong>it is never shown again.</strong>
+        Sagu keeps only a hash of it, so there is no way to look it up later.</p>
+        <p class="noegle-vaerdi"><code id="noegleTekst">${esc(noegle)}</code></p>
+        <div class="btnrow">
+          ${navigator.clipboard ? '<button class="btn primary" id="noegleKopi">Copy</button>' : ''}
+          <button class="btn" id="noegleFaerdig">Done</button>
+        </div>
+        <p class="meta saetning">Lost it? Revoke it in the list and make a new one —
+        that is quicker than looking for it.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#noegleLuk').addEventListener('click', luk);
+  host.querySelector('#noegleFaerdig').addEventListener('click', luk);
+  /*
+   * Et klik ved siden af lukker IKKE.
+   *
+   * Alle andre ruder i appen lukker paa baggrunden, og det er rigtigt for
+   * dem: man kan aabne dem igen. Den her kan man ikke - et fejlklik ville
+   * koste noeglen. Reglen boejes netop dér, hvor den ellers ville gøre skade.
+   */
+
+  const kopi = host.querySelector('#noegleKopi');
+  if (kopi) {
+    kopi.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(noegle);
+        kopi.textContent = 'Copied';
+        toast('Key copied. Paste it where it belongs before you close this.');
+      } catch { toast('The browser would not let me copy — select the text instead.'); }
+    });
+  }
+  // Markér hele vaerdien, saa den kan tages med ét greb paa en telefon.
+  const tekst = host.querySelector('#noegleTekst');
+  if (tekst) {
+    tekst.addEventListener('click', () => {
+      const r = document.createRange();
+      r.selectNodeContents(tekst);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+  }
 }
 
 function bindSettings() {
@@ -725,13 +794,20 @@ function bindSettings() {
           name: document.getElementById('noegleNavn').value,
           scope: document.getElementById('noegleScope').value,
         });
-        const ud = document.getElementById('noegleVaerdi');
-        // Vaerdien vises ÉN gang. navigator.clipboard kraever secure context,
-        // og panelet tilgaas over http - saa teksten skal kunne markeres og
-        // kopieres i haanden (RUNE-ERFARINGER, tools v1).
-        ud.innerHTML = `Copy it now — it is never shown again:<br><code>${esc(d.key)}</code>`;
-        ud.hidden = false;
+        /*
+         * Vaerdien vises ÉN gang - og skal derfor overleve optegningen.
+         *
+         * Foer stod den i et `<p>` paa siden, og saa blev `tegnSide()` kaldt
+         * med det samme for at faa den nye noegle med i listen. Noeglen
+         * blinkede og var vaek, foer man kunne naa at laese den (Andreas,
+         * 2026-08-21) - og den kan ikke hentes frem igen.
+         *
+         * En rude staar uden for siden og roeres ikke af en optegning. Den
+         * er samtidig den aerlige form for noget, man kun faar at se én
+         * gang: man skal lukke den selv.
+         */
         await tegnSide();
+        visNoeglePanel(d.key, d.scope);
       } catch (ex) { toast(ex.message); }
     });
   }

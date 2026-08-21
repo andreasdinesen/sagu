@@ -419,7 +419,7 @@ ${o.krop}
     const svar = (svarene || []).filter((x) => x.parentId === c.id);
     return `<li class="wkom" id="c-${attr(c.id)}">
       <div class="wkom-top">
-        <span class="wkom-navn">${esc(c.author)}</span>
+        <span class="wkom-navn">${esc(md.pentBrugernavn(c.author))}</span>
         ${c.guest ? '<span class="wkom-gaest">guest</span>' : ''}
         ${c.kind === 'suggestion' ? '<span class="wkom-forslag">suggested edit</span>' : ''}
         <time datetime="${attr(new Date(c.createdAt * 1000).toISOString())}">${esc(dato(c.createdAt))}</time>

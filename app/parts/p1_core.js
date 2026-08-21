@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -67,6 +67,18 @@ function plukMaerker(raa) {
   // Reglen bor i `app/shared/maerker.js`, saa serveren og browseren tolker
   // `#maerke` ENS. Wrapperen bliver staaende, saa kaldstederne er uroerte.
   return saguMaerker.pluk(raa);
+}
+
+/**
+ * Brugernavnet, som det skal SES - med stort begyndelsesbogstav.
+ *
+ * Reglen bor i det delte modul, fordi den ogsaa skal gaelde de sider,
+ * SERVEREN tegner (samtykkesiden og wikiens kommentarer). Kun til visning:
+ * den gemte vaerdi, alt der sammenlignes, og alt der sendes til serveren
+ * skal blive ved med at vaere det, brugeren tastede.
+ */
+function pentBruger(navn) {
+  return saguMarkdown.pentBrugernavn(navn);
 }
 
 function esc(s) {
@@ -209,6 +221,8 @@ const ICONS = {
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6L6 18M18 18l-1.4-1.4M7.4 7.4L6 6"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+  // F16: markér en linje -> en opgave i doda.
+  tjek: '<path d="M20 6.5L9.5 17 4 11.5"/>',
   pin: '<path d="M9 3.5h6l-1 5 3 3.5H7l3-3.5z"/><path d="M12 12v8.5"/>',
   out: '<path d="M14.5 4.5H18a1.5 1.5 0 011.5 1.5v12a1.5 1.5 0 01-1.5 1.5h-3.5"/><path d="M4.5 12h10M11 8.5l3.5 3.5-3.5 3.5"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M17.8 6.2l-1.4 1.4M7.6 16.4l-1.4 1.4M17.8 17.8l-1.4-1.4M7.6 7.6L6.2 6.2"/>',
@@ -422,7 +436,7 @@ function shellHtml() {
       <div id="treeHost" class="treehost"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
-          ${BAG_BRUGEREN.has(state.view) ? 'aria-current="page"' : ''}>${icon('settings')}<span>${esc(state.user.username)}</span></button>
+          ${BAG_BRUGEREN.has(state.view) ? 'aria-current="page"' : ''}>${icon('settings')}<span>${esc(pentBruger(state.user.username))}</span></button>
         <div class="foot-row" id="footRow">${versionHtml()}</div>
       </div>
     </aside>
@@ -667,7 +681,7 @@ function visBrugerMenu() {
    */
   host.innerHTML = `
     <div class="usermenu-head">
-      <div class="usermenu-name">${esc(state.user.username)}</div>
+      <div class="usermenu-name">${esc(pentBruger(state.user.username))}</div>
       <div class="meta">${state.user.isAdmin ? 'Administrator' : 'Signed in'}${state.config.secureContext ? '' : ' · plain http'}</div>
     </div>
     <button class="usermenu-item" data-go="import">${icon('import', 17)}<span>Import &amp; export</span></button>

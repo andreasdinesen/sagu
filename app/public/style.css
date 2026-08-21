@@ -797,6 +797,51 @@ a.gh-navn:hover { text-decoration: underline; }
 }
 .strid .btnrow { margin-top: 14px; }
 
+/*
+ * Knappen ved en markering (F16).
+ *
+ * `position: fixed`, fordi den skal ligge ved markeringen paa SKAERMEN - en
+ * absolut placering ville flytte sig med rulningen og lande forkert.
+ * Den staar OVER markeringen: iOS' egen menu (Kopiér, Slaa op) laegger sig
+ * nedenunder, og to menuer oven i hinanden er ingen af dem til at ramme.
+ */
+.mark-knap {
+  position: fixed;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* 10px lodret giver et maal paa ~36 px - stort nok til en tommelfinger. */
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--pill);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mark-knap svg { color: var(--accent); }
+
+/* Den nye noegle: stor nok til at laeses og markeres med en finger. */
+.noegle-vaerdi {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.noegle-vaerdi code {
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-all;
+  user-select: all;
+  cursor: pointer;
+}
+
 .genvejsliste { margin-top: 2px; }
 /* Titlen ER knappen, naar sektionen kan foldes (F13/F14). Fuld bredde og
    samme hoejde som et menupunkt, saa den kan rammes med en tommelfinger. */

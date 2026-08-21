@@ -806,6 +806,27 @@
   }
 
   /**
+   * Et brugernavn, som det skal SES.
+   *
+   * Kun det foerste tegn, og resten roeres ikke: »andreasD« bliver
+   * »AndreasD«, ikke »Andreasd«. Det er et navn, ikke en saetning.
+   *
+   * **Kun til visning.** Den gemte vaerdi og alt, der SAMMENLIGNES eller
+   * sendes til serveren, skal blive ved med at vaere det, brugeren tastede -
+   * ellers holder login op med at virke, og en deling til »Bo« finder ikke
+   * kontoen »bo«.
+   *
+   * `Array.from` frem for `[0]`: et navn kan begynde med et tegn, der fylder
+   * to kodeenheder, og saa ville en indeksering skaere det midt over.
+   */
+  function pentBrugernavn(navn) {
+    const s = String(navn == null ? '' : navn);
+    if (!s) return '';
+    const tegn = Array.from(s);
+    return tegn[0].toUpperCase() + tegn.slice(1).join('');
+  }
+
+  /**
    * En kendt vaert faar et paent navn, naar en adresse bliver til et link.
    *
    * »github.com/andreasdinesen/sagu« er bedre end den raa adresse i en
@@ -834,7 +855,7 @@
   }
 
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, pentNavn };
+    slug, esc, attr, sikkerUrl, saetTjek, pentNavn, pentBrugernavn };
 }));
 
 /* ---- shared/notion.js ---- */
@@ -1444,10 +1465,10 @@ function delingsBaandHtml(n) {
   return `<div class="delt-baand${skriv ? ' kan-skrive' : ''}">
     ${icon('shared', 16)}
     <div>
-      <strong>${esc(n.owner || 'Someone')} shared this page with you.</strong>
+      <strong>${esc(pentBruger(n.owner) || 'Someone')} shared this page with you.</strong>
       <div class="meta saetning">${skriv
     ? 'You can edit it and add subpages. Deleting, publishing and sharing it on stay with '
-      + `${esc(n.owner || 'the owner')}.`
+      + `${esc(pentBruger(n.owner) || 'the owner')}.`
     : 'You can read it. Nothing you type here would be saved.'}</div>
     </div>
   </div>`;
@@ -1524,7 +1545,7 @@ async function visDelPanel() {
             tree: q('delTrae').checked,
           });
           adgang = await api('GET', `/api/v1/notes/${n.id}/access`);
-          toast(`Shared with ${navn}.`);
+          toast(`Shared with ${pentBruger(navn)}.`);
           tegn();
         } catch (ex) { fejl(ex.message); giv.disabled = false; }
       });
@@ -1556,7 +1577,7 @@ async function visDelPanel() {
         over.disabled = true;
         try {
           const d = await api('POST', `/api/v1/notes/${n.id}/owner`, { username: navn });
-          toast(`${d.newOwner.username} owns it now — ${d.antal} page${d.antal === 1 ? '' : 's'}.`);
+          toast(`${pentBruger(d.newOwner.username)} owns it now — ${d.antal} page${d.antal === 1 ? '' : 's'}.`);
           luk();
           await hentTrae();
           tegnTrae();
@@ -1578,7 +1599,7 @@ function delKropHtml(adgang, folk) {
     ${adgang.people.length ? `<div class="tablewrap"><table class="data">
       <thead><tr><th>Account</th><th>Can</th><th></th></tr></thead>
       <tbody>${adgang.people.map((p) => `<tr>
-        <td>${esc(p.username)}</td>
+        <td>${esc(pentBruger(p.username))}</td>
         <td>${p.level === 'write' ? 'Read and write' : 'Read'}${p.tree ? '' : ' — this page only'}</td>
         <td style="text-align:right"><button class="btn ghost danger"
           data-fjern="${esc(p.userId)}">Remove</button></td>
@@ -1588,7 +1609,7 @@ function delKropHtml(adgang, folk) {
     ${ledige.length ? `
       <div class="btnrow" style="margin-top:14px">
         <select class="input" id="delHvem" style="max-width:180px">
-          ${ledige.map((p) => `<option value="${esc(p.username)}">${esc(p.username)}</option>`).join('')}
+          ${ledige.map((p) => `<option value="${esc(p.username)}">${esc(pentBruger(p.username))}</option>`).join('')}
         </select>
         <select class="input" id="delNiveau" style="max-width:160px">
           <option value="read">Can read</option>
@@ -1613,7 +1634,7 @@ function delKropHtml(adgang, folk) {
       remove it.</p>
       <div class="btnrow">
         <select class="input" id="delNyEjer" style="max-width:180px">
-          ${folk.map((p) => `<option value="${esc(p.username)}">${esc(p.username)}</option>`).join('')}
+          ${folk.map((p) => `<option value="${esc(p.username)}">${esc(pentBruger(p.username))}</option>`).join('')}
         </select>
         <button class="btn ghost danger" id="delOverdrag">Hand over</button>
       </div>` : ''}`;
@@ -1639,7 +1660,7 @@ async function sideDelt() {
       <tbody>${noter.map((n) => `<tr>
         <td><button class="linkbtn" data-aabn="${esc(n.id)}">${n.icon ? `${esc(n.icon)} ` : ''}${
   esc(n.title || 'Untitled')}</button></td>
-        <td>${esc(n.owner || '')}</td>
+        <td>${esc(pentBruger(n.owner))}</td>
         <td>${n.level === 'write' ? 'read and write' : 'read'}</td>
         <td class="num">${esc(visTid(n.updatedAt))}</td>
       </tr>`).join('')}</tbody></table></div>
@@ -2500,7 +2521,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -2562,6 +2583,18 @@ function plukMaerker(raa) {
   // Reglen bor i `app/shared/maerker.js`, saa serveren og browseren tolker
   // `#maerke` ENS. Wrapperen bliver staaende, saa kaldstederne er uroerte.
   return saguMaerker.pluk(raa);
+}
+
+/**
+ * Brugernavnet, som det skal SES - med stort begyndelsesbogstav.
+ *
+ * Reglen bor i det delte modul, fordi den ogsaa skal gaelde de sider,
+ * SERVEREN tegner (samtykkesiden og wikiens kommentarer). Kun til visning:
+ * den gemte vaerdi, alt der sammenlignes, og alt der sendes til serveren
+ * skal blive ved med at vaere det, brugeren tastede.
+ */
+function pentBruger(navn) {
+  return saguMarkdown.pentBrugernavn(navn);
 }
 
 function esc(s) {
@@ -2704,6 +2737,8 @@ const ICONS = {
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6L6 18M18 18l-1.4-1.4M7.4 7.4L6 6"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+  // F16: markér en linje -> en opgave i doda.
+  tjek: '<path d="M20 6.5L9.5 17 4 11.5"/>',
   pin: '<path d="M9 3.5h6l-1 5 3 3.5H7l3-3.5z"/><path d="M12 12v8.5"/>',
   out: '<path d="M14.5 4.5H18a1.5 1.5 0 011.5 1.5v12a1.5 1.5 0 01-1.5 1.5h-3.5"/><path d="M4.5 12h10M11 8.5l3.5 3.5-3.5 3.5"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M17.8 6.2l-1.4 1.4M7.6 16.4l-1.4 1.4M17.8 17.8l-1.4-1.4M7.6 7.6L6.2 6.2"/>',
@@ -2917,7 +2952,7 @@ function shellHtml() {
       <div id="treeHost" class="treehost"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
-          ${BAG_BRUGEREN.has(state.view) ? 'aria-current="page"' : ''}>${icon('settings')}<span>${esc(state.user.username)}</span></button>
+          ${BAG_BRUGEREN.has(state.view) ? 'aria-current="page"' : ''}>${icon('settings')}<span>${esc(pentBruger(state.user.username))}</span></button>
         <div class="foot-row" id="footRow">${versionHtml()}</div>
       </div>
     </aside>
@@ -3162,7 +3197,7 @@ function visBrugerMenu() {
    */
   host.innerHTML = `
     <div class="usermenu-head">
-      <div class="usermenu-name">${esc(state.user.username)}</div>
+      <div class="usermenu-name">${esc(pentBruger(state.user.username))}</div>
       <div class="meta">${state.user.isAdmin ? 'Administrator' : 'Signed in'}${state.config.secureContext ? '' : ' · plain http'}</div>
     </div>
     <button class="usermenu-item" data-go="import">${icon('import', 17)}<span>Import &amp; export</span></button>
@@ -3803,7 +3838,7 @@ async function sideSettings() {
         address you happen to be on.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
           <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
-          <tbody>${a.users.map((u) => `<tr><td>${esc(u.username)}</td>
+          <tbody>${a.users.map((u) => `<tr><td>${esc(pentBruger(u.username))}</td>
             <td>${u.isAdmin ? 'Administrator' : 'Member'}</td>
             <td class="num">${esc(visTid(u.createdAt))}</td></tr>`).join('')}</tbody>
         </table></div>
@@ -3873,7 +3908,7 @@ async function sideSettings() {
 
   <h2>Account</h2>
   <div class="card">
-    <p class="meta saetning">Signed in as <strong>${esc(state.user.username)}</strong>${state.user.isAdmin ? ' (administrator)' : ''}.</p>
+    <p class="meta saetning">Signed in as <strong>${esc(pentBruger(state.user.username))}</strong>${state.user.isAdmin ? ' (administrator)' : ''}.</p>
     <form id="kodeordForm" style="margin-top:14px">
       <label class="field"><span>Current password</span>
         <input class="input" type="password" id="kodeNu" autocomplete="current-password"></label>
@@ -3944,7 +3979,6 @@ async function sideSettings() {
       </select>
       <button class="btn" id="noegleNy">Create key</button>
     </div>
-    <p id="noegleVaerdi" class="meta saetning" hidden></p>
     <div class="btnrow" style="margin-top:12px">
       <button class="btn" id="tilApi">How to use these →</button>
     </div>
@@ -3997,6 +4031,76 @@ function bindForbindelsesListe() {
       } catch (ex) { toast(ex.message); }
     });
   });
+}
+
+/**
+ * Den nye noegle - i en rude, man skal lukke selv.
+ *
+ * `navigator.clipboard` findes kun i et secure context, og panelet naas over
+ * ren http. Derfor BAADE en kopiér-knap og en vaerdi, der kan markeres med
+ * fingeren: knappen forsvinder, hvis den ikke kan virke, frem for at fejle
+ * naar man trykker (RUNE-ERFARINGER, tools v1).
+ */
+function visNoeglePanel(noegle, scope) {
+  const gammel = document.getElementById('noeglePanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'noeglePanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Your new ${esc(scope || 'access')} key</h2>
+        <button class="iconbtn" id="noegleLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="lead">Copy it now — <strong>it is never shown again.</strong>
+        Sagu keeps only a hash of it, so there is no way to look it up later.</p>
+        <p class="noegle-vaerdi"><code id="noegleTekst">${esc(noegle)}</code></p>
+        <div class="btnrow">
+          ${navigator.clipboard ? '<button class="btn primary" id="noegleKopi">Copy</button>' : ''}
+          <button class="btn" id="noegleFaerdig">Done</button>
+        </div>
+        <p class="meta saetning">Lost it? Revoke it in the list and make a new one —
+        that is quicker than looking for it.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#noegleLuk').addEventListener('click', luk);
+  host.querySelector('#noegleFaerdig').addEventListener('click', luk);
+  /*
+   * Et klik ved siden af lukker IKKE.
+   *
+   * Alle andre ruder i appen lukker paa baggrunden, og det er rigtigt for
+   * dem: man kan aabne dem igen. Den her kan man ikke - et fejlklik ville
+   * koste noeglen. Reglen boejes netop dér, hvor den ellers ville gøre skade.
+   */
+
+  const kopi = host.querySelector('#noegleKopi');
+  if (kopi) {
+    kopi.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(noegle);
+        kopi.textContent = 'Copied';
+        toast('Key copied. Paste it where it belongs before you close this.');
+      } catch { toast('The browser would not let me copy — select the text instead.'); }
+    });
+  }
+  // Markér hele vaerdien, saa den kan tages med ét greb paa en telefon.
+  const tekst = host.querySelector('#noegleTekst');
+  if (tekst) {
+    tekst.addEventListener('click', () => {
+      const r = document.createRange();
+      r.selectNodeContents(tekst);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+  }
 }
 
 function bindSettings() {
@@ -4156,13 +4260,20 @@ function bindSettings() {
           name: document.getElementById('noegleNavn').value,
           scope: document.getElementById('noegleScope').value,
         });
-        const ud = document.getElementById('noegleVaerdi');
-        // Vaerdien vises ÉN gang. navigator.clipboard kraever secure context,
-        // og panelet tilgaas over http - saa teksten skal kunne markeres og
-        // kopieres i haanden (RUNE-ERFARINGER, tools v1).
-        ud.innerHTML = `Copy it now — it is never shown again:<br><code>${esc(d.key)}</code>`;
-        ud.hidden = false;
+        /*
+         * Vaerdien vises ÉN gang - og skal derfor overleve optegningen.
+         *
+         * Foer stod den i et `<p>` paa siden, og saa blev `tegnSide()` kaldt
+         * med det samme for at faa den nye noegle med i listen. Noeglen
+         * blinkede og var vaek, foer man kunne naa at laese den (Andreas,
+         * 2026-08-21) - og den kan ikke hentes frem igen.
+         *
+         * En rude staar uden for siden og roeres ikke af en optegning. Den
+         * er samtidig den aerlige form for noget, man kun faar at se én
+         * gang: man skal lukke den selv.
+         */
         await tegnSide();
+        visNoeglePanel(d.key, d.scope);
       } catch (ex) { toast(ex.message); }
     });
   }
@@ -7930,7 +8041,7 @@ function komHtml(c, svarene) {
   const redigerer = kom.redigerer === c.id;
   return `<li class="kom${c.status === 'published' ? '' : ' daempet'}" data-kom="${esc(c.id)}">
     <div class="kom-top">
-      <span class="kom-navn">${esc(c.author)}</span>
+      <span class="kom-navn">${esc(pentBruger(c.author))}</span>
       ${c.guest ? '<span class="kom-maerke gaest">guest</span>' : ''}
       ${c.kind === 'suggestion' ? '<span class="kom-maerke forslag">suggested edit</span>' : ''}
       ${komStatusMaerke(c)}
@@ -8113,7 +8224,7 @@ async function sideKommentarer() {
     ${komKoe.liste.length ? `<ul class="kom-liste koe">${komKoe.liste.map((c) => `
       <li class="kom" data-kom="${esc(c.id)}">
         <div class="kom-top">
-          <span class="kom-navn">${esc(c.author)}</span>
+          <span class="kom-navn">${esc(pentBruger(c.author))}</span>
           ${c.guest ? '<span class="kom-maerke gaest">guest</span>' : ''}
           ${c.kind === 'suggestion' ? '<span class="kom-maerke forslag">suggested edit</span>' : ''}
           <time>${esc(komDato(c.createdAt))}</time>
@@ -8282,6 +8393,109 @@ function bindDodaOpgaver() {
     });
   }
 }
+
+/* ==================== markér en linje -> en opgave i doda (F16) ========= */
+
+/*
+ * Markeringen er allerede en beslutning.
+ *
+ * Man streger den linje under, der er noget, der skal GØRES — og så er
+ * afstanden til en opgave ét tryk. Alternativet er at markere, kopiere, rulle
+ * ned til feltet og sætte ind, og den vej tager man ikke, når man har travlt.
+ *
+ * ── Det, der gør det svært på en telefon ──────────────────────────────────
+ *
+ * iOS viser sin egen menu (Kopiér, Slå op…) oven på markeringen, og en tap et
+ * hvilket som helst sted RYDDER markeringen. Derfor to ting:
+ *
+ *  - knappen lægger sig OVER markeringen, ikke under, hvor systemets egen
+ *    menu står,
+ *  - og den lytter på `mousedown`/`touchstart` med `preventDefault`, så
+ *    markeringen stadig er der, når vi skal læse den. Bruger man `click`,
+ *    er teksten væk, inden handleren kører.
+ */
+
+let dodaMarkKnap = null;
+
+function skjulDodaMark() {
+  if (dodaMarkKnap) { dodaMarkKnap.remove(); dodaMarkKnap = null; }
+}
+
+/** Markeringen som ÉN linje. En opgave er en linje, ikke et afsnit. */
+function markeringSomOpgave() {
+  const s = window.getSelection();
+  if (!s || s.isCollapsed || !s.rangeCount) return null;
+  const tekst = String(s.toString() || '').replace(/\s+/g, ' ').trim();
+  if (tekst.length < 2) return null;
+
+  // Markeringen skal ligge inde i NOTEN. En markering i en kommentar eller i
+  // sidebaren er ikke det, knappen handler om.
+  const krop = document.getElementById('noteBody');
+  if (!krop) return null;
+  const r = s.getRangeAt(0);
+  if (!krop.contains(r.commonAncestorContainer)) return null;
+
+  return { tekst: tekst.slice(0, 500), afkortet: tekst.length > 500, rect: r.getBoundingClientRect() };
+}
+
+function visDodaMark() {
+  // Ikke mens et afsnit står som rå markdown: dér markerer man for at rette.
+  if (editor.aabenBlok !== null) { skjulDodaMark(); return; }
+  if (!dodaState.connected) { skjulDodaMark(); return; }
+
+  const m = markeringSomOpgave();
+  if (!m) { skjulDodaMark(); return; }
+
+  if (!dodaMarkKnap) {
+    dodaMarkKnap = document.createElement('button');
+    dodaMarkKnap.className = 'mark-knap';
+    dodaMarkKnap.type = 'button';
+    dodaMarkKnap.innerHTML = `${icon('tjek', 15)}<span>Send to doda</span>`;
+    // `mousedown`/`touchstart` og ikke `click`: et klik ville rydde
+    // markeringen, FØR vi når at læse den.
+    const gaa = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const nu = markeringSomOpgave();
+      skjulDodaMark();
+      if (!nu) return;
+      if (nu.afkortet) toast('That was long — the first 500 characters became the task.');
+      await sendOpgaveTilDoda(nu.tekst);
+      const s = window.getSelection();
+      if (s) s.removeAllRanges();
+    };
+    dodaMarkKnap.addEventListener('mousedown', gaa);
+    dodaMarkKnap.addEventListener('touchstart', gaa, { passive: false });
+    document.body.appendChild(dodaMarkKnap);
+  }
+
+  // Over markeringen, og aldrig ud over kanten.
+  const b = dodaMarkKnap.getBoundingClientRect();
+  const bredde = b.width || 150;
+  const x = Math.min(Math.max(8, m.rect.left + (m.rect.width - bredde) / 2), window.innerWidth - bredde - 8);
+  const y = Math.max(8, m.rect.top - 44);
+  dodaMarkKnap.style.left = `${Math.round(x)}px`;
+  dodaMarkKnap.style.top = `${Math.round(y)}px`;
+}
+
+/*
+ * `selectionchange` er den ENESTE hændelse, der fyrer for alle måderne at
+ * markere på: mus, tastatur, langt tryk på en telefon og systemets egne
+ * håndtag. `mouseup` alene ville virke på en computer og ingen andre steder.
+ *
+ * Den fyrer til gengæld under hele trækket, så den skal forsinkes — ellers
+ * hopper knappen rundt, mens man stadig markerer.
+ */
+let dodaMarkTimer = null;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(dodaMarkTimer);
+  dodaMarkTimer = setTimeout(() => {
+    if (state.view !== 'note') { skjulDodaMark(); return; }
+    visDodaMark();
+  }, 220);
+});
+// Ruller siden, står knappen det forkerte sted. Så er det bedre, den går væk.
+window.addEventListener('scroll', skjulDodaMark, { passive: true });
 
 /* ---- p9_guide.js ---- */
 /*

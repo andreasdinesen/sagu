@@ -70,7 +70,7 @@ function komHtml(c, svarene) {
   const redigerer = kom.redigerer === c.id;
   return `<li class="kom${c.status === 'published' ? '' : ' daempet'}" data-kom="${esc(c.id)}">
     <div class="kom-top">
-      <span class="kom-navn">${esc(c.author)}</span>
+      <span class="kom-navn">${esc(pentBruger(c.author))}</span>
       ${c.guest ? '<span class="kom-maerke gaest">guest</span>' : ''}
       ${c.kind === 'suggestion' ? '<span class="kom-maerke forslag">suggested edit</span>' : ''}
       ${komStatusMaerke(c)}
@@ -253,7 +253,7 @@ async function sideKommentarer() {
     ${komKoe.liste.length ? `<ul class="kom-liste koe">${komKoe.liste.map((c) => `
       <li class="kom" data-kom="${esc(c.id)}">
         <div class="kom-top">
-          <span class="kom-navn">${esc(c.author)}</span>
+          <span class="kom-navn">${esc(pentBruger(c.author))}</span>
           ${c.guest ? '<span class="kom-maerke gaest">guest</span>' : ''}
           ${c.kind === 'suggestion' ? '<span class="kom-maerke forslag">suggested edit</span>' : ''}
           <time>${esc(komDato(c.createdAt))}</time>
@@ -422,3 +422,106 @@ function bindDodaOpgaver() {
     });
   }
 }
+
+/* ==================== markér en linje -> en opgave i doda (F16) ========= */
+
+/*
+ * Markeringen er allerede en beslutning.
+ *
+ * Man streger den linje under, der er noget, der skal GØRES — og så er
+ * afstanden til en opgave ét tryk. Alternativet er at markere, kopiere, rulle
+ * ned til feltet og sætte ind, og den vej tager man ikke, når man har travlt.
+ *
+ * ── Det, der gør det svært på en telefon ──────────────────────────────────
+ *
+ * iOS viser sin egen menu (Kopiér, Slå op…) oven på markeringen, og en tap et
+ * hvilket som helst sted RYDDER markeringen. Derfor to ting:
+ *
+ *  - knappen lægger sig OVER markeringen, ikke under, hvor systemets egen
+ *    menu står,
+ *  - og den lytter på `mousedown`/`touchstart` med `preventDefault`, så
+ *    markeringen stadig er der, når vi skal læse den. Bruger man `click`,
+ *    er teksten væk, inden handleren kører.
+ */
+
+let dodaMarkKnap = null;
+
+function skjulDodaMark() {
+  if (dodaMarkKnap) { dodaMarkKnap.remove(); dodaMarkKnap = null; }
+}
+
+/** Markeringen som ÉN linje. En opgave er en linje, ikke et afsnit. */
+function markeringSomOpgave() {
+  const s = window.getSelection();
+  if (!s || s.isCollapsed || !s.rangeCount) return null;
+  const tekst = String(s.toString() || '').replace(/\s+/g, ' ').trim();
+  if (tekst.length < 2) return null;
+
+  // Markeringen skal ligge inde i NOTEN. En markering i en kommentar eller i
+  // sidebaren er ikke det, knappen handler om.
+  const krop = document.getElementById('noteBody');
+  if (!krop) return null;
+  const r = s.getRangeAt(0);
+  if (!krop.contains(r.commonAncestorContainer)) return null;
+
+  return { tekst: tekst.slice(0, 500), afkortet: tekst.length > 500, rect: r.getBoundingClientRect() };
+}
+
+function visDodaMark() {
+  // Ikke mens et afsnit står som rå markdown: dér markerer man for at rette.
+  if (editor.aabenBlok !== null) { skjulDodaMark(); return; }
+  if (!dodaState.connected) { skjulDodaMark(); return; }
+
+  const m = markeringSomOpgave();
+  if (!m) { skjulDodaMark(); return; }
+
+  if (!dodaMarkKnap) {
+    dodaMarkKnap = document.createElement('button');
+    dodaMarkKnap.className = 'mark-knap';
+    dodaMarkKnap.type = 'button';
+    dodaMarkKnap.innerHTML = `${icon('tjek', 15)}<span>Send to doda</span>`;
+    // `mousedown`/`touchstart` og ikke `click`: et klik ville rydde
+    // markeringen, FØR vi når at læse den.
+    const gaa = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const nu = markeringSomOpgave();
+      skjulDodaMark();
+      if (!nu) return;
+      if (nu.afkortet) toast('That was long — the first 500 characters became the task.');
+      await sendOpgaveTilDoda(nu.tekst);
+      const s = window.getSelection();
+      if (s) s.removeAllRanges();
+    };
+    dodaMarkKnap.addEventListener('mousedown', gaa);
+    dodaMarkKnap.addEventListener('touchstart', gaa, { passive: false });
+    document.body.appendChild(dodaMarkKnap);
+  }
+
+  // Over markeringen, og aldrig ud over kanten.
+  const b = dodaMarkKnap.getBoundingClientRect();
+  const bredde = b.width || 150;
+  const x = Math.min(Math.max(8, m.rect.left + (m.rect.width - bredde) / 2), window.innerWidth - bredde - 8);
+  const y = Math.max(8, m.rect.top - 44);
+  dodaMarkKnap.style.left = `${Math.round(x)}px`;
+  dodaMarkKnap.style.top = `${Math.round(y)}px`;
+}
+
+/*
+ * `selectionchange` er den ENESTE hændelse, der fyrer for alle måderne at
+ * markere på: mus, tastatur, langt tryk på en telefon og systemets egne
+ * håndtag. `mouseup` alene ville virke på en computer og ingen andre steder.
+ *
+ * Den fyrer til gengæld under hele trækket, så den skal forsinkes — ellers
+ * hopper knappen rundt, mens man stadig markerer.
+ */
+let dodaMarkTimer = null;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(dodaMarkTimer);
+  dodaMarkTimer = setTimeout(() => {
+    if (state.view !== 'note') { skjulDodaMark(); return; }
+    visDodaMark();
+  }, 220);
+});
+// Ruller siden, står knappen det forkerte sted. Så er det bedre, den går væk.
+window.addEventListener('scroll', skjulDodaMark, { passive: true });

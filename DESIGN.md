@@ -2482,3 +2482,70 @@ ikke findes.
 Kommentarer, filer og udgivelser køer heller ikke. De er handlinger, ikke
 tekst man har skrevet — og en handling, der udføres en time for sent, er
 sjældent den, man mente.
+
+## 25 · F16 · Markér en linje, og send den til doda
+
+**Bygget 2026-08-21.** Andreas' ønske: »kan man ved at markere en linje i en
+note lave den til en opgave i doda?«
+
+Serveren kunne det i forvejen — `POST /api/v1/notes/:id/tasks` tager vilkårlig
+tekst og har gjort det siden F8. Det, der manglede, var **vejen dertil**.
+
+### Markeringen er allerede en beslutning
+
+Man streger den linje under, der er noget, der skal gøres. Alternativet er at
+markere, kopiere, rulle ned til feltet og sætte ind — og den vej tager man
+ikke, når man har travlt.
+
+### Det, der gør det svært på en telefon
+
+iOS viser sin **egen** menu (Kopiér, Slå op) oven på markeringen, og et tap et
+hvilket som helst sted **rydder** markeringen. Derfor to ting, som begge er
+nødvendige:
+
+- Knappen lægger sig **over** markeringen. Systemets egen menu lægger sig
+  nedenunder, og to menuer oven i hinanden er ingen af dem til at ramme.
+- Den lytter på `mousedown`/`touchstart` med `preventDefault` — ikke på
+  `click`. Med `click` er markeringen væk, inden handleren kører, og knappen
+  ville sende en tom opgave.
+
+Og hændelsen er `selectionchange`, fordi det er den **eneste**, der fyrer for
+alle måderne at markere på: mus, tastatur, langt tryk og systemets håndtag.
+`mouseup` alene ville virke på en computer og ingen andre steder. Til gengæld
+fyrer den under hele trækket, så den er forsinket — ellers hopper knappen
+rundt, mens man stadig markerer.
+
+### En opgave er ÉN linje
+
+Markeringen foldes til én linje, og der er et loft på 500 tegn — med en besked,
+når det blev brugt. En opgave, der er et helt afsnit, er ikke en opgave.
+
+## 26 · Tre ting mere, som brugen fandt
+
+### Nøglen kunne ikke nås at læses
+
+`POST /api/v1/keys` viste værdien i et `<p>` på siden — og kaldte så
+`tegnSide()` med det samme for at få den nye nøgle med i listen. Optegningen
+tegnede feltet væk. Nøglen blinkede og var **væk for altid**: Sagu gemmer kun
+en hash, så der er ingen vej til at se den igen.
+
+Den står nu i en rude uden for siden, som en optegning ikke kan røre — og som
+man skal lukke selv. **Ruden lukker ikke på et klik ved siden af**, selv om
+alle andre ruder i appen gør: de kan åbnes igen, det kan denne ikke. Reglen
+bøjes netop dér, hvor den ellers ville gøre skade.
+
+### Brugernavnet vises med stort
+
+En visningsregel, og kun det. Den gemte værdi, alt der **sammenlignes**, og
+alt der sendes til serveren er uændret — ellers holder login op med at virke,
+og en deling til »Bo« finder ikke kontoen »bo«. Der er en test på begge dele.
+
+Reglen bor i `app/shared/markdown.js` ved siden af `pentNavn`, fordi den også
+skal gælde de sider, **serveren** tegner: samtykkesiden og wikiens
+kommentarer. Kun det første tegn ændres: »andreasD« bliver »AndreasD«, ikke
+»Andreasd«.
+
+### Sidemenuen lukker sig, når man vælger en note
+
+Se §24 — rettelsen hører i `aabnNote()`, og **før** vagten mod »samme note
+igen«.

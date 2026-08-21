@@ -6241,7 +6241,7 @@ function samtykkeHtml(req, q, o) {
       <button class="btn" type="submit" name="godkend" value="nej" style="width:100%;margin-top:8px">Cancel</button>
     </form>
     <p class="gate-note">You can revoke this again under Settings → Connected apps.
-      Signed in as <strong>${markdown.esc(o.bruger)}</strong>.</p>`);
+      Signed in as <strong>${markdown.esc(markdown.pentBrugernavn(o.bruger))}</strong>.</p>`);
 }
 
 /*

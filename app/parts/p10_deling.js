@@ -58,10 +58,10 @@ function delingsBaandHtml(n) {
   return `<div class="delt-baand${skriv ? ' kan-skrive' : ''}">
     ${icon('shared', 16)}
     <div>
-      <strong>${esc(n.owner || 'Someone')} shared this page with you.</strong>
+      <strong>${esc(pentBruger(n.owner) || 'Someone')} shared this page with you.</strong>
       <div class="meta saetning">${skriv
     ? 'You can edit it and add subpages. Deleting, publishing and sharing it on stay with '
-      + `${esc(n.owner || 'the owner')}.`
+      + `${esc(pentBruger(n.owner) || 'the owner')}.`
     : 'You can read it. Nothing you type here would be saved.'}</div>
     </div>
   </div>`;
@@ -138,7 +138,7 @@ async function visDelPanel() {
             tree: q('delTrae').checked,
           });
           adgang = await api('GET', `/api/v1/notes/${n.id}/access`);
-          toast(`Shared with ${navn}.`);
+          toast(`Shared with ${pentBruger(navn)}.`);
           tegn();
         } catch (ex) { fejl(ex.message); giv.disabled = false; }
       });
@@ -170,7 +170,7 @@ async function visDelPanel() {
         over.disabled = true;
         try {
           const d = await api('POST', `/api/v1/notes/${n.id}/owner`, { username: navn });
-          toast(`${d.newOwner.username} owns it now — ${d.antal} page${d.antal === 1 ? '' : 's'}.`);
+          toast(`${pentBruger(d.newOwner.username)} owns it now — ${d.antal} page${d.antal === 1 ? '' : 's'}.`);
           luk();
           await hentTrae();
           tegnTrae();
@@ -192,7 +192,7 @@ function delKropHtml(adgang, folk) {
     ${adgang.people.length ? `<div class="tablewrap"><table class="data">
       <thead><tr><th>Account</th><th>Can</th><th></th></tr></thead>
       <tbody>${adgang.people.map((p) => `<tr>
-        <td>${esc(p.username)}</td>
+        <td>${esc(pentBruger(p.username))}</td>
         <td>${p.level === 'write' ? 'Read and write' : 'Read'}${p.tree ? '' : ' — this page only'}</td>
         <td style="text-align:right"><button class="btn ghost danger"
           data-fjern="${esc(p.userId)}">Remove</button></td>
@@ -202,7 +202,7 @@ function delKropHtml(adgang, folk) {
     ${ledige.length ? `
       <div class="btnrow" style="margin-top:14px">
         <select class="input" id="delHvem" style="max-width:180px">
-          ${ledige.map((p) => `<option value="${esc(p.username)}">${esc(p.username)}</option>`).join('')}
+          ${ledige.map((p) => `<option value="${esc(p.username)}">${esc(pentBruger(p.username))}</option>`).join('')}
         </select>
         <select class="input" id="delNiveau" style="max-width:160px">
           <option value="read">Can read</option>
@@ -227,7 +227,7 @@ function delKropHtml(adgang, folk) {
       remove it.</p>
       <div class="btnrow">
         <select class="input" id="delNyEjer" style="max-width:180px">
-          ${folk.map((p) => `<option value="${esc(p.username)}">${esc(p.username)}</option>`).join('')}
+          ${folk.map((p) => `<option value="${esc(p.username)}">${esc(pentBruger(p.username))}</option>`).join('')}
         </select>
         <button class="btn ghost danger" id="delOverdrag">Hand over</button>
       </div>` : ''}`;
@@ -253,7 +253,7 @@ async function sideDelt() {
       <tbody>${noter.map((n) => `<tr>
         <td><button class="linkbtn" data-aabn="${esc(n.id)}">${n.icon ? `${esc(n.icon)} ` : ''}${
   esc(n.title || 'Untitled')}</button></td>
-        <td>${esc(n.owner || '')}</td>
+        <td>${esc(pentBruger(n.owner))}</td>
         <td>${n.level === 'write' ? 'read and write' : 'read'}</td>
         <td class="num">${esc(visTid(n.updatedAt))}</td>
       </tr>`).join('')}</tbody></table></div>

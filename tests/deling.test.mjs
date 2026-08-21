@@ -443,3 +443,26 @@ test('en eksport bærer IKKE delingerne — og det er et valg', async () => {
   assert.ok(!raa.includes('note_acl'), 'ingen ACL-tabel i eksporten');
   assert.ok(!raa.includes(bId), 'og ikke et fremmed bruger-id nogen steder');
 });
+
+/* ============================== navnet, som det vises ================= */
+
+test('brugernavnet VISES med stort — men gemmes og matches uændret', async () => {
+  /*
+   * Skellet er hele pointen: »stort begyndelsesbogstav« er en
+   * visningsregel. Ændrede den den gemte værdi, ville login holde op med at
+   * virke, og en deling til »Bo« ville ikke finde kontoen »bo«.
+   */
+  const folk = (await a.kald('GET', '/api/v1/people')).data.people.map((p) => p.username);
+  assert.ok(folk.includes('bob'), 'API-et svarer med det, kontoen HEDDER');
+
+  const mig = (await a.kald('GET', '/api/me')).data.user.username;
+  assert.equal(mig, 'alice', 'og »hvem er jeg« er heller ikke pyntet');
+
+  // Delingen matcher uafhaengigt af store bogstaver, saa den pyntede form
+  // ogsaa ville virke, hvis den slap igennem et sted.
+  const t = await byggTrae('Store bogstaver');
+  const r = await a.kald('POST', `/api/v1/notes/${t.rod.id}/access`, { username: 'Bob', level: 'read' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.delt.username, 'bob', 'svaret baerer kontoens rigtige navn');
+  assert.equal((await b.kald('GET', `/api/v1/notes/${t.rod.id}`)).status, 200);
+});
