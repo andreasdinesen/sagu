@@ -2456,3 +2456,18 @@ html, body { overscroll-behavior-y: contain; }
 .syntaks-ud blockquote { margin: 0; }
 .syntaks-ud img { max-height: 40px; width: auto; }
 .syntaks-ud .tabelwrap table { font-size: 12px; }
+
+/* ------------------------------------------------- »Save to Sagu«-bogmærket */
+.klip-valg { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 620px) { .klip-valg { grid-template-columns: 1fr; } }
+
+.klip-faerdig {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--accent-soft, var(--line));
+  border-radius: 10px;
+  background: var(--hover);
+}
+/* Linket skal SE ud som noget, man tager fat i og trækker. */
+.klip-link { cursor: grab; text-decoration: none; }
+.klip-link:active { cursor: grabbing; }

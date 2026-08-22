@@ -1871,6 +1871,7 @@ function visNoteMenu() {
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
+    <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
@@ -1890,6 +1891,29 @@ function visNoteMenu() {
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
+        /*
+         * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).
+         *
+         * Det stod KUN i adressefeltet, og en browser viser ikke altid
+         * fragmentet - Chrome forkorter til vaertsnavnet, saa der bogstavelig
+         * talt ikke var noget at laese af (Andreas, 2026-08-21, med et
+         * skaermbillede hvor der staar »sagu.dk« og intet andet).
+         *
+         * En vaerdi, opskrifterne beder om, skal kunne HENTES i appen. Ellers
+         * er hjaelpesiden en anvisning paa noget, man ikke kan skaffe.
+         */
+        if (hvad === 'id') {
+          try {
+            await navigator.clipboard.writeText(n.id);
+            toast('Note ID copied.');
+          } catch {
+            // Uden udklipsholder (http, aeldre browser): vis det, saa det kan
+            // markeres i haanden. En besked om at det ikke lykkedes hjaelper
+            // ingen, der bare skal bruge de 32 tegn.
+            visIdPanel(n.id);
+          }
+          return;
+        }
         if (hvad === 'sub') { await opretOgAaben({ parentId: n.id }); return; }
         if (hvad === 'fs') { saetFokus(true); await slaaBrowserFuldskaerm(); return; }
         if (hvad === 'dup' || hvad === 'dupall') {
@@ -1985,3 +2009,46 @@ document.addEventListener('fullscreenchange', () => {
 window.addEventListener('beforeunload', (e) => {
   if (editor.beskidt) { gemNu(); e.preventDefault(); e.returnValue = ''; }
 });
+
+/*
+ * Note-id'et vist, når udklipsholderen ikke kan bruges.
+ *
+ * `navigator.clipboard` findes kun i et sikkert kontekst - Sagu nås også på
+ * `IP:port` over ren http fra panelet, og dér findes den ikke. En besked om
+ * at kopieringen mislykkedes hjælper ingen, der bare skal bruge de 32 tegn:
+ * så er det bedre at vise dem markeret, klar til ⌘C.
+ */
+function visIdPanel(id) {
+  // `esc`, ikke `attr`: fladens egen `esc` escaper OGSAA anfoerselstegn og er
+  // dermed attributsikker - `attr` findes kun i det delte markdown-modul og er
+  // ikke global her. Det saas foerst, da reserveveien faktisk blev gaaet.
+  const gammel = document.getElementById('idPanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'idPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Note ID</h2>
+        <button class="iconbtn" id="idLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <input class="input" id="idFelt" value="${esc(id)}" readonly
+          autocomplete="off" spellcheck="false">
+        <p class="meta saetning" style="margin-top:10px">This is what the API calls
+        <code>NOTE_ID</code> — the address a shortcut adds to with
+        <code>?to=…</code>. See <strong>API &amp; shortcuts</strong> for the recipes.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#idLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+  const felt = host.querySelector('#idFelt');
+  felt.focus();
+  felt.select();
+}

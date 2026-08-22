@@ -530,6 +530,31 @@ async function sideSettings() {
     <div id="filListe"><p class="meta saetning">Loading…</p></div>
   </div>
 
+  <h2>Save to Sagu</h2>
+  <div class="card">
+    <p class="meta saetning">A bookmark you press on any page — a ticket, an article, a wiki —
+    and it lands in Sagu as a note. Select something first and only the selection is saved;
+    otherwise the page's main text is.</p>
+    <div class="klip-valg">
+      <label class="field"><span>Notebook</span>
+        <select class="input" id="klipBog">
+          <option value="">Not in a notebook</option>
+          ${(state.notebooks || []).map((b) => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('')}
+        </select></label>
+      <label class="field"><span>Tag (optional)</span>
+        <input class="input" id="klipMaerke" placeholder="clip" autocomplete="off"
+          autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    </div>
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="klipLav">Make the bookmark</button>
+    </div>
+    <div id="klipUd"></div>
+    <p class="meta saetning" style="margin-top:12px">It gets a <strong>capture</strong> key of its
+    own — a key that can put something new in and <strong>read nothing at all</strong>. A bookmark
+    sits in plain text in your browser and syncs between machines, so it must not be able to pull
+    your archive back out. Revoke it under <strong>Access keys</strong> whenever you like.</p>
+  </div>
+
   <h2>Published pages</h2>
   <div class="card">
     <p class="meta saetning">Pages your colleagues can read without an account.
@@ -751,6 +776,42 @@ function bindSettings() {
         await api('POST', '/api/v1/admin', { allowRegistration: reg.checked });
         toast(reg.checked ? 'Anyone can now sign up.' : 'Sign-up is closed.');
       } catch (ex) { toast(ex.message); reg.checked = !reg.checked; }
+    });
+  }
+
+  const klipLav = document.getElementById('klipLav');
+  if (klipLav) {
+    klipLav.addEventListener('click', async () => {
+      const bog = document.getElementById('klipBog').value;
+      const maerke = document.getElementById('klipMaerke').value.trim().replace(/^#/, '').replace(/\s+/g, '-');
+      klipLav.disabled = true;
+      try {
+        /*
+         * Noeglen laves HER og vises kun én gang - som alle andre noegler.
+         *
+         * Derfor bygges bogmaerket i samme aandedrag: bagefter findes den raa
+         * noegle ikke laengere nogen steder, og en »byg den igen«-knap ville
+         * kraeve en ny noegle. Navnet siger hvad den er til, saa den kan
+         * genkendes paa noeglelisten, naar den skal trakkes tilbage.
+         */
+        const navn = `Bookmark${bog ? ` — ${bog}` : ''}`;
+        const d = await api('POST', '/api/v1/keys', { name: navn, scope: 'capture' });
+        /*
+         * Og saa tegnes siden IKKE om.
+         *
+         * Foerste udgave kaldte `genindlaes()` bagefter, for at den nye
+         * noegle kunne dukke op paa noeglelisten. Det slettede bogmaerket
+         * igen i samme oejeblik, det var lavet - og noeglen vises kun én
+         * gang, saa den var vaek for altid. Det er samme fejl som »jeg kan
+         * ikke nå at se Access key når jeg opretter en ny« (Andreas), og
+         * den er vaerre her, fordi der ikke engang staar noget at kopiere.
+         *
+         * Noeglelisten er ajour naeste gang siden tegnes. Bogmaerket bliver
+         * staaende, til man selv gaar videre.
+         */
+        visKlip(byggKlip({ base: offentligBase(), noegle: d.key, notesbog: bog, tag: maerke }), bog, maerke);
+      } catch (ex) { toast(ex.message); }
+      klipLav.disabled = false;
     });
   }
 
@@ -1264,5 +1325,53 @@ function visNulstilPanel(id, navn) {
   felt.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); gaa(); }
     e.stopPropagation();
+  });
+}
+
+/*
+ * Det færdige bogmærke.
+ *
+ * Linket er ægte og trækbart: at trække det op i bogmærkelinjen er den måde,
+ * et bogmærke installeres på, og en instruktion uden noget at trække i er
+ * ingen instruktion. Kopier-knappen er til dem, der hellere vil indsætte det
+ * i »nyt bogmærke«-dialogen — og til telefoner, hvor der ikke er en
+ * bogmærkelinje at trække til.
+ *
+ * `onclick` returnerer false og gør ingenting: klikker man på linket HER,
+ * ville browseren køre klippet på Sagus egen side. Det er ikke farligt, men
+ * det ser ud som om knappen er i stykker.
+ */
+function visKlip(adresse, bog, maerke) {
+  const ud = document.getElementById('klipUd');
+  if (!ud) return;
+  ud.innerHTML = `<div class="klip-faerdig">
+      <p class="meta saetning"><strong>Drag this up to your bookmarks bar:</strong></p>
+      <p style="margin:8px 0 12px"><a class="btn klip-link" id="klipLink">Save to Sagu</a></p>
+      <div class="btnrow">
+        <button class="btn" id="klipKopi">Copy the address</button>
+      </div>
+      <p class="meta saetning" style="margin-top:10px">Saves to
+      <strong>${esc(bog || 'no notebook')}</strong>${maerke ? ` with <code>#${esc(maerke)}</code>` : ''}.
+      Want it somewhere else too? Make a second one — each carries its own key.</p>
+    </div>`;
+
+  const link = ud.querySelector('#klipLink');
+  link.href = adresse;
+  link.addEventListener('click', (e) => { e.preventDefault(); toast('Drag it to your bookmarks bar instead.'); });
+
+  ud.querySelector('#klipKopi').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(adresse);
+      toast('Copied. Make a new bookmark and paste it as the address.');
+    } catch {
+      // Uden udklipsholder: vis den, saa den kan markeres i haanden.
+      const felt = document.createElement('textarea');
+      felt.className = 'input';
+      felt.rows = 4;
+      felt.value = adresse;
+      felt.readOnly = true;
+      ud.appendChild(felt);
+      felt.select();
+    }
   });
 }

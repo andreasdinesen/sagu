@@ -2939,6 +2939,196 @@ async function visKoePanel() {
   await tegn();
 }
 
+/* ---- p14_klip.js ---- */
+/*
+ * F18 - »Save to Sagu«: bogmærket, der gemmer en side som en note.
+ *
+ * ── Hvad Andreas bad om ───────────────────────────────────────────────────
+ *
+ * »Kan du lave et javascript som jeg kan gemme direkte i sagu på samme måde
+ * som ServiceNowMarkdown. Det skal lægges som et punkt under indstillinger så
+ * det er let at finde. man skal også kunne vælge projekt og evt tag«
+ * (2026-08-21). »Projekt« er en **notesbog** i Sagu.
+ *
+ * ── Bogmærket er skrevet som en RIGTIG funktion ───────────────────────────
+ *
+ * `klipFunktion` herunder er almindelig, læsbar kode, og bogmærket bygges af
+ * dens egen `toString()`. Alternativet - en streng med kode i - kan ikke
+ * læses, ikke `node --check`'es og ikke rettes uden at tælle
+ * anførselstegn. Build'et minificerer ikke, så det, man læser her, er præcis
+ * det, der havner i bogmærket.
+ *
+ * ── Nøglen er `capture`, og det er ikke en detalje ────────────────────────
+ *
+ * Et bogmærke ligger i klartekst i browserens bogmærkeliste og bliver
+ * synkroniseret rundt. Nøglen i det skal derfor være den svageste, der kan
+ * gøre arbejdet: `capture` kan lægge noget NYT ind og læse **ingenting**.
+ * Mister man maskinen, kan bogmærket ikke bruges til at hente arkivet ud.
+ * Derfor laver ruden altid en `capture`-nøgle - man kan ikke vælge en bredere.
+ *
+ * ── Og hvorfor det er ét kald til `/api/v1/capture` ───────────────────────
+ *
+ * Ingen ny rute, intet nyt format. Bogmærket er bare endnu en klient til det
+ * API, iPhone-genvejene allerede bruger (F9) - så er der ét sted, der tager
+ * imod tekst, og én scope-tabel, der afgør hvad den må.
+ */
+
+/**
+ * Selve bogmærket. Kører på en FREMMED side og må ikke antage noget om den.
+ *
+ * Alt, den har brug for, kommer i `k`: adressen, nøglen, notesbogen og
+ * mærket. Ingen globale variabler fra Sagu findes derovre.
+ */
+function klipFunktion(k) {
+  var d = document;
+
+  /* Markeringen, hvis der er en - ellers sidens hovedindhold. Det man har
+     streget under, er det man mente. */
+  var valg = window.getSelection();
+  var rod = null;
+  if (valg && !valg.isCollapsed && String(valg).trim().length > 2) {
+    rod = d.createElement('div');
+    for (var i = 0; i < valg.rangeCount; i++) rod.appendChild(valg.getRangeAt(i).cloneContents());
+  } else {
+    rod = d.querySelector('article') || d.querySelector('main') || d.body;
+  }
+
+  var UD = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, IFRAME: 1, SVG: 1, NAV: 1, FOOTER: 1, FORM: 1 };
+  var linjer = [];
+
+  function tekst(n) {
+    var s = '';
+    for (var i = 0; i < n.childNodes.length; i++) {
+      var b = n.childNodes[i];
+      if (b.nodeType === 3) s += b.nodeValue;
+      else if (b.nodeType === 1 && !UD[b.tagName]) {
+        var t = b.tagName;
+        if (t === 'BR') s += ' ';
+        else if (t === 'CODE') s += '`' + tekst(b) + '`';
+        else if (t === 'STRONG' || t === 'B') s += '**' + tekst(b) + '**';
+        else if (t === 'EM' || t === 'I') s += '*' + tekst(b) + '*';
+        else if (t === 'A' && b.getAttribute('href')) {
+          var h = b.href || b.getAttribute('href');
+          var inde = tekst(b).trim();
+          s += inde ? '[' + inde + '](' + h + ')' : h;
+        } else s += tekst(b);
+      }
+    }
+    return s.replace(/[ \t ]+/g, ' ');
+  }
+
+  function skriv(s) {
+    s = String(s || '').replace(/\s+/g, ' ').trim();
+    if (s) linjer.push(s);
+  }
+
+  function gaa(n, dybde) {
+    if (dybde > 40) return;
+    for (var i = 0; i < n.childNodes.length; i++) {
+      var b = n.childNodes[i];
+      if (b.nodeType === 3) { skriv(b.nodeValue); continue; }
+      if (b.nodeType !== 1 || UD[b.tagName]) continue;
+      var t = b.tagName;
+      if (/^H[1-6]$/.test(t)) skriv(new Array(Number(t[1]) + 1).join('#') + ' ' + tekst(b));
+      else if (t === 'P') skriv(tekst(b));
+      /* En LISTE er ÉN blok. Skrev man hvert punkt for sig med en tom linje
+         imellem, blev en nummereret liste til fem lister, der hver begyndte
+         paa 1 - maalt paa en rigtig side. */
+      else if (t === 'UL' || t === 'OL') linjer.push(liste(b, t === 'OL', ''));
+      else if (t === 'BLOCKQUOTE') skriv('> ' + tekst(b));
+      else if (t === 'PRE') linjer.push('```\n' + (b.textContent || '').trim() + '\n```');
+      else if (t === 'HR') linjer.push('---');
+      /* Og en TABEL er ÉN blok med en skillelinje under foerste raekke -
+         ellers er det slet ikke en tabel, men en raekke loese streger. */
+      else if (t === 'TABLE') { var tb = tabel(b); if (tb) linjer.push(tb); }
+      else gaa(b, dybde + 1);
+    }
+  }
+
+  function liste(n, nummereret, indryk) {
+    var ud = [];
+    var nr = 1;
+    for (var i = 0; i < n.children.length; i++) {
+      var li = n.children[i];
+      if (li.tagName !== 'LI') continue;
+      /* Underlister tages for sig og rykkes ind - saa overlever et
+         hierarki turen, i stedet for at blive fladet ud. */
+      var under = [];
+      for (var j = 0; j < li.children.length; j++) {
+        var u = li.children[j];
+        if (u.tagName === 'UL' || u.tagName === 'OL') { under.push(u); u.remove(); }
+      }
+      var linje = indryk + (nummereret ? (nr++) + '. ' : '- ') + tekst(li).trim();
+      if (linje.trim() !== indryk.trim() + (nummereret ? '.' : '-')) ud.push(linje);
+      for (var m = 0; m < under.length; m++) {
+        ud.push(liste(under[m], under[m].tagName === 'OL', indryk + '  '));
+      }
+    }
+    return ud.join('\n');
+  }
+
+  function tabel(n) {
+    var raekker = n.querySelectorAll('tr');
+    if (!raekker.length) return '';
+    var ud = [];
+    for (var i = 0; i < raekker.length; i++) {
+      var celler = [];
+      var c = raekker[i].children;
+      for (var j = 0; j < c.length; j++) celler.push(tekst(c[j]).replace(/\|/g, '\\|').trim());
+      if (!celler.length) continue;
+      ud.push('| ' + celler.join(' | ') + ' |');
+      if (ud.length === 1) ud.push('|' + new Array(celler.length + 1).join(' --- |'));
+    }
+    return ud.length > 1 ? ud.join('\n') : '';
+  }
+
+  gaa(rod, 0);
+
+  var titel = (d.title || location.hostname).replace(/\s+/g, ' ').trim().slice(0, 180);
+  /* Mærket skal stå i FØRSTE linje - det er dér, capture læser det (F9). */
+  var foerste = titel + (k.tag ? ' #' + k.tag : '');
+  var krop = linjer.join('\n\n').slice(0, 100000);
+  var tekstUd = foerste + '\n\n[' + titel + '](' + location.href + ')\n\n' + krop;
+
+  var adr = k.base + '/api/v1/capture';
+  if (k.notesbog) adr += '?notebook=' + encodeURIComponent(k.notesbog);
+
+  fetch(adr, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8', Authorization: 'Bearer ' + k.noegle },
+    body: tekstUd,
+  }).then(function (r) {
+    return r.json().catch(function () { return {}; });
+  }).then(function (svar) {
+    if (svar && svar.note) sig('Saved to Sagu');
+    else sig((svar && svar.message) || 'Sagu said no — check the key');
+  }).catch(function () {
+    sig('Could not reach Sagu');
+  });
+
+  /* Et svar man kan SE. En knap, der gør noget usynligt, prøver man igen. */
+  function sig(besked) {
+    var e = d.createElement('div');
+    e.textContent = besked;
+    e.style.cssText = 'position:fixed;z-index:2147483647;top:16px;right:16px;padding:10px 14px;'
+      + 'border-radius:8px;background:#1c1a17;color:#e8e2d8;font:14px/1.3 system-ui,sans-serif;'
+      + 'box-shadow:0 8px 24px rgba(0,0,0,.4)';
+    d.body.appendChild(e);
+    setTimeout(function () { e.remove(); }, 2600);
+  }
+}
+
+/**
+ * Bogmærkets adresse, bygget af funktionen selv.
+ *
+ * `encodeURIComponent` om det hele: en bogmærke-URL må ikke indeholde `"`
+ * eller mellemrum i visse browsere, og koden her er fuld af begge dele.
+ */
+function byggKlip(konfig) {
+  const kode = `(${klipFunktion.toString()})(${JSON.stringify(konfig)})`;
+  return `javascript:${encodeURIComponent(kode)}`;
+}
+
 /* ---- p1_core.js ---- */
 'use strict';
 /* Sagu - kerne: opstart, tema, login, app-skal.
@@ -4520,6 +4710,31 @@ async function sideSettings() {
     <div id="filListe"><p class="meta saetning">Loading…</p></div>
   </div>
 
+  <h2>Save to Sagu</h2>
+  <div class="card">
+    <p class="meta saetning">A bookmark you press on any page — a ticket, an article, a wiki —
+    and it lands in Sagu as a note. Select something first and only the selection is saved;
+    otherwise the page's main text is.</p>
+    <div class="klip-valg">
+      <label class="field"><span>Notebook</span>
+        <select class="input" id="klipBog">
+          <option value="">Not in a notebook</option>
+          ${(state.notebooks || []).map((b) => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('')}
+        </select></label>
+      <label class="field"><span>Tag (optional)</span>
+        <input class="input" id="klipMaerke" placeholder="clip" autocomplete="off"
+          autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    </div>
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="klipLav">Make the bookmark</button>
+    </div>
+    <div id="klipUd"></div>
+    <p class="meta saetning" style="margin-top:12px">It gets a <strong>capture</strong> key of its
+    own — a key that can put something new in and <strong>read nothing at all</strong>. A bookmark
+    sits in plain text in your browser and syncs between machines, so it must not be able to pull
+    your archive back out. Revoke it under <strong>Access keys</strong> whenever you like.</p>
+  </div>
+
   <h2>Published pages</h2>
   <div class="card">
     <p class="meta saetning">Pages your colleagues can read without an account.
@@ -4741,6 +4956,42 @@ function bindSettings() {
         await api('POST', '/api/v1/admin', { allowRegistration: reg.checked });
         toast(reg.checked ? 'Anyone can now sign up.' : 'Sign-up is closed.');
       } catch (ex) { toast(ex.message); reg.checked = !reg.checked; }
+    });
+  }
+
+  const klipLav = document.getElementById('klipLav');
+  if (klipLav) {
+    klipLav.addEventListener('click', async () => {
+      const bog = document.getElementById('klipBog').value;
+      const maerke = document.getElementById('klipMaerke').value.trim().replace(/^#/, '').replace(/\s+/g, '-');
+      klipLav.disabled = true;
+      try {
+        /*
+         * Noeglen laves HER og vises kun én gang - som alle andre noegler.
+         *
+         * Derfor bygges bogmaerket i samme aandedrag: bagefter findes den raa
+         * noegle ikke laengere nogen steder, og en »byg den igen«-knap ville
+         * kraeve en ny noegle. Navnet siger hvad den er til, saa den kan
+         * genkendes paa noeglelisten, naar den skal trakkes tilbage.
+         */
+        const navn = `Bookmark${bog ? ` — ${bog}` : ''}`;
+        const d = await api('POST', '/api/v1/keys', { name: navn, scope: 'capture' });
+        /*
+         * Og saa tegnes siden IKKE om.
+         *
+         * Foerste udgave kaldte `genindlaes()` bagefter, for at den nye
+         * noegle kunne dukke op paa noeglelisten. Det slettede bogmaerket
+         * igen i samme oejeblik, det var lavet - og noeglen vises kun én
+         * gang, saa den var vaek for altid. Det er samme fejl som »jeg kan
+         * ikke nå at se Access key når jeg opretter en ny« (Andreas), og
+         * den er vaerre her, fordi der ikke engang staar noget at kopiere.
+         *
+         * Noeglelisten er ajour naeste gang siden tegnes. Bogmaerket bliver
+         * staaende, til man selv gaar videre.
+         */
+        visKlip(byggKlip({ base: offentligBase(), noegle: d.key, notesbog: bog, tag: maerke }), bog, maerke);
+      } catch (ex) { toast(ex.message); }
+      klipLav.disabled = false;
     });
   }
 
@@ -5254,6 +5505,54 @@ function visNulstilPanel(id, navn) {
   felt.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); gaa(); }
     e.stopPropagation();
+  });
+}
+
+/*
+ * Det færdige bogmærke.
+ *
+ * Linket er ægte og trækbart: at trække det op i bogmærkelinjen er den måde,
+ * et bogmærke installeres på, og en instruktion uden noget at trække i er
+ * ingen instruktion. Kopier-knappen er til dem, der hellere vil indsætte det
+ * i »nyt bogmærke«-dialogen — og til telefoner, hvor der ikke er en
+ * bogmærkelinje at trække til.
+ *
+ * `onclick` returnerer false og gør ingenting: klikker man på linket HER,
+ * ville browseren køre klippet på Sagus egen side. Det er ikke farligt, men
+ * det ser ud som om knappen er i stykker.
+ */
+function visKlip(adresse, bog, maerke) {
+  const ud = document.getElementById('klipUd');
+  if (!ud) return;
+  ud.innerHTML = `<div class="klip-faerdig">
+      <p class="meta saetning"><strong>Drag this up to your bookmarks bar:</strong></p>
+      <p style="margin:8px 0 12px"><a class="btn klip-link" id="klipLink">Save to Sagu</a></p>
+      <div class="btnrow">
+        <button class="btn" id="klipKopi">Copy the address</button>
+      </div>
+      <p class="meta saetning" style="margin-top:10px">Saves to
+      <strong>${esc(bog || 'no notebook')}</strong>${maerke ? ` with <code>#${esc(maerke)}</code>` : ''}.
+      Want it somewhere else too? Make a second one — each carries its own key.</p>
+    </div>`;
+
+  const link = ud.querySelector('#klipLink');
+  link.href = adresse;
+  link.addEventListener('click', (e) => { e.preventDefault(); toast('Drag it to your bookmarks bar instead.'); });
+
+  ud.querySelector('#klipKopi').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(adresse);
+      toast('Copied. Make a new bookmark and paste it as the address.');
+    } catch {
+      // Uden udklipsholder: vis den, saa den kan markeres i haanden.
+      const felt = document.createElement('textarea');
+      felt.className = 'input';
+      felt.rows = 4;
+      felt.value = adresse;
+      felt.readOnly = true;
+      ud.appendChild(felt);
+      felt.select();
+    }
   });
 }
 
@@ -7186,6 +7485,7 @@ function visNoteMenu() {
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
+    <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
@@ -7205,6 +7505,29 @@ function visNoteMenu() {
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
+        /*
+         * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).
+         *
+         * Det stod KUN i adressefeltet, og en browser viser ikke altid
+         * fragmentet - Chrome forkorter til vaertsnavnet, saa der bogstavelig
+         * talt ikke var noget at laese af (Andreas, 2026-08-21, med et
+         * skaermbillede hvor der staar »sagu.dk« og intet andet).
+         *
+         * En vaerdi, opskrifterne beder om, skal kunne HENTES i appen. Ellers
+         * er hjaelpesiden en anvisning paa noget, man ikke kan skaffe.
+         */
+        if (hvad === 'id') {
+          try {
+            await navigator.clipboard.writeText(n.id);
+            toast('Note ID copied.');
+          } catch {
+            // Uden udklipsholder (http, aeldre browser): vis det, saa det kan
+            // markeres i haanden. En besked om at det ikke lykkedes hjaelper
+            // ingen, der bare skal bruge de 32 tegn.
+            visIdPanel(n.id);
+          }
+          return;
+        }
         if (hvad === 'sub') { await opretOgAaben({ parentId: n.id }); return; }
         if (hvad === 'fs') { saetFokus(true); await slaaBrowserFuldskaerm(); return; }
         if (hvad === 'dup' || hvad === 'dupall') {
@@ -7300,6 +7623,49 @@ document.addEventListener('fullscreenchange', () => {
 window.addEventListener('beforeunload', (e) => {
   if (editor.beskidt) { gemNu(); e.preventDefault(); e.returnValue = ''; }
 });
+
+/*
+ * Note-id'et vist, når udklipsholderen ikke kan bruges.
+ *
+ * `navigator.clipboard` findes kun i et sikkert kontekst - Sagu nås også på
+ * `IP:port` over ren http fra panelet, og dér findes den ikke. En besked om
+ * at kopieringen mislykkedes hjælper ingen, der bare skal bruge de 32 tegn:
+ * så er det bedre at vise dem markeret, klar til ⌘C.
+ */
+function visIdPanel(id) {
+  // `esc`, ikke `attr`: fladens egen `esc` escaper OGSAA anfoerselstegn og er
+  // dermed attributsikker - `attr` findes kun i det delte markdown-modul og er
+  // ikke global her. Det saas foerst, da reserveveien faktisk blev gaaet.
+  const gammel = document.getElementById('idPanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'idPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Note ID</h2>
+        <button class="iconbtn" id="idLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <input class="input" id="idFelt" value="${esc(id)}" readonly
+          autocomplete="off" spellcheck="false">
+        <p class="meta saetning" style="margin-top:10px">This is what the API calls
+        <code>NOTE_ID</code> — the address a shortcut adds to with
+        <code>?to=…</code>. See <strong>API &amp; shortcuts</strong> for the recipes.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#idLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+  const felt = host.querySelector('#idFelt');
+  felt.focus();
+  felt.select();
+}
 
 /* ---- p5_omni.js ---- */
 'use strict';

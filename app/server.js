@@ -6658,6 +6658,43 @@ const server = http.createServer(async (req, res) => {
     }
     if (urlPath.startsWith('/api/')) {
       securityHeaders(res);
+      /*
+       * ── ÉN doer paa klem: `/api/v1/capture` ──────────────────────────────
+       *
+       * Bogmaerket (Settings -> »Save to Sagu«) koerer paa en HELT anden
+       * vaert - en ServiceNow-sag, en artikel, hvad som helst - og skal kunne
+       * sende siden hertil. Uden CORS afviser browseren svaret, og knappen
+       * ville se ud som om den intet gjorde.
+       *
+       * Hvorfor det er ufarligt at aabne netop den:
+       *
+       *  - `Allow-Origin: *` UDEN `Allow-Credentials`. Browseren sender
+       *    dermed ingen cookie, og et fremmed websted kan ikke handle som den
+       *    indloggede bruger.
+       *  - Sessionscookien er `SameSite=Lax`. Den foelger under ingen
+       *    omstaendigheder med en POST fra et andet websted - heller ikke en
+       *    »simpel« POST, der slipper udenom preflight. Der er altsaa ingen
+       *    ambient legitimation at misbruge, og det ER hele CSRF-spoergsmaalet.
+       *  - Tilbage staar noeglen i `Authorization`, som angriberen skal have
+       *    fat i foerst. Har han den, kan han kalde API'et fra hvad som helst
+       *    i forvejen - CORS aendrer intet ved det.
+       *
+       * Doeren gaelder KUN capture. En `read`-rute paa klem ville vaere noget
+       * andet: dér ville et svar, en fremmed side kan laese, vaere selve
+       * skaden. Capture kan pr. definition ingenting laese (F9's scope-tabel).
+       *
+       * `Cross-Origin-Resource-Policy` saettes eksplicit: `securityHeaders`
+       * har allerede sat `same-origin`, og browseren kaster svaret paa DEN
+       * konto efter CORS-tjekket (§9a, faelde 3 - samme faelde som OAuth).
+       */
+      if (urlPath === '/api/v1/capture') {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Max-Age', '3600');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+      }
       const rute = findRute(req.method, urlPath);
       if (!rute) { apiFejl(res, 404, 'unknown_endpoint', 'No such endpoint.'); return; }
       await rute.kald(req, res, { query, params: rute.params });

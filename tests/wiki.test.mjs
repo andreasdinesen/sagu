@@ -648,3 +648,69 @@ test('fremmed markdown kan ikke blive til et tag paa den offentlige side', async
     ['inline', '/wiki.js']);
   assert.ok(!/<script>alert/.test(side.tekst));
 });
+
+/*
+ * En NOTE og en NOTESBOG deler adresserum.
+ *
+ * Andreas' spørgsmål (2026-08-21): »Burde der ikke være forskel på URL'en på
+ * om det er et projekt eller en note der er delt? For hvis de begge benytter
+ * domæne/w/url kan vi så ikke komme ind i at jeg vil have 2 ens URL'er?«
+ *
+ * Svaret er nej — men det stod ikke prøvet nogen steder. Den eksisterende
+ * prøve stiller kun to NOTER op mod hinanden, og det er netop krydset mellem
+ * de to slags, spørgsmålet handler om: dér ville en glemt begrænsning give to
+ * ens adresser, hvor den ene tavst skyggede for den anden.
+ *
+ * Der er ét adresserum med vilje. `/w/handbook` skal betyde ét sted, uanset
+ * om det, der ligger der, er en side eller en hel bog — en læser kan ikke se
+ * forskel, og skal ikke kunne det. Prisen er, at navnet kan være optaget, og
+ * dét siger Sagu højt i stedet for at finde på noget andet.
+ */
+test('en notesbog og en note kan ikke få den samme adresse — nogen af vejene', async () => {
+  const bog = (await a.kald('POST', '/api/v1/notebooks', { name: 'Kryds' })).data.notebook;
+  const note = (await a.kald('POST', '/api/v1/notes',
+    { title: 'Kryds-note', body: '# Kryds\n\nnoget' })).data.note;
+
+  // 1. Bogen tager navnet foerst.
+  const foerst = await a.kald('POST', '/api/v1/shares', { notebookId: bog.id, slug: 'kryds' });
+  assert.equal(foerst.status, 200);
+
+  // ... saa kan noten ikke faa det.
+  const noteTaber = await a.kald('POST', '/api/v1/shares', { noteId: note.id, slug: 'KRYDS' });
+  assert.equal(noteTaber.status, 409, 'ogsaa med stort - adresserummet er ét');
+  assert.equal(noteTaber.data.error, 'slug_taken');
+
+  // 2. Og den anden vej rundt.
+  const bog2 = (await a.kald('POST', '/api/v1/notebooks', { name: 'Kryds to' })).data.notebook;
+  const note2 = (await a.kald('POST', '/api/v1/notes',
+    { title: 'Kryds-note to', body: '# To\n\nnoget' })).data.note;
+  assert.equal((await a.kald('POST', '/api/v1/shares',
+    { noteId: note2.id, slug: 'kryds-to' })).status, 200);
+  const bogTaber = await a.kald('POST', '/api/v1/shares', { notebookId: bog2.id, slug: 'kryds-to' });
+  assert.equal(bogTaber.status, 409);
+
+  // 3. Adressen peger ét sted hen - paa BOGEN, som tog den foerst.
+  const g = gaest(srv.base);
+  const side = await g.hent('/w/kryds/');
+  assert.equal(side.status, 200);
+  assert.match(side.tekst, /Kryds/);
+  assert.doesNotMatch(side.tekst, /Kryds-note/, 'notens indhold ligger IKKE paa bogens adresse');
+});
+
+test('en trukket adresse bliver ledig igen', async () => {
+  /*
+   * Det unikke indeks gaelder kun de LEVENDE udgivelser
+   * (`WHERE revoked_at IS NULL`). Ellers ville et navn, man havde brugt én
+   * gang, vaere spaerret for altid - og det ville vaere en overraskelse, der
+   * foerst rammer den, der ryddede op og ville begynde forfra.
+   */
+  const n1 = (await a.kald('POST', '/api/v1/notes', { title: 'Genbrug', body: '# G' })).data.note;
+  const s1 = (await a.kald('POST', '/api/v1/shares', { noteId: n1.id, slug: 'genbrug' })).data.share;
+
+  const n2 = (await a.kald('POST', '/api/v1/notes', { title: 'Genbrug to', body: '# G2' })).data.note;
+  assert.equal((await a.kald('POST', '/api/v1/shares', { noteId: n2.id, slug: 'genbrug' })).status, 409);
+
+  await a.kald('DELETE', `/api/v1/shares/${s1.id}`);
+  assert.equal((await a.kald('POST', '/api/v1/shares', { noteId: n2.id, slug: 'genbrug' })).status, 200,
+    'navnet er ledigt igen, naar udgivelsen er trukket tilbage');
+});
