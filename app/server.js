@@ -4240,6 +4240,59 @@ const ROUTES = {
 /* Ruter med et id i stien. Regexen skal vaere ANKRET - uden ^ og $ ville
    /api/v1/notes/abc/andet ogsaa matche. */
 const MOENSTRE = [
+  /* --------------------------------- administratorens kodeordsnulstilling */
+  {
+    /*
+     * En administrator kan saette et nyt kodeord paa en anden konto.
+     *
+     * »Det skal også som administrator være muligt at skifte password på
+     * brugere« (Andreas, 2026-08-21). Uden den er en glemt adgangskode paa en
+     * énmandsserver en tur i databasen med sqlite3.
+     *
+     * Fire ting er bevidste, og de er alle fire vigtigere end funktionen:
+     *
+     *  1. **`requireAdmin`, ikke `godkend`.** En NOEGLE maa aldrig kunne
+     *     skifte et kodeord - heller ikke `full`. Ellers ville én laekket
+     *     noegle vaere nok til at overtage hver eneste konto paa serveren.
+     *     Det er samme regel som `/api/password`, og den staar skrevet paa
+     *     hjaelpesiden (F9).
+     *  2. **Ikke sin egen.** En admin, der vil skifte SIT kodeord, gaar
+     *     gennem `/api/password` og skal opgive det nuvaerende. Uden den
+     *     graense ville en kapret admin-session kunne saette et nyt kodeord
+     *     uden at kende det gamle og laase ejeren ude af sin egen server.
+     *  3. **Alle den ramtes sessioner droppes.** En nulstilling skal kunne
+     *     lukke en tyv ude; blev sessionerne staaende, kunne han blive.
+     *  4. **API-noeglerne roeres IKKE.** De er andre legitimationer, brugeren
+     *     selv har lavet, og en glemt adgangskode er ikke en grund til at
+     *     slaa hans telefongenveje ihjel. Fladen SIGER det, saa det ikke er
+     *     et hul, nogen opdager senere.
+     */
+    metode: 'POST', re: /^\/api\/v1\/admin\/users\/([a-f0-9]{32})\/password$/,
+    kald: async (req, res, ctx) => {
+      const admin = requireAdmin(req, res);
+      if (!admin) return;
+      const id = ctx.params[0];
+      if (id === admin.id) {
+        apiFejl(res, 400, 'not_yourself',
+          'Change your own password under Your account — it asks for the current one.');
+        return;
+      }
+      const maal = db.prepare('SELECT id, username FROM users WHERE id = ?').get(id);
+      if (!maal) { apiFejl(res, 404, 'not_found', 'No such account.'); return; }
+      const body = await readJsonBody(req);
+      const next = typeof body.next === 'string' ? body.next : '';
+      if (next.length < 8) {
+        apiFejl(res, 400, 'bad_password', 'The password must be at least 8 characters.');
+        return;
+      }
+      db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(next), maal.id);
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(maal.id);
+      logSecurity(`kodeord-nulstillet af=${admin.username} for=${maal.username} ip=${clientIp(req)}`);
+      audit('kodeord-nulstillet-af-admin', admin.id, maal.username, clientIp(req));
+      sendJson(res, 200, { ok: true, username: maal.username });
+    },
+  },
+
   /* ------------------------------------------------------ doda (F8) */
   {
     metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/tasks$/,

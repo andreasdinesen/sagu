@@ -309,7 +309,22 @@ async function tegnFilListe() {
       host.innerHTML = '<p class="meta saetning">No files yet. Drag one onto a note, or paste an image.</p>';
       return;
     }
-    host.innerHTML = `<div class="tablewrap"><table class="data">
+    /*
+     * Listen er FOLDET som udgangspunkt.
+     *
+     * »Listen er allerede nu meget lang og fylder« (Andreas, 2026-08-21) - med
+     * et par hundrede vedhaeftninger er den en mur, man skal forbi for at naa
+     * resten af indstillingerne. Pladsmaaleren staar tilbage: den er ét blik,
+     * og det er som regel dét, man kom efter.
+     *
+     * `<details>` frem for vores egen foldning: browseren goer det selv, det
+     * virker uden JavaScript, og teksten paa knappen kan sige HVOR mange der
+     * er - saa man ved, hvad man folder ud, foer man goer det (samme grund
+     * som wikiens navigation).
+     */
+    host.innerHTML = `<details class="filfold">
+      <summary>${d.files.length} file${d.files.length === 1 ? '' : 's'}</summary>
+      <div class="tablewrap"><table class="data">
         <thead><tr><th>Name</th><th>Type</th><th class="num">Size</th><th></th></tr></thead>
         <tbody>${d.files.map((f) => `<tr>
           <td><a href="${esc(f.url)}" ${f.inline ? '' : 'download'}>${esc(f.name)}</a></td>
@@ -318,7 +333,7 @@ async function tegnFilListe() {
           <td style="text-align:right"><button class="btn ghost danger"
             data-filslet2="${esc(f.id)}">Remove</button></td>
         </tr>`).join('')}</tbody>
-      </table></div>`;
+      </table></div></details>`;
     host.querySelectorAll('[data-filslet2]').forEach((el) => {
       el.addEventListener('click', async () => {
         try {
@@ -383,11 +398,21 @@ async function sideSettings() {
         <p class="meta saetning">Off means only you can sign in. Your colleagues do not need accounts —
         a published wiki is read without one.</p>
         <div class="tablewrap" style="margin-top:14px"><table class="data">
-          <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th></tr></thead>
+          <thead><tr><th>Account</th><th>Role</th><th class="num">Created</th><th></th></tr></thead>
           <tbody>${a.users.map((u) => `<tr><td>${esc(pentBruger(u.username))}</td>
             <td>${u.isAdmin ? 'Administrator' : 'Member'}</td>
-            <td class="num">${esc(visTid(u.createdAt))}</td></tr>`).join('')}</tbody>
+            <td class="num">${esc(visTid(u.createdAt))}</td>
+            <td style="text-align:right">${u.id === state.user.id
+    ? '<span class="meta">that is you</span>'
+    : `<button class="btn ghost" data-nulstil="${esc(u.id)}"
+        data-navn="${esc(u.username)}">Set a password</button>`}</td>
+          </tr>`).join('')}</tbody>
         </table></div>
+        <p class="meta saetning">Setting a password signs that account out everywhere at once.
+        Its <strong>API keys keep working</strong> — a forgotten password is no reason to kill
+        someone's phone shortcuts; remove the key itself if that is what you mean.
+        Your own password is changed under <strong>Your account</strong>, where the current
+        one is asked for.</p>
       </div>`;
     }
   }
@@ -728,6 +753,10 @@ function bindSettings() {
       } catch (ex) { toast(ex.message); reg.checked = !reg.checked; }
     });
   }
+
+  document.querySelectorAll('[data-nulstil]').forEach((el) => {
+    el.addEventListener('click', () => visNulstilPanel(el.dataset.nulstil, el.dataset.navn));
+  });
 
   const dodaGem = document.getElementById('dodaGem');
   if (dodaGem) {
@@ -1144,4 +1173,96 @@ function tegnImportBaand(st) {
     <button class="btn ghost" id="baandGa">Show</button>`;
   const knap = host.querySelector('#baandGa');
   if (knap) knap.addEventListener('click', () => gaaTil('import'));
+}
+
+/* ------------------------------- administratorens kodeordsnulstilling */
+
+/*
+ * Ruden, en administrator sætter et nyt kodeord i.
+ *
+ * ── Hvorfor kodeordet er SYNLIGT her ──────────────────────────────────────
+ *
+ * Et `type="password"` ville skjule det for den, der skal VIDEREGIVE det.
+ * Admin sætter ikke kodeordet for sin egen skyld — han skal sige det til en
+ * kollega bagefter, og en prik-række kan man ikke læse op. Modsat sit eget
+ * kodeord, hvor felterne netop skal være skjulte, fordi ingen skal aflæse
+ * dem over skulderen.
+ *
+ * ── Og hvorfor der er en »foreslå ét«-knap ────────────────────────────────
+ *
+ * Alternativet er, at der bliver skrevet »Sommer2026« ind, hver eneste gang.
+ * Forslaget kommer fra `crypto.getRandomValues` — ikke fra `Math.random()`,
+ * som hverken er tilfældig nok eller ment til det.
+ */
+function foreslaaKodeord() {
+  // Ingen l/I/0/O: et kodeord, der skal læses op eller skrives af, må ikke
+  // have tegn, man kan tage fejl af.
+  const TEGN = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const tal = new Uint32Array(20);
+  crypto.getRandomValues(tal);
+  return [...tal].map((n) => TEGN[n % TEGN.length]).join('').replace(/(.{5})(?=.)/g, '$1-');
+}
+
+function visNulstilPanel(id, navn) {
+  const gammel = document.getElementById('nulstilPanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'nulstilPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Set a password for ${esc(pentBruger(navn))}</h2>
+        <button class="iconbtn" id="nulstilLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <label class="field"><span>New password</span>
+          <input class="input" id="nulstilFelt" type="text" autocomplete="off"
+            autocapitalize="none" autocorrect="off" spellcheck="false"
+            placeholder="At least 8 characters"></label>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn primary" id="nulstilGem">Set password</button>
+          <button class="btn" id="nulstilForslag">Suggest one</button>
+        </div>
+        <p class="meta saetning" style="margin-top:12px">It is shown in full so you can pass it
+        on. ${esc(pentBruger(navn))} is signed out everywhere the moment you set it, and should
+        change it again under <strong>Your account</strong>. API keys are not touched.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#nulstilLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  const felt = host.querySelector('#nulstilFelt');
+  felt.focus();
+  host.querySelector('#nulstilForslag').addEventListener('click', () => {
+    felt.value = foreslaaKodeord();
+    felt.focus();
+    felt.select();
+  });
+
+  const gem = host.querySelector('#nulstilGem');
+  const gaa = async () => {
+    const ny = felt.value.trim();
+    // Serveren afviser uanset hvad; det her er, for at man ikke skal proeve.
+    if (ny.length < 8) { toast('The password must be at least 8 characters.'); felt.focus(); return; }
+    gem.disabled = true;
+    try {
+      const r = await api('POST', `/api/v1/admin/users/${id}/password`, { next: ny });
+      luk();
+      toast(`${pentBruger(r.username || navn)} has a new password and is signed out everywhere.`);
+    } catch (ex) {
+      toast(ex.message);
+      gem.disabled = false;
+    }
+  };
+  gem.addEventListener('click', gaa);
+  felt.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); gaa(); }
+    e.stopPropagation();
+  });
 }

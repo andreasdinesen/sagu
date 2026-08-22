@@ -2397,3 +2397,18 @@ html, body { overscroll-behavior-y: contain; }
 @media (prefers-reduced-motion: reduce) {
   .traekopfrisk.koerer .traekopfrisk-ring svg { animation: none; }
 }
+
+/* Den foldede filliste. `summary` skal se ud som noget, man kan trykke på —
+   en trekant alene er ikke et tilbud, man ser. */
+.filfold { margin-top: 12px; }
+.filfold > summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  list-style-position: inside;
+}
+.filfold > summary:hover { background: var(--hover); color: var(--text); }
+.filfold[open] > summary { margin-bottom: 10px; }
