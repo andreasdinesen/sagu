@@ -1217,6 +1217,22 @@ function bindKrop() {
      */
     if (e.target.closest('.blok-greb, .blok-menu, .blok-indsaet')) return;
 
+    /*
+     * **Klikker man i det felt, man allerede skriver i, sker der ingenting.**
+     *
+     * Uden den her linje faldt et klik i `<textarea>`'et igennem til reglen
+     * nederst - »alt andet i kroppen aabner ogsaa redigeringen« - og saa blev
+     * blokken tegnet om med markoeren sat til SLUTNINGEN. Symptomet: man
+     * satte markoeren i linje 1, og den hoppede ned i linje 2 (Andreas,
+     * 2026-08-21).
+     *
+     * Feltet har ingen `data-blok` - det er netop det, der goer det til den
+     * aabne blok - saa det slap forbi begge de foregaaende vagter. Reglen
+     * nederst er rigtig for TEKST; den maa bare ikke gaelde det sted, man
+     * skriver.
+     */
+    if (e.target.closest('.blok-redigering')) return;
+
     // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
     // ellers har man byttet én irritation for en vaerre (doda v37).
     const a = e.target.closest('a');

@@ -3137,7 +3137,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -4744,32 +4744,31 @@ async function sideSettings() {
 
   <h2>Access keys</h2>
   <div class="card">
-    <p class="meta saetning">For iPhone shortcuts, other apps and the doda link.
-    A key reaches your own notes and nothing else. The value is shown once.</p>
+    <p class="meta saetning">For iPhone shortcuts, Siri and anything else that talks to Sagu
+    from outside. One key per device or purpose, so you can revoke a single one without
+    touching the rest. The value is shown once.</p>
     ${noegler.length ? `<div class="tablewrap"><table class="data">
-      <thead><tr><th>Name</th><th>Scope</th><th class="num">Last used</th><th></th></tr></thead>
-      <tbody>${noegler.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.scope)}</td>
+      <thead><tr><th>Name</th><th>What it may do</th><th class="num">Last used</th><th></th></tr></thead>
+      <tbody>${noegler.map((k) => `<tr><td>${esc(k.name)}</td>
+        <td>${esc(scopeNavn(k.scope))}</td>
         <td class="num">${esc(k.last_used_at ? visTid(k.last_used_at) : 'never')}</td>
         <td style="text-align:right"><button class="btn ghost danger" data-noegleslet="${esc(k.id)}">Revoke</button></td>
       </tr>`).join('')}</tbody></table></div>` : ''}
     <div class="btnrow" style="margin-top:14px">
       <input class="input" id="noegleNavn" placeholder="What is it for?" style="max-width:220px">
-      <select class="input" id="noegleScope" style="max-width:150px">
-        <option value="read">read</option>
-        <option value="capture">capture</option>
-        <option value="link">link</option>
-        <option value="full">full</option>
+      <select class="input" id="noegleScope" style="max-width:280px">
+        ${SCOPES.map((s) => `<option value="${esc(s.id)}">${esc(s.etiket)}</option>`).join('')}
       </select>
       <button class="btn" id="noegleNy">Create key</button>
     </div>
+    <p class="meta saetning" id="scopeHvornaar" style="margin-top:8px"></p>
     <div class="btnrow" style="margin-top:12px">
       <button class="btn" id="tilApi">How to use these →</button>
     </div>
-    <p class="meta saetning"><strong>read</strong> looks but never writes.
-    <strong>capture</strong> writes but never looks — a lost phone must not be able to
-    read the archive. <strong>link</strong> does both, and nothing else: it is what a
-    sister app needs to find the right note and make a new one.
-    <strong>full</strong> can also change and delete.</p>
+    <div class="tablewrap" style="margin-top:12px"><table class="data">
+      <tbody>${SCOPES.map((s) => `<tr>
+        <th style="white-space:nowrap">${esc(s.etiket)}</th>
+        <td class="meta saetning">${s.hvornaar}</td></tr>`).join('')}</tbody></table></div>
   </div>
 
   <h2>Connected apps</h2>
@@ -4833,12 +4832,13 @@ function visNoeglePanel(noegle, scope) {
   host.id = 'noeglePanel';
   host.innerHTML = `<div class="modal-kort">
       <div class="modal-top">
-        <h2>Your new ${esc(scope || 'access')} key</h2>
+        <h2>Your new key</h2>
         <button class="iconbtn" id="noegleLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
       <div class="modal-krop">
         <p class="lead">Copy it now — <strong>it is never shown again.</strong>
         Sagu keeps only a hash of it, so there is no way to look it up later.</p>
+        <p class="meta saetning">It may: <strong>${esc(scopeNavn(scope))}</strong>.</p>
         <p class="noegle-vaerdi"><code id="noegleTekst">${esc(noegle)}</code></p>
         <div class="btnrow">
           ${navigator.clipboard ? '<button class="btn primary" id="noegleKopi">Copy</button>' : ''}
@@ -4957,6 +4957,24 @@ function bindSettings() {
         toast(reg.checked ? 'Anyone can now sign up.' : 'Sign-up is closed.');
       } catch (ex) { toast(ex.message); reg.checked = !reg.checked; }
     });
+  }
+
+  /*
+   * Linjen under rullelisten skifter med valget.
+   *
+   * Tabellen nedenunder siger det hele, men den, der staar med musen paa
+   * rullelisten, skal ikke skulle kigge et andet sted hen for at finde ud af,
+   * hvad han lige har valgt.
+   */
+  const scopeValg = document.getElementById('noegleScope');
+  const scopeTekst = document.getElementById('scopeHvornaar');
+  if (scopeValg && scopeTekst) {
+    const vis = () => {
+      const s = SCOPES.find((x) => x.id === scopeValg.value);
+      scopeTekst.innerHTML = s ? s.hvornaar : '';
+    };
+    scopeValg.addEventListener('change', vis);
+    vis();
   }
 
   const klipLav = document.getElementById('klipLav');
@@ -5554,6 +5572,63 @@ function visKlip(adresse, bog, maerke) {
       felt.select();
     }
   });
+}
+
+/* ------------------------------------------------------- nøglernes navne
+ *
+ * »Kan jeg ikke få samme navne som i doda under API adgange? Jeg kan godt se
+ * at sagu har en link, men kan den ikke få en bedre beskrivelse så jeg kan se
+ * hvornår jeg skal bruge den?« (Andreas, 2026-08-21).
+ *
+ * De hed `read`, `capture`, `link`, `full` — de rå ord fra `SCOPE_TILLADER`.
+ * Et databasefelt er ikke en etiket: »link« siger ingenting om, hvad den kan
+ * eller hvornår man vil have den, og man skulle læse et helt afsnit under
+ * listen for at finde ud af det.
+ *
+ * De tre, doda også har, hedder nu **præcis det samme dér** — en familie af
+ * apps, hvor det samme begreb hedder to ting, tvinger folk til at oversætte i
+ * hovedet hver gang.
+ *
+ * `link` er Sagus egen, og den er den, der havde brug for forklaringen: den
+ * kan læse OG lægge nyt ind, men aldrig ændre eller slette.
+ *
+ * ── Rækkefølgen er ikke tilfældig ─────────────────────────────────────────
+ *
+ * Den smalleste står øverst og er derfor forvalgt — samme som i doda. Den,
+ * der ikke tager stilling, får den nøgle, der kan mindst.
+ */
+const SCOPES = [
+  {
+    id: 'capture',
+    etiket: 'Capture only — can add, cannot read',
+    hvornaar: 'An iPhone shortcut, a Siri command, the <strong>Save to Sagu</strong> bookmark — '
+      + 'anything that only sends something in. Lose the phone and it cannot pull your archive out.',
+  },
+  {
+    id: 'read',
+    etiket: 'Read only',
+    hvornaar: 'Something that looks but must never write: a script that searches your notes, '
+      + 'a dashboard, a backup that mirrors the archive.',
+  },
+  {
+    id: 'link',
+    etiket: 'Read and add — cannot change or delete',
+    hvornaar: 'Both of the above and nothing more — it can find the right note and add to it, '
+      + 'but never rewrite or remove what is already there. Pick this when another program '
+      + 'should be able to write <em>alongside</em> you rather than over you.',
+  },
+  {
+    id: 'full',
+    etiket: 'Full access',
+    hvornaar: 'Everything above, and changing and deleting. Claude and other MCP clients need '
+      + 'this to edit. No key can make another key or change your password — not even this one.',
+  },
+];
+
+/** Ét sted at slå etiketten op, så tabellen og rullelisten ikke kan drive fra hinanden. */
+function scopeNavn(id) {
+  const s = SCOPES.find((x) => x.id === id);
+  return s ? s.etiket : id;
 }
 
 /* ---- p3_passkey.js ---- */
@@ -6830,6 +6905,22 @@ function bindKrop() {
      * undtagelse er graensen mellem dem (maalt i browseren, 2026-08-21).
      */
     if (e.target.closest('.blok-greb, .blok-menu, .blok-indsaet')) return;
+
+    /*
+     * **Klikker man i det felt, man allerede skriver i, sker der ingenting.**
+     *
+     * Uden den her linje faldt et klik i `<textarea>`'et igennem til reglen
+     * nederst - »alt andet i kroppen aabner ogsaa redigeringen« - og saa blev
+     * blokken tegnet om med markoeren sat til SLUTNINGEN. Symptomet: man
+     * satte markoeren i linje 1, og den hoppede ned i linje 2 (Andreas,
+     * 2026-08-21).
+     *
+     * Feltet har ingen `data-blok` - det er netop det, der goer det til den
+     * aabne blok - saa det slap forbi begge de foregaaende vagter. Reglen
+     * nederst er rigtig for TEKST; den maa bare ikke gaelde det sted, man
+     * skriver.
+     */
+    if (e.target.closest('.blok-redigering')) return;
 
     // Et klik paa et link skal FOELGE linket, ikke aabne redigeringen -
     // ellers har man byttet én irritation for en vaerre (doda v37).
