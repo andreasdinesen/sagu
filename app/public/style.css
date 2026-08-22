@@ -2471,3 +2471,43 @@ html, body { overscroll-behavior-y: contain; }
 /* Linket skal SE ud som noget, man tager fat i og trækker. */
 .klip-link { cursor: grab; text-decoration: none; }
 .klip-link:active { cursor: grabbing; }
+
+/* Mærket siger, hvad der sker — en farve alene er et gæt, første gang. */
+.traekopfrisk { display: none; text-align: center; }
+.traekopfrisk.paa { display: block; }
+.traekopfrisk-ring { margin: 0 auto; transition: color .12s, border-color .12s; }
+.traekopfrisk-tekst {
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .28);
+}
+.traekopfrisk.klar .traekopfrisk-tekst, .traekopfrisk.koerer .traekopfrisk-tekst { color: var(--accent); }
+
+/* Synkmærket ved siden af tallene i toppen. Det ER en knap — trækket ned
+   findes ikke på en computer. */
+.synkbtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  opacity: .6;
+  transition: opacity .14s;
+}
+.synkbtn:hover, .synkbtn:focus-visible { opacity: 1; }
+/* flex:none — ellers klemmer flex-forælderen ikonet sammen. */
+.synkbtn svg { flex: none; }
+.synkbtn.koerer svg { animation: synkspin 1s linear infinite; }
+@keyframes synkspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .synkbtn.koerer svg { animation: none; } }

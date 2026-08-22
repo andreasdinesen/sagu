@@ -3173,6 +3173,10 @@ const ROUTES = {
     if (!user) return;
     sendJson(res, 200, {
       allowRegistration: getSetting('*', 'allow_registration', '') === '1',
+      storageQuota: maxSamlet(),
+      // Det, kvoten IKKE kan saettes under: den mest fyldte konto. Fladen skal
+      // kunne sige hvorfor, foer man proever.
+      storageMest: Math.max(0, ...db.prepare('SELECT id FROM users').all().map((u) => brugtPlads(u.id))),
       users: db.prepare('SELECT id, username, is_admin, created_at FROM users ORDER BY created_at')
         .all().map((u) => ({ id: u.id, username: u.username, isAdmin: !!u.is_admin, createdAt: u.created_at })),
     });
@@ -3185,6 +3189,35 @@ const ROUTES = {
     if (Object.prototype.hasOwnProperty.call(body, 'allowRegistration')) {
       setSetting('*', 'allow_registration', body.allowRegistration ? '1' : '0');
       audit('registrering-aendret', user.id, null, body.allowRegistration ? 'aaben' : 'lukket');
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'storageQuota')) {
+      /*
+       * Kvoten kan saettes op og ned - men aldrig under det, nogen ALLEREDE
+       * bruger.
+       *
+       * En kvote under forbruget sletter ingenting; den goer bare, at kontoen
+       * staar over graensen og ikke kan laegge mere op. Det ser ud som om
+       * appen er i stykker, og der er ingen vej ud, der ikke begynder med at
+       * slette noget. Serveren siger derfor nej med det samme og fortaeller,
+       * hvad den mindste lovlige vaerdi er.
+       *
+       * Sagu kan i oevrigt ikke skaffe plads: er disken mindre end tallet,
+       * er tallet et loefte, maskinen ikke kan holde. Det staar i fladen.
+       */
+      const bytes = Math.round(Number(body.storageQuota));
+      const mest = Math.max(0, ...db.prepare('SELECT id FROM users').all().map((u) => brugtPlads(u.id)));
+      if (!Number.isFinite(bytes) || bytes < MIN_KVOTE || bytes > MAKS_KVOTE) {
+        apiFejl(res, 400, 'bad_quota',
+          `The quota must be between ${visBytes(MIN_KVOTE)} and ${visBytes(MAKS_KVOTE)}.`);
+        return;
+      }
+      if (bytes < mest) {
+        apiFejl(res, 400, 'quota_below_use',
+          `An account already uses ${visBytes(mest)}. Set it to at least that, or delete some files first.`);
+        return;
+      }
+      setSetting('*', 'storage_quota', String(bytes));
+      audit('kvote-aendret', user.id, null, visBytes(bytes));
     }
     if (Object.prototype.hasOwnProperty.call(body, 'publicUrl')) {
       const ren = rensOffentligUrl(body.publicUrl);
@@ -3227,7 +3260,7 @@ const ROUTES = {
         pendingComments: antalVentende(u.id),
       },
       tags: hentMaerker(u.id),
-      storage: { used: brugtPlads(u.id), quota: MAX_SAMLET, maxFile: MAX_FIL },
+      storage: { used: brugtPlads(u.id), quota: maxSamlet(), maxFile: MAX_FIL },
       // Tom betyder "brug den vaert, du selv staar paa" - se offentligVaert().
       publicUrl: offentligUrl(),
       today: new Date().toISOString().slice(0, 10),
@@ -3509,7 +3542,7 @@ const ROUTES = {
      */
     const type = String(req.headers['content-type'] || '').split(';')[0].toLowerCase();
     if (type.startsWith('image/')) {
-      const tilbage = MAX_SAMLET - brugtPlads(u.id);
+      const tilbage = maxSamlet() - brugtPlads(u.id);
       if (tilbage <= 0) {
         apiFejl(res, 413, 'quota_full', 'Your file storage is full. Delete something first.');
         return;
@@ -4081,10 +4114,10 @@ const ROUTES = {
      * fil-loftet og den plads, brugeren har tilbage.
      */
     const brugt = brugtPlads(u.id);
-    const tilbage = MAX_SAMLET - brugt;
+    const tilbage = maxSamlet() - brugt;
     if (tilbage <= 0) {
       apiFejl(res, 413, 'quota_full',
-        `You have used all ${Math.round(MAX_SAMLET / 1024 / 1024 / 1024)} GB of file storage. Delete something first.`);
+        `You have used all ${visBytes(maxSamlet())} of file storage. Delete something first.`);
       return;
     }
     const loft = Math.min(MAX_FIL, tilbage);
@@ -4166,7 +4199,7 @@ const ROUTES = {
         .all(...arg)
         .map((f) => Object.assign(f, { url: `/api/v1/files/${f.id}`, inline: INLINE_MIME.has(f.mime) })),
       used: brugtPlads(auth.user.id),
-      quota: MAX_SAMLET,
+      quota: maxSamlet(),
     });
   },
 
@@ -4998,9 +5031,50 @@ function sikreDir(d) {
  */
 const INLINE_MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
 const MAX_FIL = 25 * 1024 * 1024;
-// Kvoten kan saettes ned i en test; i drift er den 2 GB. En konstant, en test
-// ikke kan roere, tvinger testen til at sende gigabytes for at bevise noget.
-const MAX_SAMLET = Number(process.env.SAGU_MAX_SAMLET) || 2 * 1024 * 1024 * 1024;
+
+/*
+ * ── Filkvoten er en INDSTILLING, ikke en konstant ─────────────────────────
+ *
+ * Den var 2 GB, stoebt i koden. »Kan du gøre det muligt at øge størrelsen af
+ * lageret fra 2GB til en valgfri størrelse?« (Andreas, 2026-08-22) - og han
+ * har ret: Sagu koerer paa hans egen server, hvor pladsen er hans, ikke min.
+ *
+ * Tre lag, i den raekkefoelge:
+ *   1. `settings` - det administratoren har sat i fladen. Vinder, fordi det
+ *      er det eneste, han kan aendre uden en ny udgivelse.
+ *   2. `SAGU_MAX_SAMLET` - miljoevariablen. Testene saetter den ned; ellers
+ *      skulle de sende gigabytes for at bevise noget.
+ *   3. 2 GB.
+ *
+ * **Kvoten er pr. KONTO**, ikke for hele serveren. Det er den samme graense,
+ * den altid har vaeret; det er kun tallet, der kan aendres.
+ *
+ * Og den laeses ved hvert kald i stedet for at blive husket: en aendring skal
+ * gaelde med det samme, ikke ved naeste genstart - panelets »opdater app«
+ * skriver filer uden at genstarte noget (samme laerdom som `versionNu`).
+ */
+const MAX_SAMLET_STANDARD = Number(process.env.SAGU_MAX_SAMLET) || 2 * 1024 * 1024 * 1024;
+/*
+ * Gulvet kan saettes ned i en test - af praecis samme grund som kvoten selv:
+ * vagten mod »under det, nogen allerede bruger« kan ellers kun naas ved at
+ * sende over 100 MB, og saa bliver den aldrig proevet. En vagt, ingen test kan
+ * naa, er en vagt, man tror paa uden at vide noget.
+ */
+const MIN_KVOTE = Number(process.env.SAGU_MIN_KVOTE) || 100 * 1024 * 1024;
+const MAKS_KVOTE = 64 * 1024 * 1024 * 1024 * 1024;   // 64 TB - et tal, ingen disk naar, men som stopper en tastefejl
+
+/** Bytes som noget, et menneske kan laese. Serveren har sin egen, kort udgave. */
+function visBytes(n) {
+  const gb = n / 1024 / 1024 / 1024;
+  if (gb >= 1) return `${Math.round(gb * 10) / 10} GB`;
+  return `${Math.round(n / 1024 / 1024)} MB`;
+}
+
+function maxSamlet() {
+  const sat = Number(getSetting('*', 'storage_quota', ''));
+  if (Number.isFinite(sat) && sat >= MIN_KVOTE && sat <= MAKS_KVOTE) return sat;
+  return MAX_SAMLET_STANDARD;
+}
 
 /** Filnavnet er KUN til visning og download - stien paa disken er altid id'et. */
 function renseFilnavn(raa) {

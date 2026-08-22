@@ -2453,10 +2453,24 @@ function traekIndikator() {
   if (!traekEl) {
     traekEl = document.createElement('div');
     traekEl.className = 'traekopfrisk';
-    traekEl.innerHTML = `<div class="traekopfrisk-ring">${icon('opfrisk', 18)}</div>`;
+    /*
+     * Maerket SIGER, hvad der sker.
+     *
+     * Foerste udgave var kun et ikon, der skiftede farve ved graensen - og en
+     * farve er et gaet, foerste gang man moeder gestussen. doda skriver
+     * »Pull to refresh« / »Release to refresh« / »Refreshing…«, og det er
+     * hele forskellen paa at vide og at prøve sig frem.
+     */
+    traekEl.innerHTML = `<div class="traekopfrisk-ring">${icon('opfrisk', 18)}</div>`
+      + '<div class="traekopfrisk-tekst"></div>';
     document.body.appendChild(traekEl);
   }
   return traekEl;
+}
+
+function saetTraekTekst(el, tekst) {
+  const t = el.querySelector('.traekopfrisk-tekst');
+  if (t && t.textContent !== tekst) t.textContent = tekst;
 }
 
 function skjulTraek() {
@@ -2546,8 +2560,12 @@ document.addEventListener('touchmove', (e) => {
   // foelger maerket fingeren ud af skaermen.
   nedtraek.dy = Math.min(NEDTRAEK_MAX, dy * 0.55);
   const el = traekIndikator();
-  el.style.transform = `translate(-50%, ${Math.round(nedtraek.dy)}px) rotate(${Math.round(nedtraek.dy * 3)}deg)`;
-  el.classList.toggle('klar', nedtraek.dy >= NEDTRAEK_GRAENSE * 0.55);
+  el.style.transform = `translate(-50%, ${Math.round(nedtraek.dy)}px)`;
+  const ring = el.querySelector('.traekopfrisk-ring');
+  if (ring) ring.style.transform = `rotate(${Math.round(nedtraek.dy * 3)}deg)`;
+  const klar = nedtraek.dy >= NEDTRAEK_GRAENSE * 0.55;
+  el.classList.toggle('klar', klar);
+  saetTraekTekst(el, klar ? 'Release to refresh' : 'Pull to refresh');
 }, { passive: false });
 
 document.addEventListener('touchend', () => {
@@ -2571,12 +2589,19 @@ document.addEventListener('touchcancel', () => {
  * fordi den så kan kaldes fra andet end en finger, hvis der senere bliver
  * brug for det.
  */
-async function opfriskAlt() {
+async function opfriskAlt(stille) {
   if (nedtraek.koerer) return;
   nedtraek.koerer = true;
+  sidstOpfrisket = Date.now();
+  tegnSynkMaerke();
   const el = traekIndikator();
-  el.classList.add('paa', 'koerer');
-  el.style.transform = 'translate(-50%, 64px)';
+  // En AUTOMATISK opfriskning skal vaere lydloes. Ellers popper der et maerke
+  // op, hver gang telefonen laases op (doda §v26 - samme regel dér).
+  if (!stille) {
+    el.classList.add('paa', 'koerer');
+    el.style.transform = 'translate(-50%, 64px)';
+    saetTraekTekst(el, 'Refreshing…');
+  }
   try {
     // 1. Det, jeg har skrevet, foerst - se forklaringen i toppen.
     if (typeof gemNu === 'function') await gemNu();
@@ -2586,22 +2611,97 @@ async function opfriskAlt() {
     await hentState();
     await hentGenveje();
     tegnTrae();
+    // Tallene i toppen laeser `state.counts`, men de tegner sig ikke selv.
+    // Uden den her stod der stadig »1 note«, efter at den anden var hentet -
+    // og et tal, der ikke foelger med, er vaerre end intet tal.
+    opdaterNav();
     // 4. Og selve skaermen.
     if (state.view === 'note' && editor.note && !editor.beskidt) {
-      await aabnNote(editor.note.id);
+      await aabnNote(editor.note.id, true);
     } else if (state.view === 'note' && editor.note) {
       // Ugemte rettelser: teksten er MIN, og den hentes ikke over.
-      toast('Refreshed everything except this note — it has unsaved changes.');
+      if (!stille) toast('Refreshed everything except this note — it has unsaved changes.');
     } else {
       await tegnSide();
     }
   } catch (ex) {
-    toast(ex && ex.message ? ex.message : 'Could not refresh.');
+    if (!stille) toast(ex && ex.message ? ex.message : 'Could not refresh.');
   } finally {
     nedtraek.koerer = false;
     skjulTraek();
+    tegnSynkMaerke();
   }
 }
+
+/* ------------------------------------------- naar appen kommer frem igen
+ *
+ * En app paa hjemmeskaermen bliver ALDRIG genindlaest - den lukkes ikke, den
+ * skjules. Vender man tilbage, staar der praecis det, der stod, da man gik -
+ * ogsaa selv om man har fanget noget med bogmaerket eller rettet noget paa en
+ * anden enhed imens. En app, der viser gamle tal uden at sige det, er en app,
+ * man holder op med at stole paa (doda §v26, som allerede havde det her).
+ *
+ * Sagu spurgte kun om VERSIONEN paa dette tidspunkt (`tjekVersion`), ikke om
+ * dataene. Traekket ned var eneste vej til friske noter - og den gestus
+ * findes ikke paa en computer.
+ *
+ * `pageshow` er med, fordi en tilbage-navigation kan komme fra bfcache, hvor
+ * hverken `visibilitychange` eller en genindlaesning fyrer.
+ *
+ * Gulvet paa 30 s er ikke sparsommelighed: uden det henter appen forfra, hver
+ * gang man skifter mellem to vinduer paa en computer - og en optegning midt i
+ * en saetning er vaerre end lidt gamle tal.
+ */
+let sidstOpfrisket = Date.now();
+
+/* --------------------------------------------------- »hvor gammelt er det?«
+ *
+ * Maerket ved siden af tallene i toppen. Det svarer paa ét spoergsmaal, som
+ * ellers ikke kan besvares: **sker der ingenting, eller har appen bare ikke
+ * spurgt?** Uden det ved man ikke, om de nul nye noter er sandheden eller
+ * bare det, appen sidst saa (doda §v26, som havde det foerst).
+ *
+ * Det er samtidig en KNAP. Traekket ned findes ikke paa en computer, og en
+ * automatik uden en manuel vej er en automatik, man ikke kan stole paa, naar
+ * den svigter.
+ *
+ * Ingen falsk praecision: »3 min ago«, ikke »3 min 12 s«.
+ */
+function opfriskAlder() {
+  const sek = Math.round((Date.now() - sidstOpfrisket) / 1000);
+  if (sek < 45) return 'just now';
+  const min = Math.round(sek / 60);
+  if (min < 60) return `${min} min ago`;
+  const timer = Math.round(min / 60);
+  return timer < 24 ? `${timer} h ago` : 'a while ago';
+}
+
+function tegnSynkMaerke() {
+  const el = document.getElementById('synkLabel');
+  if (!el) return;
+  el.textContent = nedtraek.koerer ? 'fetching…' : opfriskAlder();
+  const knap = document.getElementById('synkBtn');
+  if (knap) knap.classList.toggle('koerer', nedtraek.koerer);
+}
+
+/*
+ * Hvert halve minut. Tallet skal ikke vaere praecist - det skal bare ikke
+ * staa og lyve om, at det var »just now« for ti minutter siden.
+ */
+setInterval(tegnSynkMaerke, 30000);
+
+function opfriskHvisFremme() {
+  if (!state.user || document.visibilityState !== 'visible') return;
+  if (state.offline) return;
+  if (Date.now() - sidstOpfrisket < 30000) return;
+  // Skriver man lige nu, roeres skaermen ikke. `opfriskAlt` passer paa selve
+  // teksten, men en optegning under haenderne er stadig en afbrydelse.
+  if (typeof editor === 'object' && editor.aabenBlok !== null) return;
+  opfriskAlt(true);
+}
+
+document.addEventListener('visibilitychange', opfriskHvisFremme);
+window.addEventListener('pageshow', (e) => { if (e.persisted) opfriskHvisFremme(); });
 
 /* ---- p13_koe.js ---- */
 'use strict';
@@ -3137,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3584,6 +3684,8 @@ function shellHtml() {
       </div>
       <div class="topbar">
         <div class="toprow">
+          <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
+            aria-label="Fetch new notes now">${icon('opfrisk', 14)}<span id="synkLabel">just now</span></button>
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
           ${temaKnapHtml()}
         </div>
@@ -3607,8 +3709,13 @@ function shellHtml() {
 function statsHtml() {
   const c = state.counts || {};
   const dele = [];
-  if (c.notes) dele.push(`${c.notes} notes`);
-  if ((state.notebooks || []).length) dele.push(`${state.notebooks.length} notebooks`);
+  // »1 notes« stod der foer. Et tal og et ord, der ikke passer sammen, er
+  // smaat - men det er ogsaa det foerste, oejet falder paa i toppen.
+  const stk = (n, ental, flertal) => `${n} ${n === 1 ? ental : flertal}`;
+  if (c.notes) dele.push(stk(c.notes, 'note', 'notes'));
+  if ((state.notebooks || []).length) {
+    dele.push(stk(state.notebooks.length, 'notebook', 'notebooks'));
+  }
   if (c.archived) dele.push(`${c.archived} archived`);
   if (c.trash) dele.push(`${c.trash} in trash`);
   return dele.map((d) => `<span>${esc(d)}</span>`).join('');
@@ -3667,6 +3774,9 @@ function bindNav() {
 function bindShell() {
   bindNav();
   bindTemaKnap();
+  const synk = document.getElementById('synkBtn');
+  if (synk) synk.addEventListener('click', () => opfriskAlt());
+
   bindOmni();
   tegnLegend();
   /*
@@ -4588,6 +4698,19 @@ async function sideSettings() {
         data-navn="${esc(u.username)}">Set a password</button>`}</td>
           </tr>`).join('')}</tbody>
         </table></div>
+        <label class="field" style="margin-top:16px"><span>File storage per account</span>
+          <div class="btnrow">
+            <input class="input" id="kvoteFelt" type="number" min="0.1" step="0.1"
+              style="max-width:130px" value="${esc(String(Math.round((a.storageQuota / 1024 / 1024 / 1024) * 10) / 10))}">
+            <span class="meta" style="align-self:center">GB</span>
+            <button class="btn" id="kvoteGem">Save</button>
+          </div></label>
+        <p class="meta saetning">The same limit for every account. Sagu cannot make room:
+        is the number bigger than the disk, it is a promise the machine cannot keep.
+        Lowering it deletes nothing — it only stops new uploads, so it cannot be set below
+        what an account already uses${a.storageMest
+    ? ` (right now that is ${esc(visStoerrelse(a.storageMest))})` : ''}.</p>
+
         <p class="meta saetning">Setting a password signs that account out everywhere at once.
         Its <strong>API keys keep working</strong> — a forgotten password is no reason to kill
         someone's phone shortcuts; remove the key itself if that is what you mean.
@@ -4740,6 +4863,20 @@ async function sideSettings() {
     <p class="meta saetning">Pages your colleagues can read without an account.
     A published page always shows what it says right now — there is nothing to re-publish.</p>
     <div id="udgivListe" style="margin-top:12px"><p class="meta saetning">Loading…</p></div>
+  </div>
+
+  <h2>About</h2>
+  <div class="card">
+    <p class="lead" style="margin-top:6px">Sagu version ${esc(String(APP_VERSION))}${
+  state.config.version && state.config.version > APP_VERSION
+    ? ` — the server has v${esc(String(state.config.version))}` : ''}.</p>
+    <p class="meta saetning">${state.config.secureContext
+    ? 'Secure connection (https), so passkeys work here.'
+    : 'Plain http — passkeys are unavailable on this address. Your password always keeps working.'}
+    ${state.publicUrl ? `Links are written with <code>${esc(state.publicUrl)}</code>.` : ''}</p>
+    ${state.config.version && state.config.version > APP_VERSION
+    ? '<div class="btnrow" style="margin-top:10px"><button class="btn primary" id="omOpdater">Update the app</button></div>'
+    : ''}
   </div>
 
   <h2>Access keys</h2>
@@ -4976,6 +5113,24 @@ function bindSettings() {
     scopeValg.addEventListener('change', vis);
     vis();
   }
+
+  const kvoteGem = document.getElementById('kvoteGem');
+  if (kvoteGem) {
+    kvoteGem.addEventListener('click', async () => {
+      const gb = Number(document.getElementById('kvoteFelt').value);
+      if (!Number.isFinite(gb) || gb <= 0) { toast('Give it a number of gigabytes.'); return; }
+      kvoteGem.disabled = true;
+      try {
+        await api('POST', '/api/v1/admin', { storageQuota: Math.round(gb * 1024 * 1024 * 1024) });
+        toast('Storage limit saved.');
+        await genindlaes();
+      } catch (ex) { toast(ex.message); }
+      kvoteGem.disabled = false;
+    });
+  }
+
+  const omOpdater = document.getElementById('omOpdater');
+  if (omOpdater) omOpdater.addEventListener('click', () => hentNyVersion());
 
   const klipLav = document.getElementById('klipLav');
   if (klipLav) {
@@ -6432,7 +6587,7 @@ async function opretOgAaben(felter) {
  * tilstande: klikker man hurtigt paa to noter, maa det foerste svar ikke
  * overskrive det andet.
  */
-async function aabnNote(id) {
+async function aabnNote(id, tving) {
   /*
    * Luk sidemenuen. HER, og ikke i hvert kaldssted - og FOER den tidlige
    * returnering nedenfor.
@@ -6451,7 +6606,19 @@ async function aabnNote(id) {
    * netop det, man bad om.
    */
   document.body.classList.remove('navopen');
-  if (editor.note && editor.note.id === id && !editor.indlaeser) return;
+  /*
+   * `tving` springer vagten over - og den findes, fordi vagten ellers goer en
+   * OPFRISKNING til ingenting.
+   *
+   * Vagten er rigtig for et klik: trykker man paa den note, man allerede
+   * staar paa, skal siden ikke blinke. Men »hent den her note forfra« er
+   * netop en anmodning om at gaa udenom, og uden `tving` hentede
+   * traek-ned-for-at-opfriske (F19) alt ANDET end den note, man stod og
+   * kiggede paa. Den fejl overlevede v14, fordi proeven havde en
+   * genindlaesning imellem - saa den nye titel kom derfra og ikke fra
+   * trakket (fundet 2026-08-22 ved at sammenligne med doda).
+   */
+  if (!tving && editor.note && editor.note.id === id && !editor.indlaeser) return;
   await gemNu();
   editor.indlaeser = id;
   state.view = 'note';
@@ -7577,6 +7744,7 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
+    <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
     ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
@@ -7607,6 +7775,25 @@ function visNoteMenu() {
          * En vaerdi, opskrifterne beder om, skal kunne HENTES i appen. Ellers
          * er hjaelpesiden en anvisning paa noget, man ikke kan skaffe.
          */
+        /*
+         * Det direkte link - Sagus egen adresse til noten.
+         *
+         * `offentligBase()` og ikke `location.origin`: Sagu kan naas paa flere
+         * adresser (panelets IP:port, tunnelen, det rigtige domaene), og et
+         * link, man sender videre, skal pege paa DEN, der er meningen - den
+         * samme, udgivelserne og API-opskrifterne skrives med (DESIGN.md §15).
+         * Ellers deler man en adresse, kun man selv kan naa.
+         */
+        if (hvad === 'link') {
+          const adr = `${offentligBase()}/#note-${n.id}`;
+          try {
+            await navigator.clipboard.writeText(adr);
+            toast('Link copied.');
+          } catch {
+            visIdPanel(adr, 'Link to this note');
+          }
+          return;
+        }
         if (hvad === 'id') {
           try {
             await navigator.clipboard.writeText(n.id);
@@ -7723,7 +7910,7 @@ window.addEventListener('beforeunload', (e) => {
  * at kopieringen mislykkedes hjælper ingen, der bare skal bruge de 32 tegn:
  * så er det bedre at vise dem markeret, klar til ⌘C.
  */
-function visIdPanel(id) {
+function visIdPanel(id, overskrift) {
   // `esc`, ikke `attr`: fladens egen `esc` escaper OGSAA anfoerselstegn og er
   // dermed attributsikker - `attr` findes kun i det delte markdown-modul og er
   // ikke global her. Det saas foerst, da reserveveien faktisk blev gaaet.
@@ -7735,15 +7922,17 @@ function visIdPanel(id) {
   host.id = 'idPanel';
   host.innerHTML = `<div class="modal-kort">
       <div class="modal-top">
-        <h2>Note ID</h2>
+        <h2>${esc(overskrift || 'Note ID')}</h2>
         <button class="iconbtn" id="idLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
       <div class="modal-krop">
         <input class="input" id="idFelt" value="${esc(id)}" readonly
           autocomplete="off" spellcheck="false">
-        <p class="meta saetning" style="margin-top:10px">This is what the API calls
-        <code>NOTE_ID</code> — the address a shortcut adds to with
-        <code>?to=…</code>. See <strong>API &amp; shortcuts</strong> for the recipes.</p>
+        <p class="meta saetning" style="margin-top:10px">${overskrift
+    ? 'Anyone with an account on this server can open it. It is not a published page — '
+      + 'use <strong>Publish</strong> for that.'
+    : 'This is what the API calls <code>NOTE_ID</code> — the address a shortcut adds to with '
+      + '<code>?to=…</code>. See <strong>API &amp; shortcuts</strong> for the recipes.'}</p>
       </div>
     </div>`;
   document.body.appendChild(host);
@@ -10520,7 +10709,7 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'Text — the Shortcut Input'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Shortcut Input as its value'],
       ],
       noter: 'A <strong>capture</strong> key is enough: it can put something new in and '
         + 'read nothing at all. Lose the phone, and it cannot be used to pull your archive. '
@@ -10533,7 +10722,7 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?to=today`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'Text — the Shortcut Input'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Shortcut Input as its value'],
       ],
       noter: 'The note is named after the date (<code>2026-08-21</code>) and is made the '
         + 'first time you send something. In a different time zone than the server? Send your '
@@ -10547,7 +10736,7 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?to=NOTE_ID`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'Text — the Shortcut Input'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Shortcut Input as its value'],
       ],
       noter: 'The text lands at the <em>bottom</em>; nothing already there is touched. A '
         + '<code>#tag</code> is <strong>added</strong> to the note\'s tags — it does not replace '
@@ -10562,9 +10751,9 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?to=NOTE_ID&name=foto.jpg`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'File — the Shortcut Input'],
+        ['Request Body', 'File (Danish: <em>Arkiv</em>) — the Shortcut Input'],
       ],
-      noter: 'Set <em>Request Body</em> to <strong>File</strong>, not JSON. The image is '
+      noter: 'A picture is the one case where <em>Request Body</em> must be <strong>File</strong> (<em>Arkiv</em>) and not JSON. The image is '
         + 'written in at the bottom and attached to the note. Add <code>&amp;text=</code> if it '
         + 'needs a line above it; without one the picture stands on its own.',
     },
@@ -10575,9 +10764,9 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?name=foto.jpg&text=Skabet%20i%20kaelderen`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'File — the Shortcut Input'],
+        ['Request Body', 'File (Danish: <em>Arkiv</em>) — the Shortcut Input'],
       ],
-      noter: 'Set <em>Request Body</em> to <strong>File</strong>, not JSON. The image becomes '
+      noter: 'Again <strong>File</strong> (<em>Arkiv</em>), not JSON. The image becomes '
         + 'an attachment and is written into the note. Add <code>&amp;to=today</code> to put it '
         + 'in today\'s note instead.',
     },
@@ -10673,6 +10862,13 @@ function sideApi() {
   <div class="card">
     <p class="lead">In Shortcuts: <em>Get Contents of URL</em>. These are the fields, in the
     order they appear there.</p>
+    <p class="meta saetning"><strong>Which »Request Body«?</strong> The menu offers exactly three:
+    <code>JSON</code>, <code>Form</code> and <code>File</code> — on a Danish iPhone
+    <code>JSON</code>, <code>Formular</code> and <code>Arkiv</code>. There is no »Text« entry,
+    so pick <strong>JSON</strong> and give it one key called <code>text</code> with your
+    Shortcut Input as the value. Do <strong>not</strong> set a Content-Type; Sagu takes the text
+    as a JSON field, as form data, as a plain body or as <code>?text=</code> in the address —
+    a shortcut with one field just has to work.</p>
     ${OPSKRIFTER.map(opskriftHtml).join('')}
   </div>
 
@@ -10701,7 +10897,10 @@ function sideApi() {
   <div class="card">
     <div class="tablewrap"><table class="data">
       <tbody>
-        <tr><th>401</th><td>The key is wrong or revoked. Make a new one.</td></tr>
+        <tr><th>401</th><td>The key is wrong or revoked. Nine times out of ten the
+          <code>Authorization</code> value says only <code>Bearer</code> and the key itself
+          never made it in — it has to read <code>Bearer sagu_…</code> in full. A key cannot
+          be looked up again either: if the list only shows it shortened, make a new one.</td></tr>
         <tr><th>403</th><td>The key is <em>fine</em> — it is just too narrow.
           The message says which scope it has.</td></tr>
         <tr><th>404</th><td>No such note — or it is not yours. The two answer the same,

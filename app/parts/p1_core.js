@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -452,6 +452,8 @@ function shellHtml() {
       </div>
       <div class="topbar">
         <div class="toprow">
+          <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
+            aria-label="Fetch new notes now">${icon('opfrisk', 14)}<span id="synkLabel">just now</span></button>
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
           ${temaKnapHtml()}
         </div>
@@ -475,8 +477,13 @@ function shellHtml() {
 function statsHtml() {
   const c = state.counts || {};
   const dele = [];
-  if (c.notes) dele.push(`${c.notes} notes`);
-  if ((state.notebooks || []).length) dele.push(`${state.notebooks.length} notebooks`);
+  // »1 notes« stod der foer. Et tal og et ord, der ikke passer sammen, er
+  // smaat - men det er ogsaa det foerste, oejet falder paa i toppen.
+  const stk = (n, ental, flertal) => `${n} ${n === 1 ? ental : flertal}`;
+  if (c.notes) dele.push(stk(c.notes, 'note', 'notes'));
+  if ((state.notebooks || []).length) {
+    dele.push(stk(state.notebooks.length, 'notebook', 'notebooks'));
+  }
   if (c.archived) dele.push(`${c.archived} archived`);
   if (c.trash) dele.push(`${c.trash} in trash`);
   return dele.map((d) => `<span>${esc(d)}</span>`).join('');
@@ -535,6 +542,9 @@ function bindNav() {
 function bindShell() {
   bindNav();
   bindTemaKnap();
+  const synk = document.getElementById('synkBtn');
+  if (synk) synk.addEventListener('click', () => opfriskAlt());
+
   bindOmni();
   tegnLegend();
   /*

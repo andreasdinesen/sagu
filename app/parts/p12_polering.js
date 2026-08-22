@@ -345,10 +345,24 @@ function traekIndikator() {
   if (!traekEl) {
     traekEl = document.createElement('div');
     traekEl.className = 'traekopfrisk';
-    traekEl.innerHTML = `<div class="traekopfrisk-ring">${icon('opfrisk', 18)}</div>`;
+    /*
+     * Maerket SIGER, hvad der sker.
+     *
+     * Foerste udgave var kun et ikon, der skiftede farve ved graensen - og en
+     * farve er et gaet, foerste gang man moeder gestussen. doda skriver
+     * »Pull to refresh« / »Release to refresh« / »Refreshing…«, og det er
+     * hele forskellen paa at vide og at prøve sig frem.
+     */
+    traekEl.innerHTML = `<div class="traekopfrisk-ring">${icon('opfrisk', 18)}</div>`
+      + '<div class="traekopfrisk-tekst"></div>';
     document.body.appendChild(traekEl);
   }
   return traekEl;
+}
+
+function saetTraekTekst(el, tekst) {
+  const t = el.querySelector('.traekopfrisk-tekst');
+  if (t && t.textContent !== tekst) t.textContent = tekst;
 }
 
 function skjulTraek() {
@@ -438,8 +452,12 @@ document.addEventListener('touchmove', (e) => {
   // foelger maerket fingeren ud af skaermen.
   nedtraek.dy = Math.min(NEDTRAEK_MAX, dy * 0.55);
   const el = traekIndikator();
-  el.style.transform = `translate(-50%, ${Math.round(nedtraek.dy)}px) rotate(${Math.round(nedtraek.dy * 3)}deg)`;
-  el.classList.toggle('klar', nedtraek.dy >= NEDTRAEK_GRAENSE * 0.55);
+  el.style.transform = `translate(-50%, ${Math.round(nedtraek.dy)}px)`;
+  const ring = el.querySelector('.traekopfrisk-ring');
+  if (ring) ring.style.transform = `rotate(${Math.round(nedtraek.dy * 3)}deg)`;
+  const klar = nedtraek.dy >= NEDTRAEK_GRAENSE * 0.55;
+  el.classList.toggle('klar', klar);
+  saetTraekTekst(el, klar ? 'Release to refresh' : 'Pull to refresh');
 }, { passive: false });
 
 document.addEventListener('touchend', () => {
@@ -463,12 +481,19 @@ document.addEventListener('touchcancel', () => {
  * fordi den så kan kaldes fra andet end en finger, hvis der senere bliver
  * brug for det.
  */
-async function opfriskAlt() {
+async function opfriskAlt(stille) {
   if (nedtraek.koerer) return;
   nedtraek.koerer = true;
+  sidstOpfrisket = Date.now();
+  tegnSynkMaerke();
   const el = traekIndikator();
-  el.classList.add('paa', 'koerer');
-  el.style.transform = 'translate(-50%, 64px)';
+  // En AUTOMATISK opfriskning skal vaere lydloes. Ellers popper der et maerke
+  // op, hver gang telefonen laases op (doda §v26 - samme regel dér).
+  if (!stille) {
+    el.classList.add('paa', 'koerer');
+    el.style.transform = 'translate(-50%, 64px)';
+    saetTraekTekst(el, 'Refreshing…');
+  }
   try {
     // 1. Det, jeg har skrevet, foerst - se forklaringen i toppen.
     if (typeof gemNu === 'function') await gemNu();
@@ -478,19 +503,94 @@ async function opfriskAlt() {
     await hentState();
     await hentGenveje();
     tegnTrae();
+    // Tallene i toppen laeser `state.counts`, men de tegner sig ikke selv.
+    // Uden den her stod der stadig »1 note«, efter at den anden var hentet -
+    // og et tal, der ikke foelger med, er vaerre end intet tal.
+    opdaterNav();
     // 4. Og selve skaermen.
     if (state.view === 'note' && editor.note && !editor.beskidt) {
-      await aabnNote(editor.note.id);
+      await aabnNote(editor.note.id, true);
     } else if (state.view === 'note' && editor.note) {
       // Ugemte rettelser: teksten er MIN, og den hentes ikke over.
-      toast('Refreshed everything except this note — it has unsaved changes.');
+      if (!stille) toast('Refreshed everything except this note — it has unsaved changes.');
     } else {
       await tegnSide();
     }
   } catch (ex) {
-    toast(ex && ex.message ? ex.message : 'Could not refresh.');
+    if (!stille) toast(ex && ex.message ? ex.message : 'Could not refresh.');
   } finally {
     nedtraek.koerer = false;
     skjulTraek();
+    tegnSynkMaerke();
   }
 }
+
+/* ------------------------------------------- naar appen kommer frem igen
+ *
+ * En app paa hjemmeskaermen bliver ALDRIG genindlaest - den lukkes ikke, den
+ * skjules. Vender man tilbage, staar der praecis det, der stod, da man gik -
+ * ogsaa selv om man har fanget noget med bogmaerket eller rettet noget paa en
+ * anden enhed imens. En app, der viser gamle tal uden at sige det, er en app,
+ * man holder op med at stole paa (doda §v26, som allerede havde det her).
+ *
+ * Sagu spurgte kun om VERSIONEN paa dette tidspunkt (`tjekVersion`), ikke om
+ * dataene. Traekket ned var eneste vej til friske noter - og den gestus
+ * findes ikke paa en computer.
+ *
+ * `pageshow` er med, fordi en tilbage-navigation kan komme fra bfcache, hvor
+ * hverken `visibilitychange` eller en genindlaesning fyrer.
+ *
+ * Gulvet paa 30 s er ikke sparsommelighed: uden det henter appen forfra, hver
+ * gang man skifter mellem to vinduer paa en computer - og en optegning midt i
+ * en saetning er vaerre end lidt gamle tal.
+ */
+let sidstOpfrisket = Date.now();
+
+/* --------------------------------------------------- »hvor gammelt er det?«
+ *
+ * Maerket ved siden af tallene i toppen. Det svarer paa ét spoergsmaal, som
+ * ellers ikke kan besvares: **sker der ingenting, eller har appen bare ikke
+ * spurgt?** Uden det ved man ikke, om de nul nye noter er sandheden eller
+ * bare det, appen sidst saa (doda §v26, som havde det foerst).
+ *
+ * Det er samtidig en KNAP. Traekket ned findes ikke paa en computer, og en
+ * automatik uden en manuel vej er en automatik, man ikke kan stole paa, naar
+ * den svigter.
+ *
+ * Ingen falsk praecision: »3 min ago«, ikke »3 min 12 s«.
+ */
+function opfriskAlder() {
+  const sek = Math.round((Date.now() - sidstOpfrisket) / 1000);
+  if (sek < 45) return 'just now';
+  const min = Math.round(sek / 60);
+  if (min < 60) return `${min} min ago`;
+  const timer = Math.round(min / 60);
+  return timer < 24 ? `${timer} h ago` : 'a while ago';
+}
+
+function tegnSynkMaerke() {
+  const el = document.getElementById('synkLabel');
+  if (!el) return;
+  el.textContent = nedtraek.koerer ? 'fetching…' : opfriskAlder();
+  const knap = document.getElementById('synkBtn');
+  if (knap) knap.classList.toggle('koerer', nedtraek.koerer);
+}
+
+/*
+ * Hvert halve minut. Tallet skal ikke vaere praecist - det skal bare ikke
+ * staa og lyve om, at det var »just now« for ti minutter siden.
+ */
+setInterval(tegnSynkMaerke, 30000);
+
+function opfriskHvisFremme() {
+  if (!state.user || document.visibilityState !== 'visible') return;
+  if (state.offline) return;
+  if (Date.now() - sidstOpfrisket < 30000) return;
+  // Skriver man lige nu, roeres skaermen ikke. `opfriskAlt` passer paa selve
+  // teksten, men en optegning under haenderne er stadig en afbrydelse.
+  if (typeof editor === 'object' && editor.aabenBlok !== null) return;
+  opfriskAlt(true);
+}
+
+document.addEventListener('visibilitychange', opfriskHvisFremme);
+window.addEventListener('pageshow', (e) => { if (e.persisted) opfriskHvisFremme(); });

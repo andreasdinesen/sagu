@@ -408,6 +408,19 @@ async function sideSettings() {
         data-navn="${esc(u.username)}">Set a password</button>`}</td>
           </tr>`).join('')}</tbody>
         </table></div>
+        <label class="field" style="margin-top:16px"><span>File storage per account</span>
+          <div class="btnrow">
+            <input class="input" id="kvoteFelt" type="number" min="0.1" step="0.1"
+              style="max-width:130px" value="${esc(String(Math.round((a.storageQuota / 1024 / 1024 / 1024) * 10) / 10))}">
+            <span class="meta" style="align-self:center">GB</span>
+            <button class="btn" id="kvoteGem">Save</button>
+          </div></label>
+        <p class="meta saetning">The same limit for every account. Sagu cannot make room:
+        is the number bigger than the disk, it is a promise the machine cannot keep.
+        Lowering it deletes nothing — it only stops new uploads, so it cannot be set below
+        what an account already uses${a.storageMest
+    ? ` (right now that is ${esc(visStoerrelse(a.storageMest))})` : ''}.</p>
+
         <p class="meta saetning">Setting a password signs that account out everywhere at once.
         Its <strong>API keys keep working</strong> — a forgotten password is no reason to kill
         someone's phone shortcuts; remove the key itself if that is what you mean.
@@ -560,6 +573,20 @@ async function sideSettings() {
     <p class="meta saetning">Pages your colleagues can read without an account.
     A published page always shows what it says right now — there is nothing to re-publish.</p>
     <div id="udgivListe" style="margin-top:12px"><p class="meta saetning">Loading…</p></div>
+  </div>
+
+  <h2>About</h2>
+  <div class="card">
+    <p class="lead" style="margin-top:6px">Sagu version ${esc(String(APP_VERSION))}${
+  state.config.version && state.config.version > APP_VERSION
+    ? ` — the server has v${esc(String(state.config.version))}` : ''}.</p>
+    <p class="meta saetning">${state.config.secureContext
+    ? 'Secure connection (https), so passkeys work here.'
+    : 'Plain http — passkeys are unavailable on this address. Your password always keeps working.'}
+    ${state.publicUrl ? `Links are written with <code>${esc(state.publicUrl)}</code>.` : ''}</p>
+    ${state.config.version && state.config.version > APP_VERSION
+    ? '<div class="btnrow" style="margin-top:10px"><button class="btn primary" id="omOpdater">Update the app</button></div>'
+    : ''}
   </div>
 
   <h2>Access keys</h2>
@@ -796,6 +823,24 @@ function bindSettings() {
     scopeValg.addEventListener('change', vis);
     vis();
   }
+
+  const kvoteGem = document.getElementById('kvoteGem');
+  if (kvoteGem) {
+    kvoteGem.addEventListener('click', async () => {
+      const gb = Number(document.getElementById('kvoteFelt').value);
+      if (!Number.isFinite(gb) || gb <= 0) { toast('Give it a number of gigabytes.'); return; }
+      kvoteGem.disabled = true;
+      try {
+        await api('POST', '/api/v1/admin', { storageQuota: Math.round(gb * 1024 * 1024 * 1024) });
+        toast('Storage limit saved.');
+        await genindlaes();
+      } catch (ex) { toast(ex.message); }
+      kvoteGem.disabled = false;
+    });
+  }
+
+  const omOpdater = document.getElementById('omOpdater');
+  if (omOpdater) omOpdater.addEventListener('click', () => hentNyVersion());
 
   const klipLav = document.getElementById('klipLav');
   if (klipLav) {

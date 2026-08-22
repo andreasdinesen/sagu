@@ -57,7 +57,7 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'Text — the Shortcut Input'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Shortcut Input as its value'],
       ],
       noter: 'A <strong>capture</strong> key is enough: it can put something new in and '
         + 'read nothing at all. Lose the phone, and it cannot be used to pull your archive. '
@@ -70,7 +70,7 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?to=today`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'Text — the Shortcut Input'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Shortcut Input as its value'],
       ],
       noter: 'The note is named after the date (<code>2026-08-21</code>) and is made the '
         + 'first time you send something. In a different time zone than the server? Send your '
@@ -84,7 +84,7 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?to=NOTE_ID`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'Text — the Shortcut Input'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Shortcut Input as its value'],
       ],
       noter: 'The text lands at the <em>bottom</em>; nothing already there is touched. A '
         + '<code>#tag</code> is <strong>added</strong> to the note\'s tags — it does not replace '
@@ -99,9 +99,9 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?to=NOTE_ID&name=foto.jpg`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'File — the Shortcut Input'],
+        ['Request Body', 'File (Danish: <em>Arkiv</em>) — the Shortcut Input'],
       ],
-      noter: 'Set <em>Request Body</em> to <strong>File</strong>, not JSON. The image is '
+      noter: 'A picture is the one case where <em>Request Body</em> must be <strong>File</strong> (<em>Arkiv</em>) and not JSON. The image is '
         + 'written in at the bottom and attached to the note. Add <code>&amp;text=</code> if it '
         + 'needs a line above it; without one the picture stands on its own.',
     },
@@ -112,9 +112,9 @@ function sideApi() {
         ['URL', `${b}/api/v1/capture?name=foto.jpg&text=Skabet%20i%20kaelderen`],
         ['Method', 'POST'],
         ['Headers', 'Authorization: Bearer sagu_…'],
-        ['Request Body', 'File — the Shortcut Input'],
+        ['Request Body', 'File (Danish: <em>Arkiv</em>) — the Shortcut Input'],
       ],
-      noter: 'Set <em>Request Body</em> to <strong>File</strong>, not JSON. The image becomes '
+      noter: 'Again <strong>File</strong> (<em>Arkiv</em>), not JSON. The image becomes '
         + 'an attachment and is written into the note. Add <code>&amp;to=today</code> to put it '
         + 'in today\'s note instead.',
     },
@@ -210,6 +210,13 @@ function sideApi() {
   <div class="card">
     <p class="lead">In Shortcuts: <em>Get Contents of URL</em>. These are the fields, in the
     order they appear there.</p>
+    <p class="meta saetning"><strong>Which »Request Body«?</strong> The menu offers exactly three:
+    <code>JSON</code>, <code>Form</code> and <code>File</code> — on a Danish iPhone
+    <code>JSON</code>, <code>Formular</code> and <code>Arkiv</code>. There is no »Text« entry,
+    so pick <strong>JSON</strong> and give it one key called <code>text</code> with your
+    Shortcut Input as the value. Do <strong>not</strong> set a Content-Type; Sagu takes the text
+    as a JSON field, as form data, as a plain body or as <code>?text=</code> in the address —
+    a shortcut with one field just has to work.</p>
     ${OPSKRIFTER.map(opskriftHtml).join('')}
   </div>
 
@@ -238,7 +245,10 @@ function sideApi() {
   <div class="card">
     <div class="tablewrap"><table class="data">
       <tbody>
-        <tr><th>401</th><td>The key is wrong or revoked. Make a new one.</td></tr>
+        <tr><th>401</th><td>The key is wrong or revoked. Nine times out of ten the
+          <code>Authorization</code> value says only <code>Bearer</code> and the key itself
+          never made it in — it has to read <code>Bearer sagu_…</code> in full. A key cannot
+          be looked up again either: if the list only shows it shortened, make a new one.</td></tr>
         <tr><th>403</th><td>The key is <em>fine</em> — it is just too narrow.
           The message says which scope it has.</td></tr>
         <tr><th>404</th><td>No such note — or it is not yours. The two answer the same,

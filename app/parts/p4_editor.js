@@ -743,7 +743,7 @@ async function opretOgAaben(felter) {
  * tilstande: klikker man hurtigt paa to noter, maa det foerste svar ikke
  * overskrive det andet.
  */
-async function aabnNote(id) {
+async function aabnNote(id, tving) {
   /*
    * Luk sidemenuen. HER, og ikke i hvert kaldssted - og FOER den tidlige
    * returnering nedenfor.
@@ -762,7 +762,19 @@ async function aabnNote(id) {
    * netop det, man bad om.
    */
   document.body.classList.remove('navopen');
-  if (editor.note && editor.note.id === id && !editor.indlaeser) return;
+  /*
+   * `tving` springer vagten over - og den findes, fordi vagten ellers goer en
+   * OPFRISKNING til ingenting.
+   *
+   * Vagten er rigtig for et klik: trykker man paa den note, man allerede
+   * staar paa, skal siden ikke blinke. Men »hent den her note forfra« er
+   * netop en anmodning om at gaa udenom, og uden `tving` hentede
+   * traek-ned-for-at-opfriske (F19) alt ANDET end den note, man stod og
+   * kiggede paa. Den fejl overlevede v14, fordi proeven havde en
+   * genindlaesning imellem - saa den nye titel kom derfra og ikke fra
+   * trakket (fundet 2026-08-22 ved at sammenligne med doda).
+   */
+  if (!tving && editor.note && editor.note.id === id && !editor.indlaeser) return;
   await gemNu();
   editor.indlaeser = id;
   state.view = 'note';
@@ -1888,6 +1900,7 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
+    <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
     ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
@@ -1918,6 +1931,25 @@ function visNoteMenu() {
          * En vaerdi, opskrifterne beder om, skal kunne HENTES i appen. Ellers
          * er hjaelpesiden en anvisning paa noget, man ikke kan skaffe.
          */
+        /*
+         * Det direkte link - Sagus egen adresse til noten.
+         *
+         * `offentligBase()` og ikke `location.origin`: Sagu kan naas paa flere
+         * adresser (panelets IP:port, tunnelen, det rigtige domaene), og et
+         * link, man sender videre, skal pege paa DEN, der er meningen - den
+         * samme, udgivelserne og API-opskrifterne skrives med (DESIGN.md §15).
+         * Ellers deler man en adresse, kun man selv kan naa.
+         */
+        if (hvad === 'link') {
+          const adr = `${offentligBase()}/#note-${n.id}`;
+          try {
+            await navigator.clipboard.writeText(adr);
+            toast('Link copied.');
+          } catch {
+            visIdPanel(adr, 'Link to this note');
+          }
+          return;
+        }
         if (hvad === 'id') {
           try {
             await navigator.clipboard.writeText(n.id);
@@ -2034,7 +2066,7 @@ window.addEventListener('beforeunload', (e) => {
  * at kopieringen mislykkedes hjælper ingen, der bare skal bruge de 32 tegn:
  * så er det bedre at vise dem markeret, klar til ⌘C.
  */
-function visIdPanel(id) {
+function visIdPanel(id, overskrift) {
   // `esc`, ikke `attr`: fladens egen `esc` escaper OGSAA anfoerselstegn og er
   // dermed attributsikker - `attr` findes kun i det delte markdown-modul og er
   // ikke global her. Det saas foerst, da reserveveien faktisk blev gaaet.
@@ -2046,15 +2078,17 @@ function visIdPanel(id) {
   host.id = 'idPanel';
   host.innerHTML = `<div class="modal-kort">
       <div class="modal-top">
-        <h2>Note ID</h2>
+        <h2>${esc(overskrift || 'Note ID')}</h2>
         <button class="iconbtn" id="idLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
       <div class="modal-krop">
         <input class="input" id="idFelt" value="${esc(id)}" readonly
           autocomplete="off" spellcheck="false">
-        <p class="meta saetning" style="margin-top:10px">This is what the API calls
-        <code>NOTE_ID</code> — the address a shortcut adds to with
-        <code>?to=…</code>. See <strong>API &amp; shortcuts</strong> for the recipes.</p>
+        <p class="meta saetning" style="margin-top:10px">${overskrift
+    ? 'Anyone with an account on this server can open it. It is not a published page — '
+      + 'use <strong>Publish</strong> for that.'
+    : 'This is what the API calls <code>NOTE_ID</code> — the address a shortcut adds to with '
+      + '<code>?to=…</code>. See <strong>API &amp; shortcuts</strong> for the recipes.'}</p>
       </div>
     </div>`;
   document.body.appendChild(host);
