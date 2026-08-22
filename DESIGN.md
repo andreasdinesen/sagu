@@ -2827,3 +2827,37 @@ To ting rettet:
   sekunder, så to faner ved siden af hinanden ikke bliver til et kald hver gang.
 
 Tallet er pinnet af en test. Sættes det op igen, skal det være et valg.
+
+## 34 · Hvor en kommentar kom fra
+
+Meldt fra brug: tovo kan svare på en notes kommentarer gennem sin `link`-nøgle, og
+tråden viste bare »Andreas« — det samme navn som når Andreas selv skriver i Sagu.
+Samme navn, to helt forskellige situationer, og læseren kunne ikke se forskel.
+
+### Nøglens navn, ikke en liste over apps
+
+`origin` fandtes i forvejen (`app` | `public`), men den skelner mellem to **slags**
+afsendere, ikke mellem apps. En ny kolonne `comments.via` (m15) bærer i stedet
+**nøglens eget navn**.
+
+Det er det valg, der gør, at Sagu ikke behøver at kende sine søskende. Andreas døbte
+nøglen »tovo«, da han oprettede den; kommer der en fjerde app i morgen, virker mærket
+uden en linje ny kode. Navnet er desuden allerede det, revisionen skriver
+(`audit('fangst-via-api', …, auth.token.name, …)`), så der er ikke opfundet en ny
+identitet — kun vist en, der fandtes.
+
+En session sætter **ingenting**. En kommentar skrevet i Sagu skal ikke mærkes med noget,
+og tom streng er langt det almindelige tilfælde.
+
+### `via` står uden for `medStatus`
+
+`status` og `origin` er ejerens oplysninger — de hører til moderationskøen og sendes kun
+til den, der må moderere. »Skrevet fra tovo« er derimod en oplysning til **enhver**, der
+læser tråden. Lå den bag samme flag, ville den samme kommentar se forskellig ud alt efter,
+hvem der kiggede.
+
+### Mærket tegnes ét sted
+
+To visninger tegner en kommentar (tråden og moderationskøen). `komKilde()` bruges begge
+steder, så de ikke kan drive fra hinanden — samme grund som `opretKommentar()` er ét sted
+for begge veje ind.

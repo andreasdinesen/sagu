@@ -3237,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -10120,6 +10120,21 @@ function komStatusMaerke(c) {
   return '';
 }
 
+/**
+ * »fra tovo« - hvor kommentaren kom ind ad.
+ *
+ * Uden det staar der bare "Andreas" paa baade det, Andreas selv skrev i
+ * Sagu, og det en anden app skrev gennem hans noegle: samme navn, to helt
+ * forskellige situationer. Navnet er noeglens eget, saa Sagu behoever ikke
+ * at kende de apps, der taler med den.
+ *
+ * Ét sted, fordi to visninger tegner en kommentar (traaden og
+ * moderationskoeen) - og to kopier ville drive fra hinanden.
+ */
+function komKilde(c) {
+  return c.via ? `<span class="kom-maerke kilde">from ${esc(c.via)}</span>` : '';
+}
+
 function komHtml(c, svarene) {
   const svar = (svarene || []).filter((x) => x.parentId === c.id);
   const egen = !c.guest && state.user && c.author === state.user.username;
@@ -10128,6 +10143,7 @@ function komHtml(c, svarene) {
     <div class="kom-top">
       <span class="kom-navn">${esc(pentBruger(c.author))}</span>
       ${c.guest ? '<span class="kom-maerke gaest">guest</span>' : ''}
+      ${komKilde(c)}
       ${c.kind === 'suggestion' ? '<span class="kom-maerke forslag">suggested edit</span>' : ''}
       ${komStatusMaerke(c)}
       <time>${esc(komDato(c.createdAt))}</time>
@@ -10311,6 +10327,7 @@ async function sideKommentarer() {
         <div class="kom-top">
           <span class="kom-navn">${esc(pentBruger(c.author))}</span>
           ${c.guest ? '<span class="kom-maerke gaest">guest</span>' : ''}
+      ${komKilde(c)}
           ${c.kind === 'suggestion' ? '<span class="kom-maerke forslag">suggested edit</span>' : ''}
           <time>${esc(komDato(c.createdAt))}</time>
           <button class="linkbtn" data-aabn="${esc(c.noteId)}">on “${esc(c.noteTitle)}”</button>

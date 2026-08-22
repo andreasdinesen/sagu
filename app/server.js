@@ -733,6 +733,28 @@ const MIGRATIONS = [
       CREATE INDEX note_visits_tid ON note_visits(user_id, seq DESC);
     `);
   },
+
+  function m15(d) {
+    /*
+     * Hvor en kommentar kom FRA.
+     *
+     * `origin` siger allerede app/public, men den skelner mellem to
+     * SLAGS afsendere - ikke mellem app'erne. Skriver tovo en kommentar
+     * gennem sin noegle, staar der bare "Andreas", praecis som naar
+     * Andreas selv skriver i Sagu. Det er samme navn og to helt
+     * forskellige situationer.
+     *
+     * Kolonnen baerer NOEGLENS NAVN, ikke en fast liste. Sagu kender
+     * hverken tovo eller doda og skal ikke til at kende dem: den, der
+     * opretter noeglen, doeber den, og navnet er allerede det, revisionen
+     * skriver (`audit('fangst-via-api', ..., auth.token.name, ...)`).
+     * Kommer der en fjerde app, virker det uden en linje ny kode.
+     *
+     * Tom streng = skrevet i Sagu selv. Det er langt det almindelige, og
+     * en tom streng koster ingenting i en raekke, der i forvejen findes.
+     */
+    d.exec("ALTER TABLE comments ADD COLUMN via TEXT NOT NULL DEFAULT ''");
+  },
 ];
 
 /*
@@ -2924,6 +2946,15 @@ function formKommentar(r, medStatus) {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     edited: !!r.edited_at,
+    /*
+     * Hvor kommentaren kom fra. Tom = skrevet i Sagu selv.
+     *
+     * Den staar UDEN for `medStatus`-blokken med vilje: `status` og
+     * `origin` er ejerens oplysninger (moderationskoeen), men »skrevet fra
+     * tovo« er en oplysning til ENHVER, der laeser traaden. Ellers ville
+     * den samme kommentar se anderledes ud alt efter, hvem der kigger.
+     */
+    via: r.via || '',
   };
   if (medStatus) {
     ud.status = r.status;
@@ -2997,10 +3028,12 @@ function opretKommentar(o) {
   const id = newId();
   const t = now();
   db.prepare(`INSERT INTO comments
-      (id, note_id, parent_id, user_id, share_id, origin, author, kind, status, body, created_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      (id, note_id, parent_id, user_id, share_id, origin, author, kind, status, body, created_at, updated_at, via)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, o.noteId, svarPaa, o.userId || null, o.shareId || null,
-      offentlig ? 'public' : 'app', str(o.author, MAX_FORFATTER).trim(), kind, status, body, t, t);
+      offentlig ? 'public' : 'app', str(o.author, MAX_FORFATTER).trim(), kind, status, body, t, t,
+      // Navnet paa den noegle, kommentaren kom ind ad. Tom = skrevet i Sagu.
+      str(o.via, 40).trim());
   audit(offentlig ? 'kommentar-offentlig' : 'kommentar', o.userId || null, o.noteId, status);
   return { id, status, ventende: status === 'pending' };
 }
@@ -4427,6 +4460,15 @@ const MOENSTRE = [
       const svar = opretKommentar({
         noteId, userId: auth.user.id, body: body.body, parentId: body.parentId,
         kind: body.kind, origin: 'app',
+        /*
+         * Kom kommentaren gennem en NOEGLE, baerer den noeglens navn.
+         *
+         * Navnet er brugerens eget - han doebte noeglen "tovo", da han
+         * oprettede den - saa Sagu behoever hverken at kende tovo eller
+         * doda. En session har ingen noegle og saetter ingenting: en
+         * kommentar skrevet i Sagu skal ikke maerkes med noget.
+         */
+        via: auth.viaToken ? (auth.token && auth.token.name) : '',
       });
       if (svar.fejl) { apiFejl(res, 400, svar.fejl[0], svar.fejl[1]); return; }
       /*

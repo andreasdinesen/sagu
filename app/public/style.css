@@ -2098,6 +2098,9 @@ body.traekker { cursor: grabbing; user-select: none; }
   color: var(--muted);
 }
 .kom-navn, .wkom-navn { font-weight: 600; color: var(--text); }
+/* Hvor kommentaren kom fra. Daempet: det er en oplysning, ikke en advarsel -
+   og navnet skal ikke konkurrere med personens. */
+.kom-maerke.kilde { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 .kom-krop, .wkom-krop { margin: 6px 0 0; }
 /* Overskrifter i en kommentar maa ikke kunne raabe hoejere end sidens egne. */
 .kom-krop h1, .kom-krop h2, .kom-krop h3,
