@@ -1282,9 +1282,24 @@ function tegnMedAabenBlok(host, n) {
     try { return saguMarkdown.render(md, renderValg()).html; } catch { return ''; }
   };
 
+  /*
+   * Hjaelpeknappen staar ved FELTET, ikke i vaerktoejsraekken.
+   *
+   * »En lille knap man kan trykke på når man er ved at skrive en note«
+   * (Andreas, 2026-08-21). Vaerktoejsraekken staar i toppen af noten, og paa
+   * en telefon er den rullet vaek, netop naar man skriver - saa dér ville
+   * knappen vaere usynlig praecis i det oejeblik, den skal bruges.
+   *
+   * Den er `tabindex="-1"`: Tab fra skrivefeltet skal foere videre i teksten,
+   * ikke ind i en hjaelpeknap.
+   */
   host.innerHTML = `${del(foer)}
-    <textarea class="blok-felt" id="blokFelt" spellcheck="false"
-      rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
+    <div class="blok-redigering">
+      <textarea class="blok-felt" id="blokFelt" spellcheck="false"
+        rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
+      <button class="blok-hjaelp" id="blokHjaelp" type="button" tabindex="-1"
+        aria-label="How to write this" title="How to write this">?</button>
+    </div>
     ${del(efter)}`;
 
   // De renderede dele skal ogsaa have knapper, lightbox og indlejringer.
@@ -1298,6 +1313,16 @@ function tegnMedAabenBlok(host, n) {
   // Den AABNE blok har ingen `data-blok` og faar derfor intet haandtag - man
   // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
   tegnGreb(host);
+
+  const hj = document.getElementById('blokHjaelp');
+  // `mousedown` med preventDefault, ikke `click`: et klik ville tage fokus
+  // fra feltet, og `blur` lukker blokken - saa var man ude af det, man var
+  // ved at skrive, for at kigge i hjaelpen.
+  if (hj) {
+    hj.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); });
+    hj.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); },
+      { passive: false });
+  }
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;

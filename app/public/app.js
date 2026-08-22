@@ -163,7 +163,23 @@
     return KENDTE[e] || '';
   }
 
-  return { tolk, linjeAdresse, medRef, navn, cacheNoegle, sprogFor, ER_SHA };
+  /*
+   * De adresser, indlejringen forstaar - som HJAELPEN viser dem.
+   *
+   * De bor her hos `tolk()`, ikke i fladen, og `tests/github.test.mjs`
+   * koerer hver eneste af dem gennem `tolk()`. Falder én, kan hjaelpen ikke
+   * blive ved med at love den. Samme regel som `SYNTAKS` i markdown-modulet.
+   */
+  const ADRESSER = [
+    { navn: 'A whole file', kode: 'https://github.com/owner/repo/blob/main/README.md' },
+    { navn: 'One line', kode: 'https://github.com/owner/repo/blob/main/src/app.js#L42' },
+    { navn: 'A range of lines', kode: 'https://github.com/owner/repo/blob/main/src/app.js#L10-L20' },
+    { navn: 'A frozen version', kode: 'https://github.com/owner/repo/blob/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678/README.md' },
+    { navn: 'An issue', kode: 'https://github.com/owner/repo/issues/12' },
+    { navn: 'A pull request', kode: 'https://github.com/owner/repo/pull/34' },
+  ];
+
+  return { tolk, linjeAdresse, medRef, navn, cacheNoegle, sprogFor, ER_SHA, ADRESSER };
 }));
 
 /* ---- shared/maerker.js ---- */
@@ -966,9 +982,43 @@
       .trim();
   }
 
+  /*
+   * ── Det, hjaelpen har lov at love ─────────────────────────────────────
+   *
+   * Listen bor HER, ved siden af de regexp'er, den beskriver - ikke i
+   * fladen. »En hjaelpetekst er en kravspecifikation« staar fem gange i
+   * loggen nu (doda v9/v35/v38, Sagu F9), og kuren er hver gang den samme:
+   * ikke mere omhu, men ÉT sted.
+   *
+   * Hver `kode` herunder er en levende proeve: `tests/markdown.test.mjs`
+   * render'er dem alle og faelder, hvis én af dem kommer ud som almindelig
+   * tekst. Holder rendereren op med at kunne tabeller, kan hjaelpen ikke
+   * blive ved med at sige, at den kan.
+   *
+   * `vis` er kun til, naar eksemplet fylder for meget i en snaever rude.
+   */
+  const SYNTAKS = [
+    { navn: 'Heading', kode: '## A heading' },
+    { navn: 'Bold', kode: '**bold**' },
+    { navn: 'Italic', kode: '*italic*' },
+    { navn: 'Strikethrough', kode: '~~struck out~~' },
+    { navn: 'Code', kode: '`inline code`' },
+    { navn: 'Code block', kode: '```js\nconst a = 1;\n```' },
+    { navn: 'Bullets', kode: '- one\n- two' },
+    { navn: 'Numbered', kode: '1. first\n2. second' },
+    { navn: 'Checklist', kode: '- [ ] to do\n- [x] done' },
+    { navn: 'Quote', kode: '> someone said this' },
+    { navn: 'Callout', kode: '> [!WARNING]\n> Read this twice.' },
+    { navn: 'Table', kode: '| Name | Port |\n| --- | --- |\n| web | 443 |' },
+    { navn: 'Divider', kode: '---' },
+    { navn: 'Link', kode: '[the docs](https://example.com)' },
+    { navn: 'Image', kode: '![a caption](https://example.com/a.png)' },
+    { navn: 'Another note', kode: '[[Title of the note]]' },
+  ];
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
     slug, esc, attr, sikkerUrl, saetTjek, flytBlok, blokSomLinje,
-    pentNavn, pentBrugernavn };
+    pentNavn, pentBrugernavn, SYNTAKS };
 }));
 
 /* ---- shared/notion.js ---- */
@@ -2897,7 +2947,7 @@ async function visKoePanel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -6547,9 +6597,24 @@ function tegnMedAabenBlok(host, n) {
     try { return saguMarkdown.render(md, renderValg()).html; } catch { return ''; }
   };
 
+  /*
+   * Hjaelpeknappen staar ved FELTET, ikke i vaerktoejsraekken.
+   *
+   * »En lille knap man kan trykke på når man er ved at skrive en note«
+   * (Andreas, 2026-08-21). Vaerktoejsraekken staar i toppen af noten, og paa
+   * en telefon er den rullet vaek, netop naar man skriver - saa dér ville
+   * knappen vaere usynlig praecis i det oejeblik, den skal bruges.
+   *
+   * Den er `tabindex="-1"`: Tab fra skrivefeltet skal foere videre i teksten,
+   * ikke ind i en hjaelpeknap.
+   */
   host.innerHTML = `${del(foer)}
-    <textarea class="blok-felt" id="blokFelt" spellcheck="false"
-      rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
+    <div class="blok-redigering">
+      <textarea class="blok-felt" id="blokFelt" spellcheck="false"
+        rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
+      <button class="blok-hjaelp" id="blokHjaelp" type="button" tabindex="-1"
+        aria-label="How to write this" title="How to write this">?</button>
+    </div>
     ${del(efter)}`;
 
   // De renderede dele skal ogsaa have knapper, lightbox og indlejringer.
@@ -6563,6 +6628,16 @@ function tegnMedAabenBlok(host, n) {
   // Den AABNE blok har ingen `data-blok` og faar derfor intet haandtag - man
   // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
   tegnGreb(host);
+
+  const hj = document.getElementById('blokHjaelp');
+  // `mousedown` med preventDefault, ikke `click`: et klik ville tage fokus
+  // fra feltet, og `blur` lukker blokken - saa var man ude af det, man var
+  // ved at skrive, for at kigge i hjaelpen.
+  if (hj) {
+    hj.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); });
+    hj.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); },
+      { passive: false });
+  }
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;
@@ -8816,6 +8891,96 @@ function visBlokMenu(g) {
 // Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.
 // Samme valg som markeringsknappen (F16).
 window.addEventListener('scroll', lukBlokMenu, { passive: true });
+
+/* ============================== hjælp til at skrive =====================
+ *
+ * Ruden bag »?«-knappen ved skrivefeltet.
+ *
+ * ── Hvorfor listerne ikke står her ────────────────────────────────────────
+ *
+ * Både `saguMarkdown.SYNTAKS` og `saguGithub.ADRESSER` bor i de delte
+ * moduler, ved siden af de regexp'er og den tolk, de beskriver — og
+ * testpakken kører hver eneste linje igennem. Holder rendereren op med at
+ * kunne tabeller, falder prøven, og hjælpen kan ikke blive ved med at love
+ * dem.
+ *
+ * Fladen her gør derfor ét: viser dem. Den kender ikke selv en eneste
+ * markdown-regel, og der er intet at holde i sync.
+ *
+ * ── Eksemplerne vises BÅDE som kode og som resultat ───────────────────────
+ *
+ * »`**bold**`« alene fortæller ikke en, der aldrig har set markdown, hvad
+ * der sker. To spalter — det man skriver, og det man får — er hele
+ * forklaringen uden en eneste sætning.
+ */
+function visSyntaksPanel() {
+  const gammel = document.getElementById('syntaksPanel');
+  if (gammel) { gammel.remove(); return; }
+
+  /*
+   * Eksemplerne render'es UDEN `blokAttribut`.
+   *
+   * `data-blok` er editorens haandtag paa noten - dét, klik, traekhaandtag og
+   * blokmenu finder hinanden med. I en hjaelperude peger de ingen steder hen,
+   * og markup, der ligner en blok uden at vaere det, er en faelde for den
+   * naeste, der spoerger dokumentet om alle `[data-blok]`.
+   */
+  const valg = { ...renderValg(), blokAttribut: false };
+  const raekke = (s) => {
+    let ud = '';
+    try { ud = saguMarkdown.render(s.kode, valg).html; } catch { ud = ''; }
+    return `<tr>
+      <th>${esc(s.navn)}</th>
+      <td><code class="syntaks-kode">${esc(s.kode)}</code></td>
+      <td class="syntaks-ud">${ud}</td>
+    </tr>`;
+  };
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'syntaksPanel';
+  host.innerHTML = `<div class="modal-kort bred">
+      <div class="modal-top">
+        <h2>How to write</h2>
+        <button class="iconbtn" id="syntaksLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">Sagu keeps your notes as plain markdown — what you type
+        <em>is</em> the note. Nothing here is required; a note written as ordinary prose
+        stays ordinary prose.</p>
+
+        <div class="tablewrap"><table class="data syntaks">
+          <thead><tr><th>What</th><th>You write</th><th>You get</th></tr></thead>
+          <tbody>${saguMarkdown.SYNTAKS.map(raekke).join('')}</tbody>
+        </table></div>
+
+        <h3 style="margin-top:22px">Tags</h3>
+        <p class="meta saetning">A <code>#tag</code> in the <strong>title</strong> becomes a real
+        tag. Several at once: <code>#drift,net,backup</code> — no space after the comma, or the
+        rest is read as an ordinary sentence.</p>
+
+        <h3 style="margin-top:22px">GitHub</h3>
+        <p class="meta saetning">Put a GitHub address <strong>alone on its own line</strong> and
+        Sagu shows the thing itself — the file with its lines, or the issue with its state.
+        Inside a sentence it stays an ordinary link. Only <code>github.com</code>, and a private
+        repository needs a token under <strong>Settings → GitHub</strong>.</p>
+        <div class="tablewrap"><table class="data">
+          <tbody>${saguGithub.ADRESSER.map((a) => `<tr>
+            <th>${esc(a.navn)}</th>
+            <td><code class="syntaks-kode">${esc(a.kode)}</code></td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#syntaksLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+  host.querySelector('#syntaksLuk').focus();
+}
 
 /* ---- p7_udgiv.js ---- */
 'use strict';

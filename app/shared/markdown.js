@@ -725,7 +725,41 @@
       .trim();
   }
 
+  /*
+   * ── Det, hjaelpen har lov at love ─────────────────────────────────────
+   *
+   * Listen bor HER, ved siden af de regexp'er, den beskriver - ikke i
+   * fladen. »En hjaelpetekst er en kravspecifikation« staar fem gange i
+   * loggen nu (doda v9/v35/v38, Sagu F9), og kuren er hver gang den samme:
+   * ikke mere omhu, men ÉT sted.
+   *
+   * Hver `kode` herunder er en levende proeve: `tests/markdown.test.mjs`
+   * render'er dem alle og faelder, hvis én af dem kommer ud som almindelig
+   * tekst. Holder rendereren op med at kunne tabeller, kan hjaelpen ikke
+   * blive ved med at sige, at den kan.
+   *
+   * `vis` er kun til, naar eksemplet fylder for meget i en snaever rude.
+   */
+  const SYNTAKS = [
+    { navn: 'Heading', kode: '## A heading' },
+    { navn: 'Bold', kode: '**bold**' },
+    { navn: 'Italic', kode: '*italic*' },
+    { navn: 'Strikethrough', kode: '~~struck out~~' },
+    { navn: 'Code', kode: '`inline code`' },
+    { navn: 'Code block', kode: '```js\nconst a = 1;\n```' },
+    { navn: 'Bullets', kode: '- one\n- two' },
+    { navn: 'Numbered', kode: '1. first\n2. second' },
+    { navn: 'Checklist', kode: '- [ ] to do\n- [x] done' },
+    { navn: 'Quote', kode: '> someone said this' },
+    { navn: 'Callout', kode: '> [!WARNING]\n> Read this twice.' },
+    { navn: 'Table', kode: '| Name | Port |\n| --- | --- |\n| web | 443 |' },
+    { navn: 'Divider', kode: '---' },
+    { navn: 'Link', kode: '[the docs](https://example.com)' },
+    { navn: 'Image', kode: '![a caption](https://example.com/a.png)' },
+    { navn: 'Another note', kode: '[[Title of the note]]' },
+  ];
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
     slug, esc, attr, sikkerUrl, saetTjek, flytBlok, blokSomLinje,
-    pentNavn, pentBrugernavn };
+    pentNavn, pentBrugernavn, SYNTAKS };
 }));

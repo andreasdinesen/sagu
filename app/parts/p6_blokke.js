@@ -1099,3 +1099,93 @@ function visBlokMenu(g) {
 // Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.
 // Samme valg som markeringsknappen (F16).
 window.addEventListener('scroll', lukBlokMenu, { passive: true });
+
+/* ============================== hjælp til at skrive =====================
+ *
+ * Ruden bag »?«-knappen ved skrivefeltet.
+ *
+ * ── Hvorfor listerne ikke står her ────────────────────────────────────────
+ *
+ * Både `saguMarkdown.SYNTAKS` og `saguGithub.ADRESSER` bor i de delte
+ * moduler, ved siden af de regexp'er og den tolk, de beskriver — og
+ * testpakken kører hver eneste linje igennem. Holder rendereren op med at
+ * kunne tabeller, falder prøven, og hjælpen kan ikke blive ved med at love
+ * dem.
+ *
+ * Fladen her gør derfor ét: viser dem. Den kender ikke selv en eneste
+ * markdown-regel, og der er intet at holde i sync.
+ *
+ * ── Eksemplerne vises BÅDE som kode og som resultat ───────────────────────
+ *
+ * »`**bold**`« alene fortæller ikke en, der aldrig har set markdown, hvad
+ * der sker. To spalter — det man skriver, og det man får — er hele
+ * forklaringen uden en eneste sætning.
+ */
+function visSyntaksPanel() {
+  const gammel = document.getElementById('syntaksPanel');
+  if (gammel) { gammel.remove(); return; }
+
+  /*
+   * Eksemplerne render'es UDEN `blokAttribut`.
+   *
+   * `data-blok` er editorens haandtag paa noten - dét, klik, traekhaandtag og
+   * blokmenu finder hinanden med. I en hjaelperude peger de ingen steder hen,
+   * og markup, der ligner en blok uden at vaere det, er en faelde for den
+   * naeste, der spoerger dokumentet om alle `[data-blok]`.
+   */
+  const valg = { ...renderValg(), blokAttribut: false };
+  const raekke = (s) => {
+    let ud = '';
+    try { ud = saguMarkdown.render(s.kode, valg).html; } catch { ud = ''; }
+    return `<tr>
+      <th>${esc(s.navn)}</th>
+      <td><code class="syntaks-kode">${esc(s.kode)}</code></td>
+      <td class="syntaks-ud">${ud}</td>
+    </tr>`;
+  };
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'syntaksPanel';
+  host.innerHTML = `<div class="modal-kort bred">
+      <div class="modal-top">
+        <h2>How to write</h2>
+        <button class="iconbtn" id="syntaksLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">Sagu keeps your notes as plain markdown — what you type
+        <em>is</em> the note. Nothing here is required; a note written as ordinary prose
+        stays ordinary prose.</p>
+
+        <div class="tablewrap"><table class="data syntaks">
+          <thead><tr><th>What</th><th>You write</th><th>You get</th></tr></thead>
+          <tbody>${saguMarkdown.SYNTAKS.map(raekke).join('')}</tbody>
+        </table></div>
+
+        <h3 style="margin-top:22px">Tags</h3>
+        <p class="meta saetning">A <code>#tag</code> in the <strong>title</strong> becomes a real
+        tag. Several at once: <code>#drift,net,backup</code> — no space after the comma, or the
+        rest is read as an ordinary sentence.</p>
+
+        <h3 style="margin-top:22px">GitHub</h3>
+        <p class="meta saetning">Put a GitHub address <strong>alone on its own line</strong> and
+        Sagu shows the thing itself — the file with its lines, or the issue with its state.
+        Inside a sentence it stays an ordinary link. Only <code>github.com</code>, and a private
+        repository needs a token under <strong>Settings → GitHub</strong>.</p>
+        <div class="tablewrap"><table class="data">
+          <tbody>${saguGithub.ADRESSER.map((a) => `<tr>
+            <th>${esc(a.navn)}</th>
+            <td><code class="syntaks-kode">${esc(a.kode)}</code></td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#syntaksLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+  host.querySelector('#syntaksLuk').focus();
+}

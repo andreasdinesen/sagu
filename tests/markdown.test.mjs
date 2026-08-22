@@ -603,3 +603,37 @@ test('blokSomLinje svarer tomt på en blok, der ikke findes', () => {
   assert.equal(md.blokSomLinje('', 0), '');
   assert.equal(md.blokSomLinje(null, 0), '');
 });
+
+/*
+ * ── Hjælpens eksempler ────────────────────────────────────────────────────
+ *
+ * »En hjælpetekst er en kravspecifikation«. Den her prøve er dét udsagn gjort
+ * eksekverbart: hver linje, hjælpepanelet viser, køres gennem rendereren, og
+ * hvis én af dem kommer ud som almindelig tekst, falder prøven.
+ *
+ * Så kan man ikke fjerne tabeller fra rendereren og efterlade en hjælp, der
+ * bliver ved med at love dem — og det er præcis den slags drift, der ellers
+ * først opdages af den, der sidder og undrer sig over, hvorfor det ikke
+ * virker, når der står, at det gør.
+ */
+test('hvert eksempel i hjælpen bliver faktisk til noget', () => {
+  assert.ok(md.SYNTAKS.length >= 12, 'listen maa ikke stille og roligt toemmes');
+  for (const s of md.SYNTAKS) {
+    const { html } = md.render(s.kode, {});
+    const bar = html.replace(/<\/?p>/g, '').trim();
+    assert.notEqual(bar, s.kode.trim(),
+      `»${s.navn}« kom ud som ren tekst - rendereren kender den ikke laengere`);
+    assert.match(html, /<[a-z]/, `»${s.navn}« gav ingen markup`);
+  }
+});
+
+test('hjælpens eksempler er hele og forskellige', () => {
+  const set = new Set(md.SYNTAKS.map((s) => s.kode));
+  assert.equal(set.size, md.SYNTAKS.length, 'to raekker viser det samme');
+  for (const s of md.SYNTAKS) {
+    assert.ok(s.navn && s.kode, 'baade navn og eksempel');
+    // Et eksempel med en adresse skal bruge example.com - aldrig en rigtig
+    // vaert, som nogen kunne komme til at kalde.
+    if (/https?:\/\//.test(s.kode)) assert.match(s.kode, /example\.com/);
+  }
+});

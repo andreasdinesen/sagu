@@ -162,5 +162,21 @@
     return KENDTE[e] || '';
   }
 
-  return { tolk, linjeAdresse, medRef, navn, cacheNoegle, sprogFor, ER_SHA };
+  /*
+   * De adresser, indlejringen forstaar - som HJAELPEN viser dem.
+   *
+   * De bor her hos `tolk()`, ikke i fladen, og `tests/github.test.mjs`
+   * koerer hver eneste af dem gennem `tolk()`. Falder én, kan hjaelpen ikke
+   * blive ved med at love den. Samme regel som `SYNTAKS` i markdown-modulet.
+   */
+  const ADRESSER = [
+    { navn: 'A whole file', kode: 'https://github.com/owner/repo/blob/main/README.md' },
+    { navn: 'One line', kode: 'https://github.com/owner/repo/blob/main/src/app.js#L42' },
+    { navn: 'A range of lines', kode: 'https://github.com/owner/repo/blob/main/src/app.js#L10-L20' },
+    { navn: 'A frozen version', kode: 'https://github.com/owner/repo/blob/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678/README.md' },
+    { navn: 'An issue', kode: 'https://github.com/owner/repo/issues/12' },
+    { navn: 'A pull request', kode: 'https://github.com/owner/repo/pull/34' },
+  ];
+
+  return { tolk, linjeAdresse, medRef, navn, cacheNoegle, sprogFor, ER_SHA, ADRESSER };
 }));

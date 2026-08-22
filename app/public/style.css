@@ -2412,3 +2412,47 @@ html, body { overscroll-behavior-y: contain; }
 }
 .filfold > summary:hover { background: var(--hover); color: var(--text); }
 .filfold[open] > summary { margin-bottom: 10px; }
+
+/* ------------------------------------------- »?«-knappen ved skrivefeltet
+ *
+ * Den ligger i feltets øverste højre hjørne og er svag, indtil man er i
+ * nærheden af den. Den skal kunne findes, ikke ses hele tiden — man er i
+ * gang med at skrive, ikke med at læse en knap.
+ */
+.blok-redigering { position: relative; }
+
+.blok-hjaelp {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--muted);
+  font: 600 13px/1 inherit;
+  cursor: pointer;
+  opacity: .5;
+  transition: opacity .12s, color .12s;
+}
+.blok-hjaelp:hover, .blok-hjaelp:focus-visible { opacity: 1; color: var(--accent); }
+/* På en telefon findes hover ikke, og en knap man ikke kan se, findes ikke. */
+@media (pointer: coarse) { .blok-hjaelp { opacity: .75; } }
+
+/* --------------------------------------------------- selve hjælperuden */
+
+.modal-kort.bred { max-width: 780px; }
+
+.syntaks th { white-space: nowrap; vertical-align: top; }
+.syntaks-kode { white-space: pre-wrap; font-size: 12px; line-height: 1.6; }
+/* Resultat-spalten viser rigtig markup. Den må ikke få lov at brede sig ud
+   som en note gør — den skal kunne stå i en tabelcelle. */
+.syntaks-ud > *:first-child { margin-top: 0; }
+.syntaks-ud > *:last-child { margin-bottom: 0; }
+.syntaks-ud h1, .syntaks-ud h2, .syntaks-ud h3 { font-size: 15px; margin: 0; }
+.syntaks-ud pre { margin: 0; padding: 6px 8px; font-size: 12px; }
+.syntaks-ud blockquote { margin: 0; }
+.syntaks-ud img { max-height: 40px; width: auto; }
+.syntaks-ud .tabelwrap table { font-size: 12px; }

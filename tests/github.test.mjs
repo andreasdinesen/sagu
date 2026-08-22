@@ -399,3 +399,27 @@ test('wikien tegner indlejringen — men henter ALDRIG selv', async () => {
   assert.ok(!medHtml.includes('data-gh-frisk'));
   assert.match(medHtml, /rel="noopener noreferrer nofollow"/);
 });
+
+/*
+ * Hjælpens GitHub-adresser er de samme, `tolk()` forstår.
+ *
+ * Samme regel som markdown-eksemplerne: panelet viser seks adresseformer, og
+ * hvis én af dem holder op med at blive genkendt, må hjælpen ikke blive ved
+ * med at vise den. Den, der prøver at følge en hjælp, der lyver, leder efter
+ * fejlen hos sig selv.
+ */
+test('hver adresse i hjælpen forstås af tolken', () => {
+  assert.ok(gh.ADRESSER.length >= 5);
+  for (const a of gh.ADRESSER) {
+    const t = gh.tolk(a.kode);
+    assert.ok(t, `»${a.navn}« bliver ikke genkendt laengere: ${a.kode}`);
+  }
+  // ... og de viser faktisk de FORSKELLIGE ting, de lover.
+  const slags = new Set(gh.ADRESSER.map((a) => gh.tolk(a.kode).slags));
+  assert.deepEqual([...slags].sort(), ['fil', 'issue', 'pr']);
+  // `typeof === 'number'`, ikke `!== null`: en issue har slet ingen `fra`, og
+  // `undefined !== null` er sandt. Den slags maaler man let forkert.
+  const medLinjer = gh.ADRESSER.filter((a) => typeof gh.tolk(a.kode).fra === 'number');
+  assert.equal(medLinjer.length, 2, 'én linje og et interval');
+  assert.ok(gh.ADRESSER.some((a) => gh.tolk(a.kode).frossen), 'og en frossen udgave');
+});
