@@ -2353,3 +2353,47 @@ body.traekker { cursor: grabbing; user-select: none; }
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------- træk ned for at opfriske
+ *
+ * Mærket ligger OVER skærmkanten og kommer ned med fingeren. Så er der intet
+ * at se, før man trækker — og gestussen røber sig selv, første gang man
+ * kommer til at trække lidt for langt.
+ */
+.traekopfrisk {
+  position: fixed;
+  top: -46px;
+  left: 50%;
+  z-index: 70;
+  display: none;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+}
+.traekopfrisk.paa { display: block; }
+
+.traekopfrisk-ring {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--muted);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .32);
+}
+/* »Nu udløser den, hvis du slipper«. Uden det skridt er gestussen et gæt. */
+.traekopfrisk.klar .traekopfrisk-ring { color: var(--accent); border-color: var(--accent); }
+
+.traekopfrisk.koerer { transition: transform .18s ease; }
+.traekopfrisk.koerer .traekopfrisk-ring { color: var(--accent); border-color: var(--accent); }
+.traekopfrisk.koerer .traekopfrisk-ring svg { animation: traekspin .9s linear infinite; }
+@keyframes traekspin { to { transform: rotate(360deg); } }
+
+/* Androids EGEN »træk ned for at opfriske« ville ellers udløse oven i vores
+   og genindlæse hele siden — præcis det, vi ikke vil. */
+html, body { overscroll-behavior-y: contain; }
+
+@media (prefers-reduced-motion: reduce) {
+  .traekopfrisk.koerer .traekopfrisk-ring svg { animation: none; }
+}

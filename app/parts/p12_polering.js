@@ -291,3 +291,206 @@ function tegnGenveje() {
   host.innerHTML = genvejeHtml();
   bindGenveje();
 }
+
+/* ==================== træk ned for at opfriske (mobil) ==================
+ *
+ * »Kan du lave så man kan trække ned for at refreshe når man er på
+ * mobilen?« (Andreas, 2026-08-21).
+ *
+ * ── Hvorfor appen har brug for den ────────────────────────────────────────
+ *
+ * Sagu kører som en installeret app på telefonen, og dér findes browserens
+ * egen »træk ned«-opfriskning ikke — der er ingen adresselinje og ingen
+ * genindlæs-knap. Kommer der en note ind fra en anden enhed, en genvej eller
+ * MCP, stod skærmen med gårsdagens indhold, indtil man lukkede og åbnede
+ * appen igen.
+ *
+ * ── Hvad den opfrisker, og hvad den IKKE rører ────────────────────────────
+ *
+ * Den henter DATA, ikke siden. En `location.reload()` ville smide den åbne
+ * note, rullepositionen og en kø af ikke-sendte rettelser væk — og det er
+ * netop dét, man ikke vil, når man står med telefonen i hånden.
+ *
+ * En ventende gemning sendes FØRST. Rækkefølgen er ikke til forhandling:
+ * hentede vi noten før vi gemte, ville serverens ældre udgave overskrive det,
+ * man lige har skrevet — man ville trække ned for at opdatere og få sin egen
+ * tekst slettet.
+ *
+ * Og har noten stadig ugemte rettelser bagefter (offline, en gemning der
+ * fejlede), hentes dens tekst IKKE. Resten opfriskes.
+ *
+ * ── Hvorfor pointer-events ikke duer her ──────────────────────────────────
+ *
+ * Alle andre steder i Sagu er svaret `pointerdown`/`pointermove` — men her
+ * skal rulningen kunne AFLYSES, og det kræver `preventDefault()` på en
+ * `touchmove`-lytter, der ikke er passiv. En pointer-hændelse kan ikke stoppe
+ * browserens rulning.
+ *
+ * `preventDefault()` kaldes først, når trækket er GENKENDT: mere lodret end
+ * vandret, nedad, og fra en side, der allerede står i toppen. Ellers havde vi
+ * brudt almindelig rulning for at vinde en gestus.
+ */
+
+// `nedtraek`, ikke `traek`: traeet i sidebaren har sin egen `traek`, og alle
+// dele samles til ÉN fil med ét globalt rum. Navnesammenstoed her viser sig
+// som en SyntaxError et helt andet sted (det er sket foer, med `maal`).
+const NEDTRAEK_GRAENSE = 72;      // px, man skal trække, før den udløser
+const NEDTRAEK_VAAGN = 10;        // px, før vi overhovedet griber ind
+const NEDTRAEK_MAX = 110;         // så elastikken har en ende
+
+const nedtraek = { yStart: 0, xStart: 0, aktiv: false, laast: false, dy: 0, koerer: false };
+let traekEl = null;
+
+function traekIndikator() {
+  if (!traekEl) {
+    traekEl = document.createElement('div');
+    traekEl.className = 'traekopfrisk';
+    traekEl.innerHTML = `<div class="traekopfrisk-ring">${icon('opfrisk', 18)}</div>`;
+    document.body.appendChild(traekEl);
+  }
+  return traekEl;
+}
+
+function skjulTraek() {
+  if (!traekEl) return;
+  traekEl.classList.remove('paa', 'klar', 'koerer');
+  traekEl.style.transform = '';
+}
+
+/**
+ * Står ALT, fingeren rører, allerede i toppen?
+ *
+ * `window.scrollY` var ikke nok, og det er ikke en detalje: i Sagu er det
+ * `body`, der ruller (`html, body { height: 100dvh; overflow-y: auto }`), saa
+ * `window.scrollY` er ALTID 0. Værnet greb dermed aldrig, og et træk nedad
+ * midt i en lang note ville opfriske i stedet for at rulle - stik imod det,
+ * fingeren bad om (målt i browseren, 2026-08-21).
+ *
+ * Derfor spørges der tre steder: vinduet, de to mulige sidescrollere, og hver
+ * eneste forælder op gennem træet. Det sidste dækker de indre ruder, der har
+ * deres egen rulning - en lang kodeblok, sidebaren, en åben rude.
+ */
+function heltOppe(maal) {
+  if (window.scrollY > 0) return false;
+  if (document.documentElement.scrollTop > 0 || document.body.scrollTop > 0) return false;
+  for (let el = maal; el && el !== document.body; el = el.parentElement) {
+    if (el.scrollTop > 0) return false;
+  }
+  return true;
+}
+
+/** Må der overhovedet trækkes lige nu? */
+function maaTraekke(e) {
+  if (!state.user) return false;
+  // Kun berøring. En mus har hjul, og en pegefelt-rulning må ikke fange en
+  // gestus, der er tænkt til en finger.
+  if (e.touches && e.touches.length !== 1) return false;
+  if (!heltOppe(e.target)) return false;
+  // En rude, der ligger over siden, har sin egen rulning og sin egen lukning.
+  if (document.querySelector('.modal, .blok-menu')) return false;
+  /*
+   * Spørgsmålet er, hvor FINGEREN lander - ikke hvad der har fokus.
+   *
+   * Første udgave spurgte om `document.activeElement`, og så virkede
+   * gestussen aldrig på en telefon: søgefeltet tager fokus, når appen åbner,
+   * og beholder det, selv om tastaturet er væk. Værnet ramte dermed hver
+   * eneste gang - en funktion, der er umulig at nå i praksis, findes ikke
+   * (samme fælde som markeringsknappen i F16).
+   *
+   * Inde i et skrivefelt er et træk noget andet: dér panorerer og markerer
+   * man. På almindelig tekst gør man ikke - en markering på touch begynder
+   * med et langt tryk, ikke med et træk.
+   */
+  const m = e.target;
+  if (m && m.closest && m.closest('input, textarea, [contenteditable="true"]')) return false;
+  // Er man i gang med at trække i en blok, hører fingeren til dét.
+  if (document.body.querySelector('.greb-aktiv')) return false;
+  return true;
+}
+
+document.addEventListener('touchstart', (e) => {
+  nedtraek.aktiv = false; nedtraek.laast = false; nedtraek.dy = 0;
+  if (nedtraek.koerer || !maaTraekke(e)) return;
+  nedtraek.yStart = e.touches[0].clientY;
+  nedtraek.xStart = e.touches[0].clientX;
+  nedtraek.aktiv = true;
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (!nedtraek.aktiv || nedtraek.koerer) return;
+  const dy = e.touches[0].clientY - nedtraek.yStart;
+  const dx = Math.abs(e.touches[0].clientX - nedtraek.xStart);
+
+  if (!nedtraek.laast) {
+    // Opad, sidelæns eller for lidt: det er ikke vores gestus. Slip den helt,
+    // saa resten af traekket forbliver almindelig rulning.
+    if (dy <= 0 || dy < NEDTRAEK_VAAGN) { if (dy < 0) nedtraek.aktiv = false; return; }
+    if (dx > dy) { nedtraek.aktiv = false; return; }
+    // Naaede siden at rulle, mens fingeren var paa vej? Saa er det rulning.
+    if (!heltOppe(e.target)) { nedtraek.aktiv = false; return; }
+    nedtraek.laast = true;
+    traekIndikator().classList.add('paa');
+  }
+
+  // Fra her ER det vores - saa maa siden ikke ogsaa rulle.
+  e.preventDefault();
+  // Elastik: jo laengere man traekker, jo mindre giver den efter. Uden den
+  // foelger maerket fingeren ud af skaermen.
+  nedtraek.dy = Math.min(NEDTRAEK_MAX, dy * 0.55);
+  const el = traekIndikator();
+  el.style.transform = `translate(-50%, ${Math.round(nedtraek.dy)}px) rotate(${Math.round(nedtraek.dy * 3)}deg)`;
+  el.classList.toggle('klar', nedtraek.dy >= NEDTRAEK_GRAENSE * 0.55);
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  if (!nedtraek.laast) { nedtraek.aktiv = false; return; }
+  const naaede = nedtraek.dy >= NEDTRAEK_GRAENSE * 0.55;
+  nedtraek.aktiv = false; nedtraek.laast = false;
+  if (!naaede) { skjulTraek(); return; }
+  opfriskAlt();
+}, { passive: true });
+
+// En afbrudt beroering (et opkald, en systemgestus) maa ikke efterlade
+// maerket haengende paa skaermen.
+document.addEventListener('touchcancel', () => {
+  nedtraek.aktiv = false; nedtraek.laast = false; skjulTraek();
+}, { passive: true });
+
+/**
+ * Henter alt det, skærmen viser, forfra.
+ *
+ * Ligger for sig selv, fordi den ikke har noget med berøringer at gøre - og
+ * fordi den så kan kaldes fra andet end en finger, hvis der senere bliver
+ * brug for det.
+ */
+async function opfriskAlt() {
+  if (nedtraek.koerer) return;
+  nedtraek.koerer = true;
+  const el = traekIndikator();
+  el.classList.add('paa', 'koerer');
+  el.style.transform = 'translate(-50%, 64px)';
+  try {
+    // 1. Det, jeg har skrevet, foerst - se forklaringen i toppen.
+    if (typeof gemNu === 'function') await gemNu();
+    // 2. Ikke-sendte rettelser afsted, mens vi alligevel har fat i nettet.
+    if (typeof synkKoe === 'function' && !state.offline) await synkKoe(true);
+    // 3. Notesboeger, maerker, taellere, traeet, favoritter og spor.
+    await hentState();
+    await hentGenveje();
+    tegnTrae();
+    // 4. Og selve skaermen.
+    if (state.view === 'note' && editor.note && !editor.beskidt) {
+      await aabnNote(editor.note.id);
+    } else if (state.view === 'note' && editor.note) {
+      // Ugemte rettelser: teksten er MIN, og den hentes ikke over.
+      toast('Refreshed everything except this note — it has unsaved changes.');
+    } else {
+      await tegnSide();
+    }
+  } catch (ex) {
+    toast(ex && ex.message ? ex.message : 'Could not refresh.');
+  } finally {
+    nedtraek.koerer = false;
+    skjulTraek();
+  }
+}
