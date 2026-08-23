@@ -3237,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -10786,6 +10786,54 @@ function sideApi() {
       noter: 'Again <strong>File</strong> (<em>Arkiv</em>), not JSON. The image becomes '
         + 'an attachment and is written into the note. Add <code>&amp;to=today</code> to put it '
         + 'in today\'s note instead.',
+    },
+    {
+      navn: 'Save a link from the share sheet',
+      hvorfor: 'A page worth keeping — press Share, pick the shortcut, and it is a note. '
+        + 'The title becomes the note\'s title, the address its first line.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?notebook=Reading`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'JSON — one key, <code>text</code>, with the Text action as its value'],
+      ],
+      noter: 'Two actions. First a <strong>Text</strong> action holding the page name on line one '
+        + 'and the address on line two — from Safari, <em>Get Details of Safari Web Page</em> gives '
+        + 'you the name; from anywhere else the Shortcut Input is the address, and that becomes the '
+        + 'title. Then <em>Get Contents of URL</em> with the fields above. In the shortcut\'s '
+        + 'settings, turn on <strong>Show in Share Sheet</strong> and let it accept '
+        + '<em>URLs</em> and <em>Safari web pages</em>. '
+        + 'Drop <code>?notebook=</code> to leave it outside a notebook, or add a '
+        + '<code>#tag</code> to the end of the first line.',
+    },
+    {
+      navn: 'Add a link to one running list',
+      hvorfor: 'A reading list, a list of tickets — one note that grows, instead of a note per link.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?to=NOTE_ID`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'JSON — <code>text</code> = <code>- [name](address)</code>'],
+      ],
+      noter: 'Send it as a <strong>list item</strong> and Sagu continues the list instead of '
+        + 'starting a new one, so the note stays one growing list however many you add. '
+        + 'Anything that is not a list item is added as its own paragraph, as before. '
+        + 'The id is under the note\'s <strong>…</strong> menu → <em>Copy the note ID</em>.',
+    },
+    {
+      navn: 'Save the page itself, not just the link',
+      hvorfor: 'The text as well, so it is still readable when the page is gone or behind a login.',
+      felter: [
+        ['URL', `${b}/api/v1/capture?notebook=Reading`],
+        ['Method', 'POST'],
+        ['Headers', 'Authorization: Bearer sagu_…'],
+        ['Request Body', 'JSON — <code>text</code> = the article text'],
+      ],
+      noter: 'Put <em>Get Article from Web Page</em> before the call and feed its text into a '
+        + '<strong>Text</strong> action: page name, then the address, then the article. '
+        + 'It is plain text, not markdown — headings and lists do not survive the trip. '
+        + 'For a proper conversion use <strong>Save to Sagu</strong> under Settings; that is the '
+        + 'same job done in a browser, where the page structure is still there to read.',
     },
     {
       navn: 'Get a note as markdown',

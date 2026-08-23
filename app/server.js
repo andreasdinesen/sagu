@@ -2835,7 +2835,25 @@ function fangst(userId, tekst, opt) {
    */
   const tilfoejTil = (note, fejlbesked) => {
     const linje = felter.krop ? `${renTitel}\n\n${felter.krop}` : renTitel;
-    const ny = `${String(note.body || '').replace(/\s+$/, '')}\n\n${linje}\n`;
+    const foer = String(note.body || '').replace(/\s+$/, '');
+    /*
+     * Et LISTEPUNKT lagt til en liste bliver en del af den listen.
+     *
+     * Alt andet skilles med en tom linje, og det er rigtigt: to afsnit skal
+     * vaere to afsnit. Men en genvej, der samler links i én note - »- [titel]
+     * (adresse)« hver gang - byggede dermed ét punkt pr. LISTE. Efter fem
+     * gemte artikler stod der fem lister med ét punkt i hver, og det ser
+     * stykket i stykker ud uden at noget er gaaet galt (maalt 2026-08-22, da
+     * opskriften til iOS-genvejen skulle skrives).
+     *
+     * Reglen er snaever med vilje: BEGGE sider skal vaere punkter i samme
+     * slags liste. Er den ene et afsnit, er der intet at fortsaette.
+     */
+    const ER_PUNKT = /^\s*(?:[-*+]|\d{1,9}[.)])\s+\S/;
+    const sidsteLinje = foer.split('\n').pop();
+    const fortsaetter = ER_PUNKT.test(sidsteLinje) && ER_PUNKT.test(linje)
+      && /^\s*\d/.test(sidsteLinje) === /^\s*\d/.test(linje);
+    const ny = `${foer}${fortsaetter ? '\n' : '\n\n'}${linje}\n`;
     const svar = gemNote(userId, note.id, { body: ny });
     if (svar.fejl) return { fejl: ['not_found', fejlbesked] };
     /*

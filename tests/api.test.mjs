@@ -350,6 +350,42 @@ test('to=<id> lægger teksten nederst i den note', async () => {
   assert.ok(md.tekst.indexOf('UniFi') < md.tekst.indexOf('Husk'), 'og det nye kommer NEDERST');
 });
 
+test('to=<id> fortsætter en liste i stedet for at starte en ny', async () => {
+  /*
+   * En genvej, der samler links i én note, sender »- [titel](adresse)« hver
+   * gang. Med en tom linje imellem bliver det ét punkt pr. LISTE: efter fem
+   * gemte artikler står der fem lister med ét punkt i hver, og det ser
+   * stykket i stykker ud, uden at noget er gået galt (fundet 2026-08-22, da
+   * opskriften til iOS-genvejen skulle skrives).
+   *
+   * Reglen er snæver: BEGGE sider skal være punkter i samme slags liste.
+   * Prøven måler derfor også, at et afsnit stadig bliver et afsnit — ellers
+   * havde kuren ædt den adskillelse, den skulle beskytte.
+   */
+  const n = (await a.kald('POST', '/api/v1/notes',
+    { title: 'Læseliste', body: '# Læseliste' })).data.note;
+
+  for (const i of [1, 2, 3]) {
+    await medNoegle('capture', 'POST', `/api/v1/capture?to=${n.id}`,
+      { krop: `- [Artikel ${i}](https://eksempel.example/${i})` });
+  }
+  const md = (await medNoegle('read', 'GET', `/api/v1/notes/${n.id}?format=md`)).tekst;
+  assert.match(md, /- \[Artikel 1\]\([^)]*\)\n- \[Artikel 2\]\([^)]*\)\n- \[Artikel 3\]/,
+    'de tre punkter staar paa hver sin linje UDEN tomme linjer imellem');
+  assert.equal(md.split('\n').filter((l) => l.startsWith('- ')).length, 3);
+
+  // ... og et almindeligt afsnit bagefter er stadig et afsnit.
+  await medNoegle('capture', 'POST', `/api/v1/capture?to=${n.id}`, { krop: 'Et afsnit til sidst.' });
+  const md2 = (await medNoegle('read', 'GET', `/api/v1/notes/${n.id}?format=md`)).tekst;
+  assert.match(md2, /Artikel 3\]\([^)]*\)\n\nEt afsnit til sidst\./, 'afsnittet staar for sig');
+
+  // En NUMMERERET liste og en punktliste er ikke den samme liste.
+  const num = (await a.kald('POST', '/api/v1/notes', { title: 'Trin', body: '1. foerste' })).data.note;
+  await medNoegle('capture', 'POST', `/api/v1/capture?to=${num.id}`, { krop: '- et punkt' });
+  const md3 = (await medNoegle('read', 'GET', `/api/v1/notes/${num.id}?format=md`)).tekst;
+  assert.match(md3, /1\. foerste\n\n- et punkt/, 'to slags liste bliver ikke slaaet sammen');
+});
+
 test('to=<id> tilføjer mærker — det ERSTATTER dem ikke', async () => {
   /*
    * Fejlen fandtes i forvejen på `to=today`: `saetMaerker` skriver notens
