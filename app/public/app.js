@@ -3237,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -4303,11 +4303,32 @@ async function tegnSide() {
   byggToc();
 }
 
+/*
+ * De skaerme, der er en TABEL og ikke prosa.
+ *
+ * Laesebredden paa 820 px er rigtig for en note: lange linjer er svaere at
+ * laese, og det er hele grunden til, at spalten er smal. En tabel med titel,
+ * maerker, dato og en knap er ikke prosa - dér betyder de samme 820 px, at
+ * spalterne bliver klippet og skal rulles vandret, ogsaa naar der er masser
+ * af plads ved siden af (Andreas, 2026-08-22, med sidemenuen foldet vaek).
+ */
+const BREDE_SIDER = new Set(['notes', 'trash', 'shared', 'comments', 'tags']);
+
 async function tegnSideIndhold() {
   const host = document.getElementById('pageHost');
   if (!host) return;
+  host.classList.toggle('bred', BREDE_SIDER.has(state.view));
   const v = viewById(state.view);
-  const hoved = `<h1>${esc(v.label)}</h1><p class="lead">${esc(BESKRIVELSER[v.id] || '')}</p>`;
+  /*
+   * »All Notes« skriver sin egen undertekst.
+   *
+   * `BESKRIVELSER` siger »newest first«, og det er sandt lige indtil man
+   * sorterer paa en overskrift. En undertekst, der bliver staaende og lyve,
+   * er vaerre end ingen undertekst - saa hellere lade siden sige, hvad den
+   * FAKTISK viser.
+   */
+  const beskrivelse = state.view === 'notes' ? noteListeUndertekst() : (BESKRIVELSER[v.id] || '');
+  const hoved = `<h1>${esc(v.label)}</h1><p class="lead">${esc(beskrivelse)}</p>`;
 
   try {
     if (state.view === 'note') {
@@ -4357,6 +4378,100 @@ function sideKommer(hvad, fase) {
 
 /* ------------------------------------------------------------- noter */
 
+/* ------------------------------------------------------------- sortering
+ *
+ * »Kan du gøre så man kan sortere på overskrifterne under All Notes«
+ * (Andreas, 2026-08-22).
+ *
+ * ── Den sker HER, ikke på serveren ────────────────────────────────────────
+ *
+ * Listen er allerede hentet og ligger i `state.notes`. En omsortering er en
+ * måde at se på det samme på — ikke en ny forespørgsel — og et kald pr. klik
+ * på en overskrift ville koste en rundtur gennem tunnelen for at bytte om på
+ * noget, browseren allerede har.
+ *
+ * ── Valget holder sessionen ud, men gemmes ikke ───────────────────────────
+ *
+ * Det ligger i `state`, så det overlever, at man går ind i en note og tilbage
+ * igen. Det bliver IKKE gemt: standarden er »nyeste først«, og det er dét,
+ * siden lover i sin egen undertekst. En sortering, der overlever en
+ * genindlæsning uden at stå nogen steder, er en indstilling, man ikke ved man
+ * har.
+ *
+ * Underteksten skifter med valget, så den aldrig kommer til at love noget
+ * andet end det, listen viser.
+ */
+const SORTERINGER = {
+  titel: {
+    navn: 'Title',
+    // `localeCompare` med dansk: æ, ø og å hører sidst, ikke midt i alfabetet.
+    sammenlign: (a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'da',
+      { sensitivity: 'base', numeric: true }),
+    stigendeFoerst: true,
+    tekst: (ned) => (ned ? 'by title, Z first.' : 'by title, A first.'),
+  },
+  maerker: {
+    navn: 'Tags',
+    /*
+     * Sorteret paa det FOERSTE maerke. En note uden maerker ligger sidst,
+     * uanset retning: »ingen maerker« er ikke en vaerdi, der hoerer i den ene
+     * eller den anden ende - det er fravaeret af en, og det skal ikke skubbe
+     * det, man leder efter, ned i bunden, naar man vender listen.
+     */
+    sammenlign: (a, b) => {
+      const x = (a.tags || [])[0] || '';
+      const y = (b.tags || [])[0] || '';
+      if (!x && !y) return 0;
+      if (!x) return 1;
+      if (!y) return -1;
+      return x.localeCompare(y, 'da', { sensitivity: 'base' });
+    },
+    tomSidst: true,
+    stigendeFoerst: true,
+    tekst: (ned) => (ned ? 'by tag, Z first — untagged last.' : 'by tag, A first — untagged last.'),
+  },
+  aendret: {
+    navn: 'Updated',
+    sammenlign: (a, b) => (a.updatedAt || 0) - (b.updatedAt || 0),
+    stigendeFoerst: false,
+    tekst: (ned) => (ned ? 'newest first.' : 'oldest first.'),
+  },
+};
+
+const sortering = { felt: 'aendret', ned: true };
+
+function sorterNoter(liste) {
+  const s = SORTERINGER[sortering.felt];
+  if (!s) return liste;
+  const ud = liste.slice().sort((a, b) => {
+    const r = s.sammenlign(a, b);
+    if (r !== 0) return sortering.ned ? -r : r;
+    // Uafgjort brydes ALTID paa samme maade, ellers hopper raekker rundt
+    // mellem to optegninger af den samme liste.
+    return String(a.id).localeCompare(String(b.id));
+  });
+  if (!s.tomSidst) return ud;
+  // Notene UDEN vaerdi laegges bagest, uanset retning - se forklaringen ovenfor.
+  const med = ud.filter((n) => (n.tags || []).length);
+  const uden = ud.filter((n) => !(n.tags || []).length);
+  return med.concat(uden);
+}
+
+/** Overskriften som en knap, med pilen der viser hvad der sker. */
+function sorterTh(felt, ekstra) {
+  const s = SORTERINGER[felt];
+  const paa = sortering.felt === felt;
+  const pil = paa ? (sortering.ned ? '↓' : '↑') : '';
+  return `<th${ekstra || ''}><button class="sorterknap${paa ? ' paa' : ''}" data-sorter="${felt}"
+    aria-label="Sort by ${esc(s.navn)}">${esc(s.navn)}<span class="sorterpil">${pil}</span></button></th>`;
+}
+
+/** Underteksten skal sige, hvad listen FAKTISK viser. */
+function noteListeUndertekst() {
+  const s = SORTERINGER[sortering.felt];
+  return `Everything you have written, ${s.tekst(sortering.ned)}`;
+}
+
 async function sideNoter(opt) {
   const q = opt.trash ? '?trash=1' : '';
   const d = await api('GET', `/api/v1/notes${q}`);
@@ -4376,9 +4491,9 @@ async function sideNoter(opt) {
   return `${opt.trash ? '' : `<div class="btnrow" style="margin-bottom:16px">
       <button class="btn primary" id="nyNote">${icon('plus', 16)} New note</button>
     </div>`}
-    <div class="card"><div class="tablewrap"><table class="data">
-      <thead><tr><th>Title</th><th>Tags</th><th class="num">Updated</th><th></th></tr></thead>
-      <tbody>${d.notes.map((n) => `<tr>
+    <div class="card"><div class="tablewrap"><table class="data notetabel">
+      <thead><tr>${sorterTh('titel')}${sorterTh('maerker')}${sorterTh('aendret', ' class="num"')}<th></th></tr></thead>
+      <tbody>${sorterNoter(d.notes).map((n) => `<tr>
         <td><button class="linkknap" data-aabn="${esc(n.id)}">${esc(n.title || 'Untitled')}</button></td>
         <td><span class="chips">${n.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</span></td>
         <td class="num">${esc(visTid(n.updatedAt))}</td>
@@ -4389,6 +4504,17 @@ async function sideNoter(opt) {
 }
 
 function bindNoteliste() {
+  document.querySelectorAll('[data-sorter]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const felt = el.dataset.sorter;
+      // Samme overskrift igen vender listen. En NY overskrift begynder med
+      // den retning, folk mener med netop den: titler fra A, datoer fra
+      // nyeste. Alt andet foeles som om knappen gjorde noget tilfaeldigt.
+      if (sortering.felt === felt) sortering.ned = !sortering.ned;
+      else { sortering.felt = felt; sortering.ned = !SORTERINGER[felt].stigendeFoerst; }
+      tegnSide();
+    });
+  });
   const ny = document.getElementById('nyNote');
   if (ny) ny.addEventListener('click', () => opretOgAaben({}));
   document.querySelectorAll('[data-aabn]').forEach((el) => {

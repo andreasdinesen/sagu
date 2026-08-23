@@ -2514,3 +2514,40 @@ html, body { overscroll-behavior-y: contain; }
 .synkbtn.koerer svg { animation: synkspin 1s linear infinite; }
 @keyframes synkspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .synkbtn.koerer svg { animation: none; } }
+
+/* ------------------------------------------------ brede skærme: tabellerne
+ *
+ * Læsebredden på 820 px gælder prosa. En tabel skal bruge den plads, der er —
+ * især når sidemenuen er foldet væk, hvor der ellers står en tom halvdel af
+ * skærmen ved siden af en klippet kolonne.
+ *
+ * `min()` og ikke et fast tal: på en smal skærm er 1240 px et løfte om plads,
+ * der ikke findes, og så var vi tilbage ved den vandrette rulning.
+ */
+#pageHost.bred { max-width: min(1240px, 100%); }
+
+/* Titlen må gerne tage pladsen; datoen og knappen skal ikke ombrydes. */
+.notetabel td:first-child { width: 55%; }
+.notetabel td:first-child .linkknap { white-space: normal; text-align: left; }
+.notetabel td.num { white-space: nowrap; }
+
+/* Overskriften er en knap, og den skal ses at være det. */
+.sorterknap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  opacity: .75;
+}
+.sorterknap:hover, .sorterknap:focus-visible { opacity: 1; color: var(--text); }
+.sorterknap.paa { opacity: 1; color: var(--accent); }
+/* Pilen har sin egen plads, også når den er tom — ellers hopper overskriften
+   sidelæns, hver gang man skifter kolonne. */
+.sorterpil { display: inline-block; min-width: 9px; font-size: 11px; }
