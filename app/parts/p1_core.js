@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -450,6 +450,7 @@ function shellHtml() {
         ${icon('offline', 15)}
         <span class="baand-tekst">Offline — showing what was loaded last.</span>
       </div>
+      <div class="rulvagt" id="rulVagt" aria-hidden="true"></div>
       <div class="topbar">
         <div class="toprow">
           <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
@@ -541,6 +542,7 @@ function bindNav() {
 
 function bindShell() {
   bindNav();
+  registrerRullevagt();
   bindTemaKnap();
   const synk = document.getElementById('synkBtn');
   if (synk) synk.addEventListener('click', () => opfriskAlt());
@@ -889,6 +891,50 @@ async function tjekVersion() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.user) tjekVersion();
 });
+
+/*
+ * `body.rullet` - er siden rullet ned fra toppen?
+ *
+ * Den klaebende topbjaelke bruger den til at folde tallene og legenden
+ * sammen, saa kun soegefeltet bliver staaende (F20).
+ *
+ * ── En VAGTPOST, ikke en scroll-lytter ────────────────────────────────────
+ *
+ * Foerste udgave lyttede paa `scroll` og maalte rullehoejden. Den var i
+ * princippet rigtig og i praksis skroebelig:
+ *
+ *  - **Hvem ruller?** `window.scrollY` er 0 i nogle tilstande og
+ *    `document.body.scrollTop` i andre, fordi baade `html` og `body` har
+ *    `height: 100dvh; overflow-y: auto`. Den fejl har allerede kostet én
+ *    gang, i traek-ned-for-at-opfriske.
+ *  - **Og haendelsen kom ikke.** Maalt: en programmatisk rulning gav NUL
+ *    scroll-haendelser, mens klassen blev haengende.
+ *
+ * En `IntersectionObserver` paa en usynlig vagtpost lige OVER bjaelken
+ * spoerger om det, der faktisk betyder noget: er toppen af siden ude af
+ * billedet? Den er ligeglad med hvem der ruller, og den fyrer uden en
+ * haendelse pr. billede.
+ *
+ * (En observer paa selve bjaelken ville aldrig fyre - den er sticky og
+ * forlader aldrig skaermen. Derfor vagtposten.)
+ *
+ * `rootMargin` giver hysterese: vagtposten er 1 px hoej og regnes for ude,
+ * naar den er 8 px over kanten. Uden en margen ville bjaelken blafre lige paa
+ * graensen, fordi sammenfoldningen selv flytter indholdet.
+ */
+function registrerRullevagt() {
+  const vagt = document.getElementById('rulVagt');
+  if (!vagt) return;
+  if (!('IntersectionObserver' in window)) {
+    // Uden observer: ingen sammenfoldning. Bjaelken klaeber stadig - man
+    // mister kun den ekstra plads, og det er bedre end en klasse, der
+    // saetter sig fast i den forkerte stilling.
+    return;
+  }
+  new IntersectionObserver(([post]) => {
+    document.body.classList.toggle('rullet', !post.isIntersecting);
+  }, { rootMargin: '-8px 0px 0px 0px', threshold: 0 }).observe(vagt);
+}
 
 /**
  * Henter den nye app.

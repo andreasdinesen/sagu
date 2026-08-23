@@ -2551,3 +2551,75 @@ html, body { overscroll-behavior-y: contain; }
 /* Pilen har sin egen plads, også når den er tom — ellers hopper overskriften
    sidelæns, hver gang man skifter kolonne. */
 .sorterpil { display: inline-block; min-width: 9px; font-size: 11px; }
+
+/* ================================= søgefeltet bliver i toppen (F20)
+ *
+ * »Kan du lave så søgefeltet altid er synligt i toppen — selv når der scrolles
+ * ned på en side?« (Andreas, 2026-08-22, med verdande som forbillede).
+ *
+ * ── Den KRYMPER, og det er hele forskellen ────────────────────────────────
+ *
+ * En topbjælke, der bare klæber fast, tager en tredjedel af en telefonskærm
+ * med sig ned gennem hele noten: tællerne, tastaturlegenden og et kort med
+ * luft omkring. Derfor folder alt andet end selve feltet sig sammen, så snart
+ * siden er rullet — tallene og legenden er noget, man læser én gang, mens
+ * feltet er noget, man vil kunne nå hele tiden.
+ *
+ * `body.rullet` sættes af en scroll-lytter, ikke af `:has()` eller en
+ * IntersectionObserver på selve bjælken: en observer på et element, der ER
+ * sticky, udløser aldrig — det forlader aldrig skærmen.
+ *
+ * ── `position: sticky` og ikke `fixed` ────────────────────────────────────
+ *
+ * `fixed` ville tage bjælken ud af flowet, og så skulle indholdet under den
+ * have en margen, der passer præcis til dens højde — et tal, der skal rettes
+ * hver gang bjælken ændrer sig. Sticky beholder pladsen selv.
+ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  /* Baggrunden skal være ugennemsigtig: teksten under skal ikke skinne
+     igennem, når den ruller forbi. */
+  background: var(--bg);
+  padding-top: 12px;
+  /* Negativ margen og padding i samme mål: kortets skygge må ikke blive
+     klippet af, at forælderen nu har en baggrund at gå ud over. */
+  margin-left: -8px;
+  margin-right: -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Rullet: kun feltet bliver. */
+body.rullet .toprow,
+body.rullet .omni-legend { display: none; }
+body.rullet .topbar {
+  padding-bottom: 10px;
+  box-shadow: 0 6px 16px -10px rgba(0, 0, 0, .55);
+}
+body.rullet .omni-card { box-shadow: var(--shadow); }
+body.rullet .omni-field { padding-top: 6px; padding-bottom: 6px; }
+
+/*
+ * Et anker må ikke lande BAG bjælken.
+ *
+ * `scroll-margin-top` var 24 px, fra dengang der ikke stod noget over
+ * indholdet. Klikker man på en overskrift i sideoversigten, ruller browseren
+ * den til toppen — og så ligger den under søgefeltet, hvor man ikke kan se
+ * det, man lige bad om.
+ */
+#pageHost h2, #pageHost h1, #pageHost h3 { scroll-margin-top: 96px; }
+
+@media (max-width: 720px) {
+  /* På en telefon er hver linje dyr: legenden er allerede væk, når man
+     ruller, og tallene med den. */
+  body.rullet .topbar { padding-top: 8px; }
+}
+
+/* Fokus-tilstanden skjuler bjælken helt — så er der intet at klæbe med. */
+body.fokus .topbar { position: static; }
+
+/* Vagtposten: 1 px, usynlig, lige over den klæbende bjælke. Den er kun til
+   for at kunne SES forsvinde — se registrerRullevagt(). */
+.rulvagt { height: 1px; margin: 0; padding: 0; pointer-events: none; }
