@@ -2265,7 +2265,10 @@ body.traekker { cursor: grabbing; user-select: none; }
 .doda-liste { list-style: none; margin: 14px 0 0; padding: 0; }
 .doda-opgave {
   display: flex;
-  align-items: baseline;
+  /* `baseline` med et flueben i raekken stiller boksen efter tekstens
+     grundlinje og loefter den op over titlen. `flex-start` holder dem i
+     samme oeverste kant, ogsaa naar titlen bryder over to linjer. */
+  align-items: flex-start;
   gap: 10px;
   flex-wrap: wrap;
   padding: 8px 0;
@@ -2720,3 +2723,27 @@ body.fokus .topbar { position: static; }
 
 /* Beskeden ved login er ikke altid en FEJL — »tast koden« er en oplysning. */
 .gate-error.gate-info { color: var(--muted); border-color: var(--line); background: var(--hover); }
+
+/* Fluebenet ved en doda-opgave. Det ændrer noget i en ANDEN app, så det skal
+   se ud som en knap man trykker på — ikke som pynt ved siden af teksten. */
+.doda-tjek {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-text, #fff);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.doda-tjek:hover, .doda-tjek:focus-visible { border-color: var(--accent); }
+.doda-tjek[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+.doda-tjek[disabled] { opacity: .5; cursor: default; }
+/* Samme plads, når der ikke er noget at trykke på — ellers rykker titlerne. */
+.doda-tjek.tom { border-color: transparent; cursor: default; }

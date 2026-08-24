@@ -3237,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -10987,6 +10987,21 @@ function dodaOpgaverHtml() {
     ${dodaState.opgaver.length
     ? `<ul class="doda-liste">${dodaState.opgaver.map((t) => `
       <li class="doda-opgave${t.status === 'done' || t.status === 'dropped' ? ' udfoert' : ''}">
+        ${t.status === 'deleted' || t.status === 'dropped'
+    /*
+     * Slettet eller droppet i doda: intet flueben.
+     *
+     * En afkrydsning ville love, at man kan hente den tilbage herfra, og det
+     * kan man ikke - `uncomplete` giver en slettet opgave tilbage til doda,
+     * ikke til papirkurven. En knap, der ikke kan holde sit loefte, er vaerre
+     * end ingen knap.
+     */
+    ? '<span class="doda-tjek tom"></span>'
+    : `<button class="doda-tjek" data-doda="${esc(t.dodaId)}"
+        aria-pressed="${t.status === 'done' ? 'true' : 'false'}"
+        title="${t.status === 'done' ? 'Put it back in doda' : 'Mark it done in doda'}"
+        aria-label="${t.status === 'done' ? 'Put it back in doda' : 'Mark it done in doda'}"
+        >${t.status === 'done' ? icon('tjek', 14) : ''}</button>`}
         <span class="doda-titel">${esc(t.title)}</span>
         <span class="kom-maerke doda-status ${esc(t.status)}">${esc(dodaStatusTekst(t.status))}</span>
       </li>`).join('')}</ul>`
@@ -11030,6 +11045,31 @@ function bindDodaOpgaver() {
       e.stopPropagation();
     });
   }
+  /*
+   * Fluebenet skifter opgavens tilstand i DODA - ikke bare her.
+   *
+   * Knappen laases, mens kaldet er undervejs. Uden det kan man naa at trykke
+   * to gange, og saa staar der »done« ét sted og »next« et andet, indtil
+   * naeste opfriskning retter det - og imens tror man, at appen tog fejl.
+   */
+  host.querySelectorAll('[data-doda]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      if (el.disabled) return;
+      el.disabled = true;
+      const faerdig = el.getAttribute('aria-pressed') === 'true';
+      try {
+        const r = await api('POST', `/api/v1/notes/${dodaState.noteId}/tasks/${el.dataset.doda}`,
+          { done: !faerdig });
+        dodaState.opgaver = r.tasks || dodaState.opgaver;
+        tegnDodaOpgaver();
+        toast(r.message || 'Done.');
+      } catch (ex) {
+        toast(ex.message);
+        el.disabled = false;
+      }
+    });
+  });
+
   const opfrisk = host.querySelector('#dodaOpfrisk');
   if (opfrisk) {
     opfrisk.addEventListener('click', async () => {

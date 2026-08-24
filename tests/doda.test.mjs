@@ -65,6 +65,22 @@ function dodaAttrap() {
         .filter((x) => x.slettet).map((x) => x.id) });
       return;
     }
+    /*
+     * Attrappen kan nu ogsaa AENDRE en opgave - det er dodas `write`, og
+     * broens nye »afslut herfra« gaar netop den vej.
+     */
+    const m = req.url.match(/^\/api\/v1\/items\/([^/]+)\/(complete|uncomplete)$/);
+    if (req.method === 'POST' && m) {
+      if (tilstand === 'kunlaes') {
+        send(403, { error: 'wrong_scope', message: 'This key is "read" and cannot write.' });
+        return;
+      }
+      const it = items.get(m[1]);
+      if (!it) { send(404, { error: 'not_found', message: 'No such item.' }); return; }
+      it.status = m[2] === 'complete' ? 'done' : 'next';
+      send(200, { item: it });
+      return;
+    }
     if (req.method === 'POST' && req.url.startsWith('/api/v1/capture')) {
       let raa = '';
       for await (const bid of req) raa += bid;
@@ -382,4 +398,160 @@ test('opfrisknings-vinduet er kort nok til at man tror på det, man ser', async 
   assert.ok(FRISK_I <= 120,
     `opfrisknings-vinduet er ${FRISK_I} s - saa staar en lukket opgave som aaben for laenge`);
   assert.ok(FRISK_I >= 15, 'og det maa ikke blive saa kort, at det bliver ét kald pr. optegning');
+});
+
+/* ==================== afslut en opgave uden at forlade noten ============ */
+
+/*
+ * »Mulighed for at afslutte en opgave i doda fra sagu, når de er listet i
+ * sagu« (Andreas, 2026-08-24).
+ *
+ * Det farlige ved den vej er ikke, at den ikke virker. Det er, at den virker
+ * på for meget: en id, nogen kunne gætte, må ikke kunne afslutte en opgave,
+ * der ikke står på denne note — det er dodas arkiv, ikke Sagus.
+ */
+test('en opgave kan afsluttes fra noten — og fortrydes igen', async () => {
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Drift', body: '# Drift' })).data.note;
+  await a.kald('POST', `/api/v1/notes/${note.id}/tasks`, { text: 'Ring til Bo' });
+  const foer = (await a.kald('GET', `/api/v1/notes/${note.id}/tasks`)).data.tasks;
+  assert.equal(foer.length, 1);
+  const dodaId = foer[0].dodaId;
+
+  const gjort = await a.kald('POST', `/api/v1/notes/${note.id}/tasks/${dodaId}`, { done: true });
+  assert.equal(gjort.status, 200);
+  assert.equal(gjort.data.tasks[0].status, 'done');
+  assert.equal([...attrap.items.values()].find((i) => i.id === dodaId).status, 'done',
+    'doda er dén, der bestemmer - vi skriver ikke bare vores egen raekke');
+
+  const fortrudt = await a.kald('POST', `/api/v1/notes/${note.id}/tasks/${dodaId}`, { done: false });
+  assert.equal(fortrudt.status, 200);
+  assert.notEqual(fortrudt.data.tasks[0].status, 'done');
+  assert.equal([...attrap.items.values()].find((i) => i.id === dodaId).status, 'next');
+});
+
+test('en opgave, der ikke står på noten, kan ikke afsluttes gennem den', async () => {
+  const en = (await a.kald('POST', '/api/v1/notes', { title: 'En', body: '# En' })).data.note;
+  const to = (await a.kald('POST', '/api/v1/notes', { title: 'To', body: '# To' })).data.note;
+  await a.kald('POST', `/api/v1/notes/${en.id}/tasks`, { text: 'Hoerer til EN' });
+  const dodaId = (await a.kald('GET', `/api/v1/notes/${en.id}/tasks`)).data.tasks[0].dodaId;
+
+  const r = await a.kald('POST', `/api/v1/notes/${to.id}/tasks/${dodaId}`, { done: true });
+  assert.equal(r.status, 404);
+  assert.equal([...attrap.items.values()].find((i) => i.id === dodaId).status, 'inbox',
+    'og doda er uroert');
+});
+
+test('en nøgle, der kun må læse, får at vide hvad der mangler', async () => {
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Smal', body: '# Smal' })).data.note;
+  await a.kald('POST', `/api/v1/notes/${note.id}/tasks`, { text: 'Noget' });
+  const dodaId = (await a.kald('GET', `/api/v1/notes/${note.id}/tasks`)).data.tasks[0].dodaId;
+
+  attrap.saet('kunlaes');
+  const r = await a.kald('POST', `/api/v1/notes/${note.id}/tasks/${dodaId}`, { done: true });
+  attrap.saet('ok');
+  assert.equal(r.status, 502);
+  assert.equal(r.data.error, 'wrong_scope');
+  // dodas egen besked SIGER hvilket scope noeglen har; vi siger hvad der skal til.
+  assert.match(r.data.message, /cannot write/);
+  assert.match(r.data.message, /"full" key/);
+});
+
+/* ============ en opgave, doda har linket til en note, dukker op ========= */
+
+/*
+ * »Hvis en doda opgave får et link til en sagu note, så skal den dukke op i
+ * noten i sagu« (Andreas, 2026-08-24).
+ *
+ * Broen kendte kun det, den selv havde oprettet. Skrev man linket i doda,
+ * stod noten tom ved siden af en opgave, der pegede lige på den.
+ *
+ * Den vigtigste prøve her er den sidste: et id i en FREMMED opgave må ikke
+ * kunne få noget til at stå på en note, man ikke ejer.
+ */
+test('en opgave med et link til noten hentes ind af sig selv', async () => {
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Linket', body: '# Linket' })).data.note;
+  assert.equal((await a.kald('GET', `/api/v1/notes/${note.id}/tasks`)).data.tasks.length, 0);
+
+  // En opgave, der er lavet i DODA - Sagu har aldrig set den.
+  attrap.items.set('udefra', {
+    id: 'udefra',
+    title: 'Skrevet i doda',
+    status: 'next',
+    note: `Se noten: http://eksempel.example/#note-${note.id}`,
+  });
+
+  const r = await a.kald('GET', `/api/v1/notes/${note.id}/tasks?refresh=1`);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.tasks.length, 1, 'den staar paa noten nu');
+  assert.equal(r.data.tasks[0].title, 'Skrevet i doda');
+  assert.equal(r.data.tasks[0].dodaId, 'udefra');
+});
+
+test('adressen findes også i link_url — og i titlen', async () => {
+  const iFelt = (await a.kald('POST', '/api/v1/notes', { title: 'Felt', body: '# Felt' })).data.note;
+  const iTitel = (await a.kald('POST', '/api/v1/notes', { title: 'Titel', body: '# Titel' })).data.note;
+  attrap.items.set('felt', { id: 'felt', title: 'Via link_url', status: 'next',
+    link_url: `https://sagu.eksempel/#note-${iFelt.id}` });
+  attrap.items.set('titel', { id: 'titel', status: 'next',
+    title: `Via titlen #note-${iTitel.id}` });
+
+  assert.equal((await a.kald('GET', `/api/v1/notes/${iFelt.id}/tasks?refresh=1`)).data.tasks.length, 1);
+  const t = (await a.kald('GET', `/api/v1/notes/${iTitel.id}/tasks?refresh=1`)).data.tasks;
+  assert.equal(t.length, 1);
+  assert.equal(t[0].title, 'Via titlen', 'adressen staar ikke i titlen paa skaermen');
+});
+
+test('flyttes linket til en anden note, følger opgaven med', async () => {
+  const fra = (await a.kald('POST', '/api/v1/notes', { title: 'Fra', body: '# Fra' })).data.note;
+  const til = (await a.kald('POST', '/api/v1/notes', { title: 'Til', body: '# Til' })).data.note;
+  attrap.items.set('flytter', { id: 'flytter', title: 'Flytter sig', status: 'next',
+    note: `#note-${fra.id}` });
+  assert.equal((await a.kald('GET', `/api/v1/notes/${fra.id}/tasks?refresh=1`)).data.tasks.length, 1);
+
+  attrap.items.get('flytter').note = `#note-${til.id}`;
+  assert.equal((await a.kald('GET', `/api/v1/notes/${til.id}/tasks?refresh=1`)).data.tasks.length, 1,
+    'den staar paa den nye note');
+  assert.equal((await a.kald('GET', `/api/v1/notes/${fra.id}/tasks?refresh=1`)).data.tasks.length, 0,
+    'og ikke laengere paa den gamle');
+});
+
+test('et #note-id, der ikke findes, vælter ikke opfriskningen', async () => {
+  /*
+   * Den prøve, en sabotage afslørede manglede.
+   *
+   * Jeg fjernede ejerskabstjekket og fik NUL røde: min første prøve kiggede
+   * på, om noget dukkede op hos den anden bruger — og dét er en helt anden
+   * vagt, der stopper det.
+   *
+   * Skaden er en anden og værre: uden tjekket forsøger vi at indsætte en
+   * række, hvis `note_id` ikke findes, fremmednøglen siger fra, og **hele**
+   * opfriskningen kaster. Én tilfældig hex-streng i én doda-opgave ville
+   * dermed slå opgavelisten ud for alt andet.
+   */
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Overlever', body: '# O' })).data.note;
+  attrap.items.set('spoegelse', { id: 'spoegelse', title: 'Peger paa ingenting', status: 'next',
+    note: `#note-${'f'.repeat(32)}` });
+  attrap.items.set('rigtig', { id: 'rigtig', title: 'Peger paa noten', status: 'next',
+    note: `#note-${note.id}` });
+
+  const r = await a.kald('GET', `/api/v1/notes/${note.id}/tasks?refresh=1`);
+  assert.equal(r.status, 200, 'opfriskningen overlevede spoegelset');
+  assert.equal(r.data.tasks.length, 1);
+  assert.equal(r.data.tasks[0].dodaId, 'rigtig');
+});
+
+test('et link til en note, man ikke ejer, gør ingenting', async () => {
+  const b = klient(srv.base);
+  await a.kald('POST', '/api/v1/admin', { allowRegistration: true });
+  await b.opret('fremmed', 'kodeord-1234');
+  const bNote = (await b.kald('POST', '/api/v1/notes', { title: 'Bobs', body: '# Bobs' })).data.note;
+
+  attrap.items.set('tyveri', { id: 'tyveri', title: 'Peger paa en fremmed note', status: 'next',
+    note: `#note-${bNote.id}` });
+  // Ejeren opfrisker - hans doda naevner en note, der er bobs.
+  const egen = (await a.kald('POST', '/api/v1/notes', { title: 'Egen', body: '# Egen' })).data.note;
+  await a.kald('GET', `/api/v1/notes/${egen.id}/tasks?refresh=1`);
+
+  const hosBob = await b.kald('GET', `/api/v1/notes/${bNote.id}/tasks`);
+  assert.equal(hosBob.data.tasks.length, 0, 'intet er dukket op paa bobs note');
 });

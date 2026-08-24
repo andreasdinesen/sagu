@@ -226,7 +226,31 @@ function opret(srv) {
     return kald(userId, 'GET', `/api/v1/changes?since=${encodeURIComponent(since || 0)}`);
   }
 
-  return { opsaetning, kald, proev, opretOpgave, aendringer, FRISK_I };
+  /**
+   * Markér en opgave udført i doda - eller fortryd det.
+   *
+   * ── Hvorfor begge veje ────────────────────────────────────────────────
+   *
+   * Et flueben, man ikke kan tage af igen, er en faelde: man rammer forkert,
+   * og saa er der ingen vej tilbage uden at aabne doda. doda har begge
+   * endepunkter, saa det koster ingenting at goere det rigtigt.
+   *
+   * ── Og hvorfor det kraever en bredere noegle ──────────────────────────
+   *
+   * At AENDRE en opgave er `write` i dodas scope-tabel; at oprette er
+   * `capture`. En bro, der kun skal sende noget ind, klarer sig med den
+   * smalleste noegle - men den her aendrer noget, der allerede findes.
+   * `wrong_scope` bliver derfor sendt ordret videre, saa fladen kan sige
+   * HVAD der mangler i stedet for »det virkede ikke«.
+   */
+  async function saetUdfoert(userId, dodaId, udfoert) {
+    const sti = `/api/v1/items/${encodeURIComponent(dodaId)}/${udfoert ? 'complete' : 'uncomplete'}`;
+    const r = await kald(userId, 'POST', sti, {});
+    if (!r.ok) return r;
+    return { ok: true, item: (r.data && r.data.item) || null };
+  }
+
+  return { opsaetning, kald, proev, opretOpgave, aendringer, saetUdfoert, FRISK_I };
 }
 
 module.exports = { opret, TIMEOUT_MS, FRISK_I };

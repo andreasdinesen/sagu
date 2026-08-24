@@ -4673,6 +4673,54 @@ const MOENSTRE = [
     },
   },
   {
+    /*
+     * Afslut - eller fortryd - en opgave i doda, uden at forlade noten.
+     *
+     * »Mulighed for at afslutte en opgave i doda fra sagu, når de er listet i
+     * sagu« (Andreas, 2026-08-24).
+     *
+     * Vi roerer KUN opgaver, der staar paa denne note. `doda_id` slaas op i
+     * vores egen tabel med baade `user_id` og `note_id` - ikke bare sendt
+     * videre. Ellers kunne enhver id, nogen kunne gaette, afsluttes gennem
+     * Sagu, og det er dodas arkiv, ikke vores.
+     *
+     * Rekkefoelgen: doda foerst, vores raekke bagefter. Skrev vi vores egen
+     * status foerst og dodas kald fejlede, ville Sagu staa og vise »done« om
+     * noget, der stadig er aabent - og den slags opdager man for sent.
+     */
+    metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/tasks\/([A-Za-z0-9_-]{1,64})$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'write');
+      if (!auth) return;
+      const [noteId, dodaId] = ctx.params;
+      if (!hentNote(auth.user.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      const raekke = db.prepare(
+        'SELECT id, status FROM doda_tasks WHERE user_id = ? AND note_id = ? AND doda_id = ?')
+        .get(auth.user.id, noteId, dodaId);
+      if (!raekke) { apiFejl(res, 404, 'not_found', 'That task is not on this note.'); return; }
+
+      const body = await readJsonBody(req, auth.viaToken);
+      const udfoert = body.done !== false;
+      const svar = await doda.saetUdfoert(auth.user.id, dodaId, udfoert);
+      if (!svar.ok) {
+        apiFejl(res, svar.kode === 'not_connected' ? 409 : 502, svar.kode,
+          svar.kode === 'wrong_scope'
+            // dodas egen besked siger hvilket scope noeglen HAR; vi siger hvad
+            // der skal til. Sammen er de en anvisning, ikke en klage.
+            ? `${svar.besked} Ticking a task off needs a "full" key in doda.`
+            : svar.besked);
+        return;
+      }
+      const nu = now();
+      db.prepare('UPDATE doda_tasks SET status = ?, checked_at = ? WHERE id = ?')
+        .run(udfoert ? 'done' : 'next', nu, raekke.id);
+      sendJson(res, 200, {
+        tasks: dodaOpgaverFor(auth.user.id, noteId),
+        message: udfoert ? 'Marked done in doda.' : 'Put back in doda.',
+      });
+    },
+  },
+  {
     metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/tasks$/,
     kald: async (req, res, ctx) => {
       const auth = godkend(req, res, 'write');
@@ -6333,24 +6381,106 @@ const github = require('./github.js').opret({
  * sidst vidste. En bro, der bliver tom, naar den anden ende er nede, ligner
  * en bro, der har mistet noget.
  */
+/**
+ * Finder Sagu-notens id i det, doda ved om en opgave.
+ *
+ * Adressen kan staa tre steder, og alle tre er lige gyldige:
+ *   - `link_url`, hvis doda har loeftet den op i sit eget felt,
+ *   - `note`, hvor broen selv skriver den (paa sin egen linje),
+ *   - `title`, hvis en modtager har lagt hele teksten i titlen.
+ *
+ * Vi leder efter `#note-<32 hex>` - Sagus egen adresseform - og ikke efter
+ * vaertsnavnet. Sagu naas paa flere adresser (panelets IP:port, tunnelen, det
+ * rigtige domaene), og en opgave, der blev linket fra den ene, ville ellers
+ * ikke blive genkendt fra den anden.
+ */
+function noteIdFraOpgave(item) {
+  const felter = [item && item.link_url, item && item.note, item && item.title];
+  for (const f of felter) {
+    const m = String(f || '').match(/#note-([a-f0-9]{32})\b/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Opgaver, doda selv har linket til en note, hentes ind.
+ *
+ * »Hvis en doda opgave får et link til en sagu note, så skal den dukke op i
+ * noten i sagu« (Andreas, 2026-08-24).
+ *
+ * Broen kendte kun de opgaver, den SELV havde oprettet. Skrev man linket i
+ * doda - eller flyttede opgaven til en anden note - vidste Sagu ingenting, og
+ * noten stod tom ved siden af en opgave, der pegede lige paa den.
+ *
+ * Peger linket paa en note, der ikke findes eller ikke er ens egen, sker der
+ * ingenting. Et id i en fremmed opgave maa ikke kunne bruges til at faa noget
+ * til at staa paa en note, man ikke ejer.
+ */
+function hentIndLinkedeOpgaver(userId, items, kendte) {
+  const findNote = db.prepare(
+    'SELECT id FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL');
+  const ind = db.prepare(`INSERT INTO doda_tasks
+      (id, user_id, note_id, doda_id, title, status, line, created_at, checked_at)
+      VALUES (?,?,?,?,?,?,NULL,?,?)`);
+  const flyt = db.prepare('UPDATE doda_tasks SET note_id = ? WHERE id = ?');
+  const t = now();
+  let nye = 0;
+  for (const item of items) {
+    const noteId = noteIdFraOpgave(item);
+    if (!noteId || !findNote.get(noteId, userId)) continue;
+    const eget = kendte.get(String(item.id));
+    if (eget) {
+      // Linket kan vaere flyttet til en ANDEN note. Saa foelger opgaven med -
+      // det er dét, linket betyder.
+      const r = db.prepare('SELECT note_id FROM doda_tasks WHERE id = ?').get(eget);
+      if (r && r.note_id !== noteId) flyt.run(noteId, eget);
+      continue;
+    }
+    const id = newId();
+    ind.run(id, userId, noteId, String(item.id),
+      str(renOpgaveTitel(item.title, noteId), 300), str(item.status, 40) || 'open', t, t);
+    kendte.set(String(item.id), id);
+    nye += 1;
+  }
+  return nye;
+}
+
 async function opfriskDodaOpgaver(userId, tving) {
   const raekker = db.prepare('SELECT id, doda_id, note_id, checked_at FROM doda_tasks WHERE user_id = ?')
     .all(userId);
-  if (!raekker.length) return { opfrisket: false };
-  const aeldst = Math.min(...raekker.map((r) => r.checked_at || 0));
-  if (!tving && now() - aeldst < dodaModul.FRISK_I) return { opfrisket: false };
+  /*
+   * Der opfriskes OGSAA, naar vi ingen opgaver har.
+   *
+   * Foer stod der `if (!raekker.length) return` - fornuftigt, dengang broen
+   * kun kendte det, den selv havde lavet. Men en opgave, doda har linket til
+   * en note, findes netop ikke hos os endnu, og saa ville den aldrig blive
+   * fundet. Gulvet flyttes derfor til et stempel paa brugeren, saa en tom
+   * note ikke spoerger doda ved hver optegning.
+   */
+  const sidst = raekker.length
+    ? Math.min(...raekker.map((r) => r.checked_at || 0))
+    : Number(getSetting(userId, 'doda_checked', '0')) || 0;
+  if (!tving && now() - sidst < dodaModul.FRISK_I) return { opfrisket: false };
+  if (!raekker.length && !doda.opsaetning(userId).connected) return { opfrisket: false };
 
   const since = Number(getSetting(userId, 'doda_since', '0')) || 0;
   const r = await doda.aendringer(userId, since);
   if (!r.ok) return { opfrisket: false, fejl: r.besked, kode: r.kode };
 
   const kendte = new Map(raekker.map((x) => [x.doda_id, x.id]));
+  // FOERST de opgaver, doda har linket til en note. Saa er de kendte, naar
+  // titel og status opdateres nedenfor - ellers ville en ny opgave staa uden
+  // titel indtil naeste opfriskning.
+  hentIndLinkedeOpgaver(userId, r.data.items || [], kendte);
+  const friske = db.prepare('SELECT id, doda_id, note_id FROM doda_tasks WHERE user_id = ?')
+    .all(userId);
   const opdater = db.prepare('UPDATE doda_tasks SET title = ?, status = ?, checked_at = ? WHERE id = ?');
   const t = now();
   for (const item of (r.data.items || [])) {
     const id = kendte.get(String(item.id));
     if (!id) continue;
-    const raekke = raekker.find((x) => x.id === id);
+    const raekke = friske.find((x) => x.id === id);
     opdater.run(str(renOpgaveTitel(item.title, raekke ? raekke.note_id : ''), 300),
       str(item.status, 40) || 'open', t, id);
   }
@@ -6364,6 +6494,9 @@ async function opfriskDodaOpgaver(userId, tving) {
   // Stempl ALLE raekker, ogsaa dem der ikke var med i svaret: de er uaendrede,
   // og uden stemplet ville de udloese et nyt kald ved hvert opslag.
   db.prepare('UPDATE doda_tasks SET checked_at = ? WHERE user_id = ?').run(t, userId);
+  // ... og et stempel paa brugeren, saa gulvet ogsaa holder, naar der slet
+  // ingen raekker er.
+  setSetting(userId, 'doda_checked', String(t));
   setSetting(userId, 'doda_since', String(r.data.now || t));
   return { opfrisket: true };
 }
@@ -6402,11 +6535,20 @@ function noteAdresse(req, noteId) {
  */
 function renOpgaveTitel(raa, noteId) {
   if (!noteId) return String(raa || '').trim();
-  // Adressen staar paa sin egen linje (se doda.js), men en modtager, der
-  // laegger hele teksten i titlen, giver den tilbage i ét stykke. Begge
-  // former fjernes - og KUN naar adressen peger paa DENNE note.
+  /*
+   * Adressen ud af titlen - KUN naar den peger paa DENNE note.
+   *
+   * Broen skriver den paa sin egen linje (se doda.js), og en modtager, der
+   * laegger hele teksten i titlen, giver den tilbage i ét stykke. Men siden
+   * opgaver ogsaa kan komme FRA doda, findes en tredje form: en, der er
+   * skrevet i haanden med bare et mellemrum foran. Den slap igennem, fordi
+   * moensteret kraevede et linjeskift eller en tankestreg - og saa stod et
+   * raat hex-id og fyldte i overskriften (maalt, 2026-08-24).
+   *
+   * Nu fjernes hele det ord, adressen staar i, uanset hvad der gaar forud.
+   */
   return String(raa || '')
-    .replace(new RegExp(`\\s*(?:\\n|[—-]\\s*)\\S*#note-${noteId}\\b`), '')
+    .replace(new RegExp(`\\s*(?:[—-]\\s*)?\\S*#note-${noteId}\\S*`), '')
     .trim();
 }
 
