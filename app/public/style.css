@@ -746,7 +746,7 @@ table.data td.center, table.data th.center { text-align: center; }
 .gh-mark { color: var(--muted); flex: none; display: flex; }
 .gh-navn {
   font-weight: 500;
-  color: var(--fg);
+  color: var(--text);
   text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1365,9 +1365,17 @@ body.fokus .topbar { display: none; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--border);
+  /*
+   * Samme kant som doda-fluebenet, og af samme grund.
+   *
+   * `--border` mod sidens baggrund er 1,23:1 — en streg, man skal lede efter.
+   * Andreas klagede over doda-listen, men en tom boks, man ikke kan se, er
+   * den samme fejl, uanset hvor den står, og en tjekliste i en note er
+   * netop lutter tomme bokse (2026-08-24).
+   */
+  border: 1.5px solid var(--muted);
   border-radius: 5px;
-  background: var(--bg);
+  background: var(--card);
   color: #fff;
   font-size: 12px;
   line-height: 1;
@@ -2347,7 +2355,7 @@ body.traekker { cursor: grabbing; user-select: none; }
 #noteBody:hover .blok-greb { opacity: .45; }
 .blok-greb:hover, .blok-greb:focus-visible, .blok-greb.greb-aktiv {
   opacity: 1;
-  background: var(--hover);
+  background: var(--card-hover);
 }
 .blok-greb.greb-aktiv { cursor: grabbing; }
 @media (pointer: coarse) {
@@ -2379,7 +2387,7 @@ body.traekker { cursor: grabbing; user-select: none; }
   min-width: 190px;
   max-width: 260px;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
   box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
@@ -2398,7 +2406,7 @@ body.traekker { cursor: grabbing; user-select: none; }
   text-align: left;
   cursor: pointer;
 }
-.blok-menu-punkt:hover, .blok-menu-punkt:focus-visible { background: var(--hover); }
+.blok-menu-punkt:hover, .blok-menu-punkt:focus-visible { background: var(--card-hover); }
 .blok-menu-uddrag {
   padding: 4px 10px 2px;
   color: var(--muted);
@@ -2429,7 +2437,7 @@ body.traekker { cursor: grabbing; user-select: none; }
   place-items: center;
   width: 38px;
   height: 38px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--card);
   color: var(--muted);
@@ -2457,13 +2465,13 @@ html, body { overscroll-behavior-y: contain; }
 .filfold > summary {
   cursor: pointer;
   padding: 8px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--muted);
   font-size: 13px;
   list-style-position: inside;
 }
-.filfold > summary:hover { background: var(--hover); color: var(--text); }
+.filfold > summary:hover { background: var(--card-hover); color: var(--text); }
 .filfold[open] > summary { margin-bottom: 10px; }
 
 /* ------------------------------------------- »?«-knappen ved skrivefeltet
@@ -2481,7 +2489,7 @@ html, body { overscroll-behavior-y: contain; }
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--card);
   color: var(--muted);
@@ -2517,9 +2525,9 @@ html, body { overscroll-behavior-y: contain; }
 .klip-faerdig {
   margin-top: 14px;
   padding: 14px;
-  border: 1px solid var(--accent-soft, var(--line));
+  border: 1px solid var(--accent-soft, var(--border));
   border-radius: 10px;
-  background: var(--hover);
+  background: var(--card-hover);
 }
 /* Linket skal SE ud som noget, man tager fat i og trækker. */
 .klip-link { cursor: grab; text-decoration: none; }
@@ -2698,7 +2706,7 @@ body.fokus .topbar { position: static; }
   margin-top: 4px;
   padding: 4px 8px;
   border-radius: 6px;
-  background: var(--hover);
+  background: var(--card-hover);
   font-size: 13px;
   letter-spacing: .08em;
   overflow-wrap: anywhere;
@@ -2712,9 +2720,9 @@ body.fokus .topbar { position: static; }
 }
 .noedkoder code {
   padding: 8px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 7px;
-  background: var(--hover);
+  background: var(--card-hover);
   font-size: 14px;
   letter-spacing: .06em;
   text-align: center;
@@ -2722,10 +2730,25 @@ body.fokus .topbar { position: static; }
 @media (max-width: 480px) { .noedkoder { grid-template-columns: 1fr; } }
 
 /* Beskeden ved login er ikke altid en FEJL — »tast koden« er en oplysning. */
-.gate-error.gate-info { color: var(--muted); border-color: var(--line); background: var(--hover); }
+.gate-error.gate-info { color: var(--muted); border-color: var(--border); background: var(--card-hover); }
 
-/* Fluebenet ved en doda-opgave. Det ændrer noget i en ANDEN app, så det skal
-   se ud som en knap man trykker på — ikke som pynt ved siden af teksten. */
+/*
+ * Fluebenet ved en doda-opgave.
+ *
+ * Det ændrer noget i en ANDEN app, så det skal se ud som en knap, man trykker
+ * på — ikke som pynt ved siden af teksten.
+ *
+ * ── En TOM boks skal kunne ses ────────────────────────────────────────────
+ *
+ * Den var usynlig: kanten stod i `var(--line)`, som ikke findes i temaet, og
+ * en `border` med en uopløselig variabel er ugyldig — så var der slet ingen
+ * kant (Andreas, 2026-08-24: »man kan faktisk ikke se at der er en når den er
+ * tom«).
+ *
+ * Nu står den i `--border` med en egen baggrund, der er lysere end kortet.
+ * Det er ikke nok at gøre kanten stærkere: en tom firkant uden fyld læses som
+ * en streg, ikke som noget, man kan trykke på.
+ */
 .doda-tjek {
   flex: none;
   width: 20px;
@@ -2735,14 +2758,34 @@ body.fokus .topbar { position: static; }
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1.5px solid var(--line);
+  /*
+   * `--muted` og ikke `--border`.
+   *
+   * Målt: `--border` mod sidens baggrund giver 1,23:1 — synligt, men kun
+   * lige, og det var netop klagen. `--muted` er den samme farve som teksten
+   * ved siden af og lander på ~3,5:1, som er dét, en kant om en betjening
+   * skal kunne.
+   */
+  border: 1.5px solid var(--muted);
   border-radius: 6px;
-  background: transparent;
-  color: var(--accent-text, #fff);
+  /*
+   * Fyldet er `--card`, ikke `--bg`.
+   *
+   * Første forsøg var `--bg` med den begrundelse, at kortet er lysere end
+   * siden — men doda-ruden ligger IKKE på et kort. Boksen fik dermed præcis
+   * samme farve som det, den lå på, og fyldet gjorde ingenting. `--card` er
+   * et trin lysere end siden i begge temaer, så boksen løfter sig uanset hvor
+   * den står.
+   */
+  background: var(--card);
+  color: #fff;
   cursor: pointer;
-  transition: background .12s, border-color .12s;
+  transition: background .12s, border-color .12s, box-shadow .12s;
 }
-.doda-tjek:hover, .doda-tjek:focus-visible { border-color: var(--accent); }
+.doda-tjek:hover, .doda-tjek:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .doda-tjek[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .doda-tjek[disabled] { opacity: .5; cursor: default; }
 /* Samme plads, når der ikke er noget at trykke på — ellers rykker titlerne. */

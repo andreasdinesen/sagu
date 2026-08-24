@@ -401,6 +401,47 @@ test('sw.js og index.html baerer SAMME version som APP_VERSION', () => {
 });
 
 /*
+ * Hver `var(--x)` skal FINDES.
+ *
+ * Den her regel er skrevet efter en fejl, Andreas fandt: fluebenene ved
+ * doda-opgaverne var usynlige, når de var tomme. Kanten stod i
+ * `var(--line)` — en variabel, der aldrig har eksisteret i temaet.
+ *
+ * Og det er dét, der gør fælden farlig: en uopløselig variabel gør ikke
+ * erklæringen rød, den gør den **ugyldig**. `border: 1.5px solid var(--line)`
+ * bliver til ingen kant overhovedet, og `background: var(--hover)` bliver til
+ * ingen baggrund. Ingen fejl, ingen advarsel — reglen forsvinder bare, og
+ * fladen ser næsten rigtig ud.
+ *
+ * Da jeg ledte, stod der tre af slagsen (`--line`, `--hover`, `--fg`) på tværs
+ * af otte steder, tilføjet over flere uger uden at nogen opdagede det.
+ *
+ * `var(--x, reserve)` er undtaget: dér ER der et svar, hvis variablen mangler.
+ */
+test('hver CSS-variabel, der bruges, er også defineret', () => {
+  /*
+   * Kommentarerne skæres væk FØRST — som i husets øvrige formregler.
+   *
+   * Første udgave fældede sin egen forklaring: teksten om `var(--line)` lige
+   * ovenfor i style.css nævner navnet, og reglen læste det som brug. En regel,
+   * der forbyder at skrive om fejlen, den fanger, er en regel man fjerner.
+   */
+  const css = readFileSync(path.join(ROD, 'app', 'public', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const defineret = new Set([...css.matchAll(/^\s+(--[a-z0-9-]+)\s*:/gm)].map((m) => m[1]));
+  const brugt = new Map();
+  for (const m of css.matchAll(/var\((--[a-z0-9-]+)\s*(,)?/g)) {
+    // Med en reserve efter kommaet er der en vej ud - den taeller ikke med.
+    if (!m[2] && !brugt.has(m[1])) brugt.set(m[1], css.slice(0, m.index).split('\n').length);
+  }
+  const mangler = [...brugt].filter(([navn]) => !defineret.has(navn));
+  assert.deepEqual(mangler, [],
+    `disse variabler bruges uden reserve og findes ikke: ${
+      mangler.map(([n, l]) => `${n} (linje ${l})`).join(', ')}`);
+  assert.ok(defineret.size > 15, 'paletten blev fundet');
+});
+
+/*
  * Her stod en regel om, at markup med en `bind`-partner kun måtte laves af
  * sin egen `tegn`-funktion. **Den er fjernet igen med vilje.**
  *
