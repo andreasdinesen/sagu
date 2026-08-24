@@ -555,3 +555,53 @@ test('et link til en note, man ikke ejer, gør ingenting', async () => {
   const hosBob = await b.kald('GET', `/api/v1/notes/${bNote.id}/tasks`);
   assert.equal(hosBob.data.tasks.length, 0, 'intet er dukket op paa bobs note');
 });
+
+/* ==================== adressen til opgaven i doda ====================== */
+
+/*
+ * »Kan du lave så man kan klikke på en doda opgave og så åbner den opgaven i
+ * doda?« (Andreas, 2026-08-24).
+ *
+ * `?item=<id>` er dodas EGEN indgang — den, kalenderfeedet allerede peger med.
+ * Der skulle altså ingenting ændres i doda; formen fandtes.
+ *
+ * Adressen bygges på serveren, fordi det er dér, resten af det Sagu ved om
+ * doda ligger. Den vigtige prøve er den sidste: uden en forbindelse er der
+ * ingen adresse, og så må der heller ikke stå et link — et link, der peger på
+ * ingenting, er værre end intet link.
+ */
+test('hver opgave bærer adressen til sig selv i doda', async () => {
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Med link', body: '# M' })).data.note;
+  await a.kald('POST', `/api/v1/notes/${note.id}/tasks`, { text: 'Aabn mig' });
+  const t = (await a.kald('GET', `/api/v1/notes/${note.id}/tasks`)).data.tasks[0];
+
+  assert.equal(t.url, `${attrap.url}/?item=${t.dodaId}`);
+  // Adressen skal kunne baere et id med tegn, der skal kodes.
+  assert.ok(!t.url.includes(' '));
+  assert.match(t.url, /^http:\/\//, 'kun http(s) - `rensOffentligUrl` tillader intet andet');
+});
+
+test('uden en forbindelse er der ingen adresse — men opgaverne bliver stående', async () => {
+  /*
+   * Første udgave af denne prøve lavede en bruger UDEN opgaver og fastslog,
+   * at han ingen havde. Den kunne ikke fejle på det, den handlede om.
+   *
+   * Her fjernes forbindelsen fra en, der HAR opgaver. Rækkerne bliver stående
+   * med vilje — en liste, der bliver tom, ligner en liste, der har mistet
+   * noget — men adressen kan ikke bygges uden en vært, og så skal feltet være
+   * tomt i stedet for at pege ingen steder hen.
+   */
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Frakobles', body: '# F' })).data.note;
+  await a.kald('POST', `/api/v1/notes/${note.id}/tasks`, { text: 'Staar tilbage' });
+  assert.ok((await a.kald('GET', `/api/v1/notes/${note.id}/tasks`)).data.tasks[0].url,
+    'med forbindelse ER der en adresse');
+
+  await a.kald('DELETE', '/api/v1/doda');
+  const efter = (await a.kald('GET', `/api/v1/notes/${note.id}/tasks`)).data;
+  assert.equal(efter.connected, false);
+  assert.equal(efter.tasks.length, 1, 'opgaven staar der stadig');
+  assert.equal(efter.tasks[0].url, null, 'men uden en adresse');
+
+  // Kobl til igen, saa resten af filen ikke arver en frakoblet doda.
+  await a.kald('POST', '/api/v1/doda', { url: attrap.url, key: 'doda_rigtig' });
+});

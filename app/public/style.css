@@ -2790,3 +2790,10 @@ body.fokus .topbar { position: static; }
 .doda-tjek[disabled] { opacity: .5; cursor: default; }
 /* Samme plads, når der ikke er noget at trykke på — ellers rykker titlerne. */
 .doda-tjek.tom { border-color: transparent; cursor: default; }
+
+/* Titlen på en doda-opgave er et link til opgaven i doda. Den skal ikke være
+   understreget hele tiden — listen ville se ud som en side fuld af links —
+   men den skal røbe sig, når man er på vej. */
+.doda-link { color: inherit; text-decoration: none; }
+.doda-link:hover, .doda-link:focus-visible { text-decoration: underline; color: var(--accent-text); }
+.doda-opgave.udfoert .doda-link:hover { color: var(--muted); }

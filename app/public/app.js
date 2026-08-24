@@ -3237,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -11002,7 +11002,29 @@ function dodaOpgaverHtml() {
         title="${t.status === 'done' ? 'Put it back in doda' : 'Mark it done in doda'}"
         aria-label="${t.status === 'done' ? 'Put it back in doda' : 'Mark it done in doda'}"
         >${t.status === 'done' ? icon('tjek', 14) : ''}</button>`}
-        <span class="doda-titel">${esc(t.title)}</span>
+        ${t.url
+    /*
+     * Titlen er et LINK til opgaven i doda - i en ny fane.
+     *
+     * Uden `_blank` ville man forlade noten for at kigge paa opgaven, og saa
+     * skulle man finde tilbage. De to apps er to steder, man arbejder
+     * samtidig; det ene maa ikke koste det andet.
+     *
+     * Er der ingen forbindelse, er der ingen adresse - og saa staar titlen
+     * som ren tekst i stedet for som et link, der ikke fører nogen steder hen.
+     */
+    /*
+     * `sikkerUrl` OGSAA her, selv om serveren allerede har renset.
+     *
+     * `doda_url` kan kun saettes til en http(s)-oprindelse (`rensOffentligUrl`),
+     * saa adressen ER sikker naar den kommer. Men en href, der skrives ud af
+     * data, skal gaa gennem husets hvidliste dér, hvor den skrives - ellers
+     * afhaenger sikkerheden af, at man husker den anden ende. Reglen skal
+     * kunne SES paa stedet.
+     */
+    ? `<a class="doda-titel doda-link" href="${esc(saguMarkdown.sikkerUrl(t.url) || '')}"
+        target="_blank" rel="noopener" title="Open in doda">${esc(t.title)}</a>`
+    : `<span class="doda-titel">${esc(t.title)}</span>`}
         <span class="kom-maerke doda-status ${esc(t.status)}">${esc(dodaStatusTekst(t.status))}</span>
       </li>`).join('')}</ul>`
     : '<p class="meta saetning">Nothing sent yet.</p>'}

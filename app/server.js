@@ -6502,6 +6502,25 @@ async function opfriskDodaOpgaver(userId, tving) {
 }
 
 function dodaOpgaverFor(userId, noteId) {
+  /*
+   * Adressen til opgaven i doda bygges HER, ikke i fladen.
+   *
+   * »Kan du lave så man kan klikke på en doda opgave og så åbner den opgaven
+   * i doda?« (Andreas, 2026-08-24).
+   *
+   * `?item=<id>` er dodas egen indgang - den, kalenderfeedet allerede peger
+   * med, saa man kan springe fra en deadline til opgaven. Der skulle altsaa
+   * ingenting aendres i doda; formen fandtes.
+   *
+   * Den bygges paa serveren, fordi det er DÉR, resten af det, Sagu ved om
+   * doda, ligger. Sendte vi bare adressen til browseren og lod den saette
+   * `?item=` paa, ville dodas adresseform vaere spredt over to apps - og den
+   * dag doda skifter den, skal to steder rettes.
+   *
+   * Uden en forbindelse er der ingen adresse, og saa bliver titlen bare
+   * tekst. Et link, der peger paa ingenting, er vaerre end intet link.
+   */
+  const base = String(doda.opsaetning(userId).url || '').replace(/\/+$/, '');
   return db.prepare(`SELECT id, doda_id, title, status, line, created_at, checked_at
                        FROM doda_tasks WHERE user_id = ? AND note_id = ?
                       ORDER BY created_at`).all(userId, noteId)
@@ -6513,6 +6532,7 @@ function dodaOpgaverFor(userId, noteId) {
       line: r.line,
       createdAt: r.created_at,
       checkedAt: r.checked_at,
+      url: base ? `${base}/?item=${encodeURIComponent(r.doda_id)}` : null,
     }));
 }
 
