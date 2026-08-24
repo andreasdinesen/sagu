@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -161,8 +161,16 @@ async function api(method, path, body) {
   // API'et svarer {error: kode, message: laesbar tekst}. Mennesket skal se
   // beskeden; koden er til klienter.
   if (!res.ok) {
+    /*
+     * `needsCode` foelger MED fejlen.
+     *
+     * Fladen skal kunne skelne to 401'ere fra hinanden: et forkert kodeord
+     * (fold kodefeltet vaek) og en forkert engangskode (lad det staa). Uden
+     * feltet her ville et fejltastet ciffer se ud som et forkert kodeord, og
+     * man ville taste det hele forfra (RUNE-ERFARINGER §9d).
+     */
     throw Object.assign(new Error(data.message || data.error || `Error ${res.status}`),
-      { status: res.status, code: data.error });
+      { status: res.status, code: data.error, needsCode: !!data.needsCode });
   }
   return data;
 }
@@ -337,6 +345,10 @@ function gateHtml() {
         <label class="field"><span>Password</span>
           <input class="input" id="gatePass" type="password"
             autocomplete="${opretter ? 'new-password' : 'current-password'}" required></label>
+        <label class="field" id="gateKodeFelt" ${state.gateKode ? '' : 'hidden'}>
+          <span>Code from your authenticator app</span>
+          <input class="input" id="gateKode" inputmode="numeric" autocomplete="one-time-code"
+            autocapitalize="characters" placeholder="123456" spellcheck="false"></label>
         <button class="btn primary" type="submit" style="width:100%">
           ${opretter ? 'Create account' : 'Sign in'}</button>
       </form>
@@ -359,18 +371,72 @@ function bindGate() {
     err.hidden = true;
     const opretter = state.config.needsSetup || state.gateMode === 'register';
     try {
-      const data = await api('POST', opretter ? '/api/register' : '/api/login', {
+      const krop = {
         username: document.getElementById('gateUser').value,
         password: document.getElementById('gatePass').value,
-      });
+      };
+      // Feltet sendes kun med, naar det ER fremme. Ellers ville en tom kode
+      // blive et forsoeg, og serveren braendte et vindue for ingenting.
+      const kodeFelt = document.getElementById('gateKode');
+      if (state.gateKode && kodeFelt && kodeFelt.value.trim()) krop.code = kodeFelt.value.trim();
+      const data = await api('POST', opretter ? '/api/register' : '/api/login', krop);
+
+      /*
+       * Kodeordet passede, men vi er kun halvvejs.
+       *
+       * Svaret er 200 og BAERER INGEN cookie - der staar bare, at der mangler
+       * et led. Feltet foldes ud, og der staar en besked; en tom formular,
+       * der bare ikke gjorde noget, ville se ud som en fejl.
+       */
+      if (data && data.needsCode) {
+        /*
+         * Feltet VISES - formularen tegnes ikke om.
+         *
+         * Foerste udgave kaldte `render()`, og saa blev baade brugernavn og
+         * kodeord ryddet i samme oejeblik: man tastede sin kode og sendte en
+         * TOM formular, hvorpaa serveren svarede »Wrong username or
+         * password«. Det saa ud, som om kodeordet var forkert - og det var
+         * det, man lige havde skrevet rigtigt (maalt i browseren,
+         * 2026-08-24).
+         *
+         * Feltet staar der i forvejen, bare skjult. Der er intet at tegne.
+         */
+        state.gateKode = true;
+        const boks = document.getElementById('gateKodeFelt');
+        if (boks) boks.hidden = false;
+        const felt = document.getElementById('gateKode');
+        if (felt) felt.focus();
+        const besked = document.getElementById('gateError');
+        besked.textContent = 'Enter the six-digit code from your authenticator app '
+          + '— or one of your recovery codes.';
+        besked.hidden = false;
+        besked.classList.add('gate-info');
+        return;
+      }
+      state.gateKode = false;
       state.user = data.user;
       state.config.needsSetup = false;
       if (fortsaetTilConnector()) return;
       await hentState();
       render();
     } catch (ex) {
-      err.textContent = ex.message;
-      err.hidden = false;
+      /*
+       * Kodefeltet bliver staaende ved en forkert ENGANGSKODE og foldes vaek
+       * ved et forkert kodeord. Det er hele grunden til, at serveren svarer
+       * forskelligt paa de to.
+       */
+      // Samme grund: fold feltet vaek uden at roere det, der er tastet.
+      if (state.gateKode && !ex.needsCode) {
+        state.gateKode = false;
+        const boks = document.getElementById('gateKodeFelt');
+        if (boks) boks.hidden = true;
+      }
+      const boks = document.getElementById('gateError');
+      boks.textContent = ex.message;
+      boks.classList.remove('gate-info');
+      boks.hidden = false;
+      const felt = document.getElementById('gateKode');
+      if (felt && ex.needsCode) { felt.value = ''; felt.focus(); }
     }
   });
 
@@ -421,9 +487,22 @@ function navHtml() {
   }).join('')}</nav>`).join('');
 }
 
+/*
+ * ── Menuknappen staar i BJAELKEN, ikke i skaermens hjoerne ────────────────
+ *
+ * Den var `position: fixed` med et hoejere lag end topbjaelken. Da bjaelken
+ * blev klaebende (v23), laa knappen dermed OVEN PAA soegefeltet, saa snart man
+ * rullede - to ting, der begge vil vaere oeverst, og kun den ene kan vinde
+ * (Andreas, 2026-08-24).
+ *
+ * Inde i raekken er der ingen strid om pladsen: bjaelken er ét element, der
+ * klaeber, og knappen foelger med af sig selv. Samme sted som i doda.
+ *
+ * Derfor kan `body.navskjult .main { padding-left: 64px }` ogsaa forsvinde -
+ * den fandtes kun for at holde plads fri til en knap, der svaevede.
+ */
 function shellHtml() {
   return `
-  <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
   <div class="backdrop" id="backdrop"></div>
   <div class="app">
     <aside class="sidebar">
@@ -458,7 +537,10 @@ function shellHtml() {
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
           ${temaKnapHtml()}
         </div>
-        ${omniHtml()}
+        <div class="topraekke">
+          <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
+          ${omniHtml()}
+        </div>
       </div>
       <div id="pageHost"></div>
     </main>

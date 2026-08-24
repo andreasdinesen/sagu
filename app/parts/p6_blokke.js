@@ -137,7 +137,12 @@ function visLightbox(src, alt) {
   boks.className = 'lightbox';
   boks.id = 'lightbox';
   boks.innerHTML = `
-    <button class="lightbox-luk" aria-label="Close">${icon('luk', 20)}</button>
+    <div class="lightbox-vaerktoej">
+      <button class="lightbox-knap" id="lbKopi">${icon('copy', 16)}<span>Copy image</span></button>
+      <a class="lightbox-knap" id="lbAaben" href="${esc(src)}" target="_blank"
+         rel="noopener">${icon('out', 16)}<span>Open</span></a>
+      <button class="lightbox-luk" aria-label="Close">${icon('luk', 20)}</button>
+    </div>
     <img src="${esc(src)}" alt="${esc(alt || '')}">
     ${alt ? `<div class="lightbox-tekst meta saetning">${esc(alt)}</div>` : ''}`;
   document.body.appendChild(boks);
@@ -150,6 +155,10 @@ function visLightbox(src, alt) {
   document.addEventListener('keydown', paaTast);
 
   boks.querySelector('.lightbox-luk').addEventListener('click', luk);
+  const kopiKnap = boks.querySelector('#lbKopi');
+  kopiKnap.addEventListener('click', (e) => { e.stopPropagation(); kopierBillede(src, kopiKnap); });
+  // Et klik paa »Open« maa ikke ogsaa lukke ruden bagved.
+  boks.querySelector('#lbAaben').addEventListener('click', (e) => e.stopPropagation());
   // Klik paa baggrunden lukker; klik paa selve billedet goer ikke.
   boks.addEventListener('click', (e) => { if (e.target === boks) luk(); });
 
@@ -1188,4 +1197,85 @@ function visSyntaksPanel() {
   host.querySelector('#syntaksLuk').addEventListener('click', luk);
   host.addEventListener('click', (e) => { if (e.target === host) luk(); });
   host.querySelector('#syntaksLuk').focus();
+}
+
+/* ======================== kopiér et billede fra en note ==================
+ *
+ * »sagu skal have en let måde at kunne kopiere et billede fra en note som så
+ * kan bruges et andet sted på computeren eller telefonen« (Andreas,
+ * 2026-08-24).
+ *
+ * ── Billedet selv, ikke en adresse ────────────────────────────────────────
+ *
+ * Det nemme ville være at lægge `/api/v1/files/<id>` på udklipsholderen. Men
+ * en adresse kan ikke sættes ind i et dokument, en mail eller en besked — og
+ * den kræver oven i købet, at modtageren er logget ind i Sagu. Det, man vil,
+ * er at have billedet.
+ *
+ * ── PNG, uanset hvad filen er ─────────────────────────────────────────────
+ *
+ * Browserne tager kun `image/png` i udklipsholderen. En JPEG skal derfor
+ * tegnes om på et lærred først. Det er samme oprindelse (`/api/v1/files/…`),
+ * så lærredet bliver ikke plettet, og `toBlob` virker.
+ *
+ * ── Løftet skal laves FØR await ───────────────────────────────────────────
+ *
+ * Safari kræver, at `ClipboardItem` oprettes i selve klik-hændelsen. Venter
+ * man på hentningen først, er brugerhandlingen udløbet, og skrivningen
+ * afvises — uden at noget ser i stykker ud. Derfor får `ClipboardItem` et
+ * LØFTE, ikke en færdig blob.
+ *
+ * ── Og en ærlig vej ud ────────────────────────────────────────────────────
+ *
+ * `navigator.clipboard.write` findes ikke over ren http, og panelet nås på
+ * `IP:port`. Dér siger knappen det og peger på »Open«, hvor telefonens og
+ * computerens egen »kopiér billede« virker som altid.
+ */
+async function tilPngBlob(src) {
+  const svar = await fetch(src);
+  if (!svar.ok) throw new Error('Could not read the image.');
+  const blob = await svar.blob();
+  if (blob.type === 'image/png') return blob;
+
+  const bitmap = await createImageBitmap(blob);
+  const lærred = document.createElement('canvas');
+  lærred.width = bitmap.width;
+  lærred.height = bitmap.height;
+  lærred.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return new Promise((ok, nej) => {
+    lærred.toBlob((b) => (b ? ok(b) : nej(new Error('Could not convert the image.'))), 'image/png');
+  });
+}
+
+async function kopierBillede(src, knap) {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    toast('This browser cannot copy images here — use Open, then copy it from there.');
+    return;
+  }
+  const foer = knap.innerHTML;
+  knap.disabled = true;
+  try {
+    // Loeftet laves NU, inde i klikket - se forklaringen ovenfor.
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': tilPngBlob(src) })]);
+    knap.innerHTML = `${icon('tjek', 16)}<span>Copied</span>`;
+    toast('Image copied — paste it wherever you need it.');
+  } catch {
+    /*
+     * Nogle browsere afviser et loefte og vil have en faerdig blob. Proev
+     * ÉN gang mere med den hentede blob, foer vi giver op - forskellen er
+     * usynlig for den, der bare vil have sit billede.
+     */
+    try {
+      const blob = await tilPngBlob(src);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      knap.innerHTML = `${icon('tjek', 16)}<span>Copied</span>`;
+      toast('Image copied — paste it wherever you need it.');
+    } catch {
+      toast('Could not copy it here — use Open, then copy it from there.');
+      knap.innerHTML = foer;
+    }
+  }
+  knap.disabled = false;
+  setTimeout(() => { if (document.getElementById('lightbox')) knap.innerHTML = foer; }, 2500);
 }

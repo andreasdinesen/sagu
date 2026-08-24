@@ -32,6 +32,13 @@ const maerker = require('./shared/maerker.js');
 const importModul = require('./import.js');
 const wikiModul = require('./wiki.js');
 const dodaModul = require('./doda.js');
+/*
+ * TOTP og QR er kopieret RAAT fra doda og har ingen kobling til nogen af de
+ * to apps: `totp.js` kraever kun `node:crypto`, `qr.js` kraever intet
+ * (RUNE-ERFARINGER §9d). Kun udstedernavnet i `otpauth()` er skiftet.
+ */
+const totp = require('./totp.js');
+const qr = require('./qr.js');
 const ghShared = require('./shared/github.js');
 const zipmod = require('./zip.js');
 
@@ -755,6 +762,35 @@ const MIGRATIONS = [
      */
     d.exec("ALTER TABLE comments ADD COLUMN via TEXT NOT NULL DEFAULT ''");
   },
+
+  function m16(d) {
+    /*
+     * Genoprettelseskoder til totrinsbekraeftelse (F21).
+     *
+     * **De er ikke valgfrie.** Uden dem laaser en mistet telefon ejeren ude
+     * for altid; der er ingen supportafdeling at ringe til paa sin egen
+     * server (RUNE-ERFARINGER §9d).
+     *
+     * `user_id` er forskellen paa doda og Sagu. doda er én bruger, saa dér
+     * kan baade hemmeligheden og koderne ligge globalt. Sagu er FLERBRUGER:
+     * en global kontakt ville betyde, at alices 2FA spaerrede for bob - eller
+     * at bobs afslaaede den for alice. Alt hoerer til KONTOEN.
+     *
+     * Koderne hashes. Raekken bliver staaende med `used_at`, naar den er
+     * brugt: en kode maa ikke kunne gaa om, og man skal kunne se, hvor mange
+     * der er tilbage.
+     */
+    d.exec(`
+      CREATE TABLE recovery_codes (
+        id       TEXT PRIMARY KEY,
+        user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        hash     TEXT NOT NULL,
+        used_at  INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX recovery_user ON recovery_codes(user_id) WHERE used_at IS NULL;
+    `);
+  },
 ];
 
 /*
@@ -765,7 +801,15 @@ const MIGRATIONS = [
  * og et endepunkt, der returnerer "alt i en tabel", er en tidsindstillet
  * laekage (RUNE-ERFARINGER, doda v16).
  */
-const HEMMELIGE_SETTINGS = new Set(['github_token', 'doda_key', 'server_secret', 'vapid_private']);
+/*
+ * Hemmeligheder, der ALDRIG forlader serveren - hverken gennem `GET /settings`
+ * eller en eksport.
+ *
+ * `totp_secret` ER det andet led. Kan den laeses ud, er hele
+ * totrinsbekraeftelsen pynt (RUNE-ERFARINGER §9d).
+ */
+const HEMMELIGE_SETTINGS = new Set(['github_token', 'doda_key', 'server_secret', 'vapid_private',
+  'totp_secret', 'totp_last']);
 
 function migrate() {
   const cur = db.prepare('PRAGMA user_version').get().user_version || 0;
@@ -1024,7 +1068,7 @@ function sendJson(res, status, body, extraHeaders) {
  * `error`. Koden skal matche /^[a-z][a-z0-9_]*$/ - "not found" med mellemrum
  * er ikke noget, nogen kan forgrene paa (RUNE-ERFARINGER, doda v18).
  */
-function apiFejl(res, status, kode, besked) {
+function apiFejl(res, status, kode, besked, ekstra) {
   /*
    * En 401 SKAL baere `WWW-Authenticate`.
    *
@@ -1034,7 +1078,10 @@ function apiFejl(res, status, kode, besked) {
    * den, opgiver klienten forbindelsen, **uden at noget ser i stykker ud**
    * (RUNE-ERFARINGER §9a, faelde 1).
    */
-  sendJson(res, status, { error: kode, message: besked },
+  // `ekstra` er felter, klienten skal HANDLE paa - fx `needsCode`, som
+  // afgoer, om kodefeltet bliver staaende. Ikke pynt: uden det ville et
+  // forkert engangskode-forsoeg se ud som et forkert kodeord.
+  sendJson(res, status, Object.assign({ error: kode, message: besked }, ekstra || {}),
     status === 401 ? { 'WWW-Authenticate': 'Bearer' } : undefined);
 }
 
@@ -1377,6 +1424,71 @@ function requireAdmin(req, res) {
     return null;
   }
   return user;
+}
+
+/* ------------------------------------------- totrinsbekraeftelse (F21) */
+
+function totpStatus(userId) {
+  return {
+    enabled: getSetting(userId, 'totp_enabled', '') === '1',
+    // »Paabegyndt« er en tredje tilstand: hemmeligheden findes, men kontakten
+    // er ikke gaaet til endnu. Uden den ville fladen vise »slaa til« til en,
+    // der staar midt i opsaetningen.
+    pending: !!getSetting(userId, 'totp_secret', '') && getSetting(userId, 'totp_enabled', '') !== '1',
+    recoveryLeft: db.prepare(
+      'SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used_at IS NULL').get(userId).n,
+  };
+}
+
+function slaaTotpFra(userId) {
+  db.prepare('DELETE FROM settings WHERE scope = ? AND key IN (?,?,?)')
+    .run(userId, 'totp_secret', 'totp_enabled', 'totp_last');
+  db.prepare('DELETE FROM recovery_codes WHERE user_id = ?').run(userId);
+}
+
+/** Ti nye koder. De gamle - ogsaa de ubrugte - doer i samme aandedrag. */
+function nyeGenoprettelseskoder(userId) {
+  const koder = totp.nyeKoder(10);
+  const nu = Math.floor(Date.now() / 1000);
+  db.prepare('DELETE FROM recovery_codes WHERE user_id = ?').run(userId);
+  const ind = db.prepare(
+    'INSERT INTO recovery_codes (id, user_id, hash, used_at, created_at) VALUES (?,?,?,NULL,?)');
+  for (const k of koder) ind.run(newId(), userId, totp.hashKode(k), nu);
+  return koder;
+}
+
+/**
+ * Andet trin ved login: en engangskode ELLER en genoprettelseskode.
+ *
+ * ── De to ting, der er lette at gaa galt i ────────────────────────────────
+ *
+ *  1. **Vinduet braendes.** `tjek()` returnerer det vindue, koden kom fra -
+ *     ikke `true` - og vi afviser det samme vindue igen. Ellers kan en
+ *     opsnappet kode bruges to gange inden for det halve minut.
+ *  2. **En genoprettelseskode kan ikke gaa om.** Raekken bliver staaende med
+ *     `used_at`, saa den er brugt for altid og kan taelles.
+ */
+function tjekAndetTrin(userId, kode) {
+  const hem = getSetting(userId, 'totp_secret', '');
+  if (hem) {
+    const vindue = totp.tjek(hem, kode);
+    if (vindue !== null) {
+      const sidst = Number(getSetting(userId, 'totp_last', '0'));
+      if (vindue <= sidst) return { ok: false, besked: 'That code has already been used.' };
+      setSetting(userId, 'totp_last', String(vindue));
+      return { ok: true };
+    }
+  }
+  // Ikke en engangskode - saa maaske en genoprettelseskode.
+  const hash = totp.hashKode(kode);
+  const raekke = db.prepare(
+    'SELECT id FROM recovery_codes WHERE user_id = ? AND hash = ? AND used_at IS NULL').get(userId, hash);
+  if (!raekke) return { ok: false, besked: 'That code is not right.' };
+  db.prepare('UPDATE recovery_codes SET used_at = ? WHERE id = ?')
+    .run(Math.floor(Date.now() / 1000), raekke.id);
+  const tilbage = db.prepare(
+    'SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used_at IS NULL').get(userId).n;
+  return { ok: true, genoprettelse: true, tilbage };
 }
 
 function userCount() {
@@ -3130,6 +3242,137 @@ const ROUTES = {
     sendJson(res, 200, user ? { user, flereBrugere: userCount() > 1 } : { user: null });
   },
 
+  /* --- totrinsbekraeftelse (F21) ------------------------------------- */
+
+  'GET /api/v1/totp': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    sendJson(res, 200, totpStatus(user.id));
+  },
+
+  /*
+   * Foerste halvdel af opsaetningen: en ny hemmelighed og en QR at scanne.
+   *
+   * Hemmeligheden gemmes med det samme, men `totp_enabled` saettes FOERST af
+   * `/enable`, naar en kode passer. Ellers laaser en fejlscanning ejeren ude
+   * af sin egen server (RUNE-ERFARINGER §9d).
+   */
+  'POST /api/v1/totp/setup': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (getSetting(user.id, 'totp_enabled', '') === '1') {
+      apiFejl(res, 400, 'already_on', 'Two-step verification is already on. Turn it off first.');
+      return;
+    }
+    const hem = totp.nyHemmelighed();
+    setSetting(user.id, 'totp_secret', hem);
+    // Et nyt forsoeg starter forfra: det brugte vindue hoerer til den GAMLE
+    // hemmelighed og maa ikke spaerre for den nye.
+    db.prepare('DELETE FROM settings WHERE scope = ? AND key = ?').run(user.id, 'totp_last');
+    audit('totp-opsaetning-startet', user.id, user.username, clientIp(req));
+    const uri = totp.otpauth(hem, user.username, 'Sagu');
+    sendJson(res, 200, {
+      secret: hem,
+      uri,
+      /*
+       * `tilSvg` tager TEKSTEN - den kalder selv `lavQr`.
+       *
+       * Her stod `qr.tilSvg(qr.lavQr(uri), ...)`, og saa fik den et OBJEKT.
+       * Det blev til strengen »[object Object]«, og QR-koden indeholdt
+       * praecis de femten tegn. Den saa fuldstaendig rigtig ud - sort/hvid,
+       * skarp, med finder-moenstre - og enhver scanner ville laese noget
+       * meningsloest ud af den.
+       *
+       * Enhedstesten kunne ikke fange det: den kalder `tilSvg` rigtigt.
+       * Fejlen laa i KALDESTEDET, og den slags findes kun ved at maale det,
+       * endepunktet faktisk sender. Fundet af macOS' egen afkoder
+       * (2026-08-24).
+       *
+       * Inline SVG, ikke PNG eller dataURL: intet billede at hente, ingen
+       * cache at ramme forbi, og skarp paa en telefonskaerm.
+       */
+      svg: qr.tilSvg(uri, { px: 220 }),
+    });
+  },
+
+  /*
+   * Anden halvdel: koden fra appen skal passe, FOER kontakten gaar til.
+   *
+   * Genoprettelseskoderne laves samtidig og vises ÉN gang. De er ikke
+   * valgfrie - uden dem laaser en mistet telefon ejeren ude for altid.
+   */
+  'POST /api/v1/totp/enable': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const hem = getSetting(user.id, 'totp_secret', '');
+    if (!hem) { apiFejl(res, 400, 'no_setup', 'Start the setup first.'); return; }
+    const ip = clientIp(req);
+    if (!rateAllow(`totp:${ip}`, 15, 900)) {
+      apiFejl(res, 429, 'rate_limited', 'Too many attempts — try again in a little while.');
+      return;
+    }
+    const body = await readJsonBody(req);
+    const vindue = totp.tjek(hem, String(body.code || '').trim());
+    if (vindue === null) {
+      logSecurity(`totp-opsaetning-fejl ip=${ip}`);
+      apiFejl(res, 401, 'bad_code', 'That code is not right. Check the clock on your phone.');
+      return;
+    }
+    setSetting(user.id, 'totp_last', String(vindue));
+    setSetting(user.id, 'totp_enabled', '1');
+    const koder = nyeGenoprettelseskoder(user.id);
+    audit('totp-slaaet-til', user.id, user.username, ip);
+    logSecurity(`totp slaaet til for ${user.username}`);
+    sendJson(res, 200, { enabled: true, recovery: koder });
+  },
+
+  /*
+   * At slaa det FRA kraever kodeordet igen.
+   *
+   * En aaben skaerm er ellers nok: gaar man forbi en ulaast maskine, kan man
+   * fjerne det andet led med ét klik, og saa er 2FA'en kun en forhindring for
+   * ejeren selv.
+   */
+  'POST /api/v1/totp/disable': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const ip = clientIp(req);
+    if (!rateAllow(`totp:${ip}`, 15, 900)) {
+      apiFejl(res, 429, 'rate_limited', 'Too many attempts — try again in a little while.');
+      return;
+    }
+    const body = await readJsonBody(req);
+    const row = db.prepare('SELECT password FROM users WHERE id = ?').get(user.id);
+    if (!verifyPassword(String(body.password || ''), row.password)) {
+      logSecurity(`totp-frakobling-fejl ip=${ip}`);
+      apiFejl(res, 401, 'bad_credentials', 'That password does not match.');
+      return;
+    }
+    slaaTotpFra(user.id);
+    audit('totp-slaaet-fra', user.id, user.username, ip);
+    logSecurity(`totp slaaet fra for ${user.username}`);
+    sendJson(res, 200, { enabled: false });
+  },
+
+  /* Nye genoprettelseskoder. De gamle doer i samme aandedrag. */
+  'POST /api/v1/totp/recovery': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (getSetting(user.id, 'totp_enabled', '') !== '1') {
+      apiFejl(res, 400, 'not_on', 'Two-step verification is not on.');
+      return;
+    }
+    const body = await readJsonBody(req);
+    const row = db.prepare('SELECT password FROM users WHERE id = ?').get(user.id);
+    if (!verifyPassword(String(body.password || ''), row.password)) {
+      apiFejl(res, 401, 'bad_credentials', 'That password does not match.');
+      return;
+    }
+    const koder = nyeGenoprettelseskoder(user.id);
+    audit('genoprettelseskoder-fornyet', user.id, user.username, clientIp(req));
+    sendJson(res, 200, { recovery: koder });
+  },
+
   'POST /api/register': async (req, res) => {
     const foerste = userCount() === 0;
     if (!registreringAaben()) {
@@ -3182,6 +3425,38 @@ const ROUTES = {
       apiFejl(res, 401, 'bad_credentials', 'Wrong username or password.');
       return;
     }
+    /*
+     * ── Kodeordet passede. Er der et ANDET led, er vi kun halvvejs ────────
+     *
+     * Porten ligger HER - foer `createSession`. Udstedte vi cookien foerst og
+     * spurgte bagefter, var 2FA'en en formalitet: den, der har kodeordet, var
+     * allerede inde (RUNE-ERFARINGER §9d).
+     *
+     * `needsCode` er det, fladen skelner paa: kodefeltet bliver staaende ved
+     * en forkert ENGANGSKODE, men foldes vaek ved et forkert kodeord.
+     *
+     * Og der bruges SAMME rate-spand som kodeordet. Med en spand for sig
+     * kunne seks cifre proeves igennem uden at loebe ind i en graense.
+     */
+    if (getSetting(row.id, 'totp_enabled', '') === '1') {
+      const kode = String(body.code || '').trim();
+      if (!kode) {
+        sendJson(res, 200, { needsCode: true });
+        return;
+      }
+      const svar = tjekAndetTrin(row.id, kode);
+      if (!svar.ok) {
+        logSecurity(`totp-fejl ip=${ip}`);
+        audit('login-totp-fejl', row.id, row.username, ip);
+        apiFejl(res, 401, 'bad_code', svar.besked || 'That code is not right.', { needsCode: true });
+        return;
+      }
+      if (svar.genoprettelse) {
+        audit('login-genoprettelseskode', row.id, row.username, ip);
+        logSecurity(`genoprettelseskode brugt ip=${ip} - ${svar.tilbage} tilbage`);
+      }
+    }
+
     rateClear(bucket);
     audit('login', row.id, row.username, ip);
     const token = createSession(row.id);

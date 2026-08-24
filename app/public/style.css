@@ -498,7 +498,17 @@ table.data td.center, table.data th.center { text-align: center; }
 
 /* ------------------------------------------------ menuknap og overlay */
 
-.navtoggle { position: fixed; top: 14px; left: 14px; z-index: 52; display: none; padding: 8px; }
+/*
+ * Menuknappen ligger i topbjaelkens række — ikke fast i hjørnet.
+ *
+ * `position: fixed` med z-index 52 lagde den oven på søgefeltet, så snart
+ * bjælken blev klæbende. Nu er der intet at støde sammen med.
+ */
+.navtoggle { display: none; flex: none; padding: 8px; align-self: flex-start; }
+
+/* Knappen og søgefeltet side om side. Feltet tager resten. */
+.topraekke { display: flex; align-items: flex-start; gap: 10px; }
+.topraekke > .omni-card { flex: 1; min-width: 0; }
 .backdrop { display: none; }
 
 /*
@@ -519,9 +529,8 @@ table.data td.center, table.data th.center { text-align: center; }
   body.navskjult.navopen .sidebar { transform: none; }
   body.navskjult .navtoggle { display: inline-flex; }
   body.navskjult.navopen .backdrop { display: block; position: fixed; inset: 0; z-index: 45; background: rgba(0, 0, 0, .35); }
-  /* body.navskjult .main (0-2-1) slaar .main (0-1-0). Media queries giver
-     ingen specificitet - derfor skal begge klasser med. */
-  body.navskjult .main { padding-left: 64px; }
+  /* Ingen venstre-margen mere: knappen svaever ikke laengere over indholdet,
+     saa der er ingen plads at holde fri til den. */
 }
 
 /*
@@ -1416,12 +1425,50 @@ body.fokus .topbar { display: none; }
 .lightbox img { max-width: 100%; max-height: 82vh; object-fit: contain; border-radius: var(--r-sm); }
 .lightbox-tekst { color: #ddd; max-width: 60ch; text-align: center; }
 
-/* Der SKAL vaere en synlig vej ud. Esc og swipe virker, men en telefon har
-   ingen Esc-tast, og et billede i fuld skaerm uden en knap er en blindgyde. */
-.lightbox-luk {
+/*
+ * Værktøjerne i toppen: kopiér, åbn, luk.
+ *
+ * De ligger i én række, så de ikke kan lande oven i hinanden på en telefon —
+ * og så »kopiér« står dér, hvor man ser billedet, ikke gemt i en menu.
+ */
+.lightbox-vaerktoej {
   position: absolute;
   top: 16px;
   right: 16px;
+  left: 16px;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lightbox-knap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--pill);
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.lightbox-knap:hover { background: rgba(255, 255, 255, .28); }
+.lightbox-knap[disabled] { opacity: .6; cursor: default; }
+.lightbox-knap svg { flex: none; }
+/* På en smal skærm er ordene dyre — ikonerne bærer betydningen. */
+@media (max-width: 420px) { .lightbox-knap span { display: none; } }
+
+/* Der SKAL vaere en synlig vej ud. Esc og swipe virker, men en telefon har
+   ingen Esc-tast, og et billede i fuld skaerm uden en knap er en blindgyde. */
+.lightbox-luk {
+  position: static;
   width: 40px;
   height: 40px;
   display: inline-flex;
@@ -2623,3 +2670,53 @@ body.fokus .topbar { position: static; }
 /* Vagtposten: 1 px, usynlig, lige over den klæbende bjælke. Den er kun til
    for at kunne SES forsvinde — se registrerRullevagt(). */
 .rulvagt { height: 1px; margin: 0; padding: 0; pointer-events: none; }
+
+/* ------------------------------------------ totrinsbekræftelse (F21) */
+.totp-opsaet {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+/* QR'en står på hvid, uanset tema. En mørk baggrund bag en QR-kode er ikke
+   stil — den er en kode, scanneren giver op på. */
+.totp-qr {
+  flex: none;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+  line-height: 0;
+}
+.totp-qr svg { display: block; width: 200px; height: 200px; }
+.totp-trin { flex: 1; min-width: 240px; }
+.totp-hem {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--hover);
+  font-size: 13px;
+  letter-spacing: .08em;
+  overflow-wrap: anywhere;
+}
+
+.noedkoder {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+.noedkoder code {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--hover);
+  font-size: 14px;
+  letter-spacing: .06em;
+  text-align: center;
+}
+@media (max-width: 480px) { .noedkoder { grid-template-columns: 1fr; } }
+
+/* Beskeden ved login er ikke altid en FEJL — »tast koden« er en oplysning. */
+.gate-error.gate-info { color: var(--muted); border-color: var(--line); background: var(--hover); }

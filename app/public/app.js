@@ -3237,7 +3237,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3393,8 +3393,16 @@ async function api(method, path, body) {
   // API'et svarer {error: kode, message: laesbar tekst}. Mennesket skal se
   // beskeden; koden er til klienter.
   if (!res.ok) {
+    /*
+     * `needsCode` foelger MED fejlen.
+     *
+     * Fladen skal kunne skelne to 401'ere fra hinanden: et forkert kodeord
+     * (fold kodefeltet vaek) og en forkert engangskode (lad det staa). Uden
+     * feltet her ville et fejltastet ciffer se ud som et forkert kodeord, og
+     * man ville taste det hele forfra (RUNE-ERFARINGER §9d).
+     */
     throw Object.assign(new Error(data.message || data.error || `Error ${res.status}`),
-      { status: res.status, code: data.error });
+      { status: res.status, code: data.error, needsCode: !!data.needsCode });
   }
   return data;
 }
@@ -3569,6 +3577,10 @@ function gateHtml() {
         <label class="field"><span>Password</span>
           <input class="input" id="gatePass" type="password"
             autocomplete="${opretter ? 'new-password' : 'current-password'}" required></label>
+        <label class="field" id="gateKodeFelt" ${state.gateKode ? '' : 'hidden'}>
+          <span>Code from your authenticator app</span>
+          <input class="input" id="gateKode" inputmode="numeric" autocomplete="one-time-code"
+            autocapitalize="characters" placeholder="123456" spellcheck="false"></label>
         <button class="btn primary" type="submit" style="width:100%">
           ${opretter ? 'Create account' : 'Sign in'}</button>
       </form>
@@ -3591,18 +3603,72 @@ function bindGate() {
     err.hidden = true;
     const opretter = state.config.needsSetup || state.gateMode === 'register';
     try {
-      const data = await api('POST', opretter ? '/api/register' : '/api/login', {
+      const krop = {
         username: document.getElementById('gateUser').value,
         password: document.getElementById('gatePass').value,
-      });
+      };
+      // Feltet sendes kun med, naar det ER fremme. Ellers ville en tom kode
+      // blive et forsoeg, og serveren braendte et vindue for ingenting.
+      const kodeFelt = document.getElementById('gateKode');
+      if (state.gateKode && kodeFelt && kodeFelt.value.trim()) krop.code = kodeFelt.value.trim();
+      const data = await api('POST', opretter ? '/api/register' : '/api/login', krop);
+
+      /*
+       * Kodeordet passede, men vi er kun halvvejs.
+       *
+       * Svaret er 200 og BAERER INGEN cookie - der staar bare, at der mangler
+       * et led. Feltet foldes ud, og der staar en besked; en tom formular,
+       * der bare ikke gjorde noget, ville se ud som en fejl.
+       */
+      if (data && data.needsCode) {
+        /*
+         * Feltet VISES - formularen tegnes ikke om.
+         *
+         * Foerste udgave kaldte `render()`, og saa blev baade brugernavn og
+         * kodeord ryddet i samme oejeblik: man tastede sin kode og sendte en
+         * TOM formular, hvorpaa serveren svarede »Wrong username or
+         * password«. Det saa ud, som om kodeordet var forkert - og det var
+         * det, man lige havde skrevet rigtigt (maalt i browseren,
+         * 2026-08-24).
+         *
+         * Feltet staar der i forvejen, bare skjult. Der er intet at tegne.
+         */
+        state.gateKode = true;
+        const boks = document.getElementById('gateKodeFelt');
+        if (boks) boks.hidden = false;
+        const felt = document.getElementById('gateKode');
+        if (felt) felt.focus();
+        const besked = document.getElementById('gateError');
+        besked.textContent = 'Enter the six-digit code from your authenticator app '
+          + '— or one of your recovery codes.';
+        besked.hidden = false;
+        besked.classList.add('gate-info');
+        return;
+      }
+      state.gateKode = false;
       state.user = data.user;
       state.config.needsSetup = false;
       if (fortsaetTilConnector()) return;
       await hentState();
       render();
     } catch (ex) {
-      err.textContent = ex.message;
-      err.hidden = false;
+      /*
+       * Kodefeltet bliver staaende ved en forkert ENGANGSKODE og foldes vaek
+       * ved et forkert kodeord. Det er hele grunden til, at serveren svarer
+       * forskelligt paa de to.
+       */
+      // Samme grund: fold feltet vaek uden at roere det, der er tastet.
+      if (state.gateKode && !ex.needsCode) {
+        state.gateKode = false;
+        const boks = document.getElementById('gateKodeFelt');
+        if (boks) boks.hidden = true;
+      }
+      const boks = document.getElementById('gateError');
+      boks.textContent = ex.message;
+      boks.classList.remove('gate-info');
+      boks.hidden = false;
+      const felt = document.getElementById('gateKode');
+      if (felt && ex.needsCode) { felt.value = ''; felt.focus(); }
     }
   });
 
@@ -3653,9 +3719,22 @@ function navHtml() {
   }).join('')}</nav>`).join('');
 }
 
+/*
+ * ── Menuknappen staar i BJAELKEN, ikke i skaermens hjoerne ────────────────
+ *
+ * Den var `position: fixed` med et hoejere lag end topbjaelken. Da bjaelken
+ * blev klaebende (v23), laa knappen dermed OVEN PAA soegefeltet, saa snart man
+ * rullede - to ting, der begge vil vaere oeverst, og kun den ene kan vinde
+ * (Andreas, 2026-08-24).
+ *
+ * Inde i raekken er der ingen strid om pladsen: bjaelken er ét element, der
+ * klaeber, og knappen foelger med af sig selv. Samme sted som i doda.
+ *
+ * Derfor kan `body.navskjult .main { padding-left: 64px }` ogsaa forsvinde -
+ * den fandtes kun for at holde plads fri til en knap, der svaevede.
+ */
 function shellHtml() {
   return `
-  <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
   <div class="backdrop" id="backdrop"></div>
   <div class="app">
     <aside class="sidebar">
@@ -3690,7 +3769,10 @@ function shellHtml() {
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
           ${temaKnapHtml()}
         </div>
-        ${omniHtml()}
+        <div class="topraekke">
+          <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
+          ${omniHtml()}
+        </div>
       </div>
       <div id="pageHost"></div>
     </main>
@@ -5051,6 +5133,11 @@ async function sideSettings() {
     : ''}
   </div>
 
+  <h2>Two-step verification</h2>
+  <div class="card" id="totpKort">
+    <p class="meta saetning">Loading…</p>
+  </div>
+
   <h2>Access keys</h2>
   <div class="card">
     <p class="meta saetning">For iPhone shortcuts, Siri and anything else that talks to Sagu
@@ -5285,6 +5372,8 @@ function bindSettings() {
     scopeValg.addEventListener('change', vis);
     vis();
   }
+
+  tegnTotp();
 
   const kvoteGem = document.getElementById('kvoteGem');
   if (kvoteGem) {
@@ -5956,6 +6045,201 @@ const SCOPES = [
 function scopeNavn(id) {
   const s = SCOPES.find((x) => x.id === id);
   return s ? s.etiket : id;
+}
+
+/* ================================ totrinsbekræftelse (F21) ==============
+ *
+ * »doda har fået tilføjet 2FA kan du også tilføje det« (Andreas, 2026-08-22).
+ *
+ * ── Hvorfor den findes ved siden af passkeys ──────────────────────────────
+ *
+ * Passkeys er stærkere — de kan ikke phishes — men de kræver https, og Sagu
+ * nås også på `IP:port` over ren http fra panelet, hvor `navigator.credentials`
+ * slet ikke findes. Kodeordet skal derfor altid virke, og så er kodeordet
+ * *alene* det svageste led. TOTP lukker netop dét hul, dér hvor en passkey
+ * ikke kan (RUNE-ERFARINGER §9d).
+ *
+ * ── De to ting fladen skal gøre rigtigt ───────────────────────────────────
+ *
+ *  1. **Nødkoderne vises ÉN gang.** De hashes på serveren, præcis som et
+ *     kodeord, så de kan ikke hentes frem igen. Ruden bliver derfor stående,
+ *     til man selv lukker den — den må ikke forsvinde i en gentegning, sådan
+ *     som bogmærket gjorde, før `genindlaes()` blev fjernet derfra.
+ *  2. **Der står, hvad man mister.** At slå det fra kræver kodeordet, og det
+ *     står skrevet, før man trykker — ikke i en fejlbesked bagefter.
+ */
+async function tegnTotp() {
+  const host = document.getElementById('totpKort');
+  if (!host) return;
+  let st;
+  try { st = await api('GET', '/api/v1/totp'); } catch { host.innerHTML = ''; return; }
+
+  if (st.enabled) {
+    host.innerHTML = `<p class="lead" style="margin-top:0">
+        <strong>On.</strong> Signing in needs a code from your authenticator app.</p>
+      <p class="meta saetning">${st.recoveryLeft} recovery code${st.recoveryLeft === 1 ? '' : 's'} left.
+      They are the way back in if you lose the phone — there is no support desk on your own server.</p>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn" id="totpNyeKoder">New recovery codes</button>
+        <button class="btn ghost danger" id="totpFra">Turn off</button>
+      </div>`;
+    host.querySelector('#totpNyeKoder').addEventListener('click', () => spoergKodeord({
+      titel: 'New recovery codes',
+      forklaring: 'The ten you have now stop working the moment the new ones appear.',
+      knap: 'Make new codes',
+      sti: '/api/v1/totp/recovery',
+      efter: (d) => visNoedkoder(d.recovery),
+    }));
+    host.querySelector('#totpFra').addEventListener('click', () => spoergKodeord({
+      titel: 'Turn off two-step verification',
+      forklaring: 'Your password alone will be enough to sign in again. '
+        + 'The secret and every recovery code are deleted.',
+      knap: 'Turn it off',
+      sti: '/api/v1/totp/disable',
+      efter: () => { toast('Two-step verification is off.'); tegnTotp(); },
+    }));
+    return;
+  }
+
+  host.innerHTML = `<p class="meta saetning">A code from an authenticator app as the second step,
+    on top of your password. Passkeys are stronger, but they need https — this works on
+    <code>IP:port</code> over plain http too, which is exactly where the password stands alone.</p>
+    ${st.pending ? '<p class="meta saetning">A setup was started but never finished. '
+    + 'Starting again gives you a new QR code.</p>' : ''}
+    <div class="btnrow" style="margin-top:12px">
+      <button class="btn primary" id="totpStart">${st.pending ? 'Start over' : 'Set it up'}</button>
+    </div>
+    <div id="totpOpsaet"></div>`;
+  host.querySelector('#totpStart').addEventListener('click', () => startTotp());
+}
+
+async function startTotp() {
+  const ud = document.getElementById('totpOpsaet');
+  if (!ud) return;
+  ud.innerHTML = '<p class="meta saetning">Making a secret…</p>';
+  let d;
+  try { d = await api('POST', '/api/v1/totp/setup', {}); } catch (ex) { toast(ex.message); ud.innerHTML = ''; return; }
+
+  ud.innerHTML = `<div class="totp-opsaet">
+      <div class="totp-qr">${d.svg}</div>
+      <div class="totp-trin">
+        <p class="meta saetning"><strong>1.</strong> Scan this with Google Authenticator,
+        1Password, Aegis — any authenticator app.</p>
+        <p class="meta saetning"><strong>Cannot scan?</strong> Type the secret by hand:<br>
+          <code class="totp-hem">${esc(d.secret)}</code></p>
+        <label class="field" style="margin-top:12px"><span><strong>2.</strong> The code it shows</span>
+          <input class="input" id="totpKode" inputmode="numeric" autocomplete="one-time-code"
+            placeholder="123456" spellcheck="false" style="max-width:150px"></label>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn primary" id="totpBekraeft">Turn it on</button>
+        </div>
+        <p class="meta saetning" style="margin-top:10px">Nothing is switched on until that code
+        fits. A mis-scan cannot lock you out of your own server.</p>
+      </div>
+    </div>`;
+
+  const felt = ud.querySelector('#totpKode');
+  const knap = ud.querySelector('#totpBekraeft');
+  felt.focus();
+  const gaa = async () => {
+    const kode = felt.value.trim();
+    if (kode.length < 6) { toast('Six digits from the app.'); felt.focus(); return; }
+    knap.disabled = true;
+    try {
+      const r = await api('POST', '/api/v1/totp/enable', { code: kode });
+      visNoedkoder(r.recovery);
+      await tegnTotp();
+    } catch (ex) { toast(ex.message); felt.value = ''; felt.focus(); knap.disabled = false; }
+  };
+  knap.addEventListener('click', gaa);
+  felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gaa(); } });
+}
+
+/*
+ * Koderne vises ÉN gang.
+ *
+ * Serveren gemmer kun en hash af dem, præcis som et kodeord, så der er ingen
+ * vej til at få dem at se igen. Ruden lukker derfor ikke af sig selv, og
+ * teksten siger det højt — det er billigere end at forklare bagefter.
+ */
+function visNoedkoder(koder) {
+  const gammel = document.getElementById('noedPanel');
+  if (gammel) gammel.remove();
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'noedPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Your recovery codes</h2>
+        <button class="iconbtn" id="noedLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="lead">Save them now — <strong>they are never shown again.</strong>
+        Each one works once, and they are the way back in if you lose the phone.</p>
+        <div class="noedkoder">${koder.map((k) => `<code>${esc(k)}</code>`).join('')}</div>
+        <div class="btnrow" style="margin-top:14px">
+          ${navigator.clipboard ? '<button class="btn primary" id="noedKopi">Copy all</button>' : ''}
+          <button class="btn" id="noedFaerdig">I have saved them</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#noedLuk').addEventListener('click', luk);
+  host.querySelector('#noedFaerdig').addEventListener('click', luk);
+  const kopi = host.querySelector('#noedKopi');
+  if (kopi) {
+    kopi.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(koder.join('\n')); toast('Copied.'); }
+      catch { toast('Could not copy — select them by hand.'); }
+    });
+  }
+  // Ingen lukning ved klik udenfor: det er for let at ramme ved siden af og
+  // miste ti koder, man ikke kan faa igen.
+}
+
+/** Ruden, der beder om kodeordet, før noget farligt sker. */
+function spoergKodeord(o) {
+  const gammel = document.getElementById('kodeordPanel');
+  if (gammel) gammel.remove();
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'kodeordPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>${esc(o.titel)}</h2>
+        <button class="iconbtn" id="kpLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">${esc(o.forklaring)}</p>
+        <label class="field" style="margin-top:12px"><span>Your password</span>
+          <input class="input" id="kpFelt" type="password" autocomplete="current-password"></label>
+        <div class="btnrow" style="margin-top:12px">
+          <button class="btn primary" id="kpGem">${esc(o.knap)}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#kpLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+  const felt = host.querySelector('#kpFelt');
+  const knap = host.querySelector('#kpGem');
+  felt.focus();
+  const gaa = async () => {
+    knap.disabled = true;
+    try {
+      const d = await api('POST', o.sti, { password: felt.value });
+      luk();
+      o.efter(d);
+    } catch (ex) { toast(ex.message); felt.value = ''; felt.focus(); knap.disabled = false; }
+  };
+  knap.addEventListener('click', gaa);
+  felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gaa(); } });
 }
 
 /* ---- p3_passkey.js ---- */
@@ -8747,7 +9031,12 @@ function visLightbox(src, alt) {
   boks.className = 'lightbox';
   boks.id = 'lightbox';
   boks.innerHTML = `
-    <button class="lightbox-luk" aria-label="Close">${icon('luk', 20)}</button>
+    <div class="lightbox-vaerktoej">
+      <button class="lightbox-knap" id="lbKopi">${icon('copy', 16)}<span>Copy image</span></button>
+      <a class="lightbox-knap" id="lbAaben" href="${esc(src)}" target="_blank"
+         rel="noopener">${icon('out', 16)}<span>Open</span></a>
+      <button class="lightbox-luk" aria-label="Close">${icon('luk', 20)}</button>
+    </div>
     <img src="${esc(src)}" alt="${esc(alt || '')}">
     ${alt ? `<div class="lightbox-tekst meta saetning">${esc(alt)}</div>` : ''}`;
   document.body.appendChild(boks);
@@ -8760,6 +9049,10 @@ function visLightbox(src, alt) {
   document.addEventListener('keydown', paaTast);
 
   boks.querySelector('.lightbox-luk').addEventListener('click', luk);
+  const kopiKnap = boks.querySelector('#lbKopi');
+  kopiKnap.addEventListener('click', (e) => { e.stopPropagation(); kopierBillede(src, kopiKnap); });
+  // Et klik paa »Open« maa ikke ogsaa lukke ruden bagved.
+  boks.querySelector('#lbAaben').addEventListener('click', (e) => e.stopPropagation());
   // Klik paa baggrunden lukker; klik paa selve billedet goer ikke.
   boks.addEventListener('click', (e) => { if (e.target === boks) luk(); });
 
@@ -9798,6 +10091,87 @@ function visSyntaksPanel() {
   host.querySelector('#syntaksLuk').addEventListener('click', luk);
   host.addEventListener('click', (e) => { if (e.target === host) luk(); });
   host.querySelector('#syntaksLuk').focus();
+}
+
+/* ======================== kopiér et billede fra en note ==================
+ *
+ * »sagu skal have en let måde at kunne kopiere et billede fra en note som så
+ * kan bruges et andet sted på computeren eller telefonen« (Andreas,
+ * 2026-08-24).
+ *
+ * ── Billedet selv, ikke en adresse ────────────────────────────────────────
+ *
+ * Det nemme ville være at lægge `/api/v1/files/<id>` på udklipsholderen. Men
+ * en adresse kan ikke sættes ind i et dokument, en mail eller en besked — og
+ * den kræver oven i købet, at modtageren er logget ind i Sagu. Det, man vil,
+ * er at have billedet.
+ *
+ * ── PNG, uanset hvad filen er ─────────────────────────────────────────────
+ *
+ * Browserne tager kun `image/png` i udklipsholderen. En JPEG skal derfor
+ * tegnes om på et lærred først. Det er samme oprindelse (`/api/v1/files/…`),
+ * så lærredet bliver ikke plettet, og `toBlob` virker.
+ *
+ * ── Løftet skal laves FØR await ───────────────────────────────────────────
+ *
+ * Safari kræver, at `ClipboardItem` oprettes i selve klik-hændelsen. Venter
+ * man på hentningen først, er brugerhandlingen udløbet, og skrivningen
+ * afvises — uden at noget ser i stykker ud. Derfor får `ClipboardItem` et
+ * LØFTE, ikke en færdig blob.
+ *
+ * ── Og en ærlig vej ud ────────────────────────────────────────────────────
+ *
+ * `navigator.clipboard.write` findes ikke over ren http, og panelet nås på
+ * `IP:port`. Dér siger knappen det og peger på »Open«, hvor telefonens og
+ * computerens egen »kopiér billede« virker som altid.
+ */
+async function tilPngBlob(src) {
+  const svar = await fetch(src);
+  if (!svar.ok) throw new Error('Could not read the image.');
+  const blob = await svar.blob();
+  if (blob.type === 'image/png') return blob;
+
+  const bitmap = await createImageBitmap(blob);
+  const lærred = document.createElement('canvas');
+  lærred.width = bitmap.width;
+  lærred.height = bitmap.height;
+  lærred.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return new Promise((ok, nej) => {
+    lærred.toBlob((b) => (b ? ok(b) : nej(new Error('Could not convert the image.'))), 'image/png');
+  });
+}
+
+async function kopierBillede(src, knap) {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    toast('This browser cannot copy images here — use Open, then copy it from there.');
+    return;
+  }
+  const foer = knap.innerHTML;
+  knap.disabled = true;
+  try {
+    // Loeftet laves NU, inde i klikket - se forklaringen ovenfor.
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': tilPngBlob(src) })]);
+    knap.innerHTML = `${icon('tjek', 16)}<span>Copied</span>`;
+    toast('Image copied — paste it wherever you need it.');
+  } catch {
+    /*
+     * Nogle browsere afviser et loefte og vil have en faerdig blob. Proev
+     * ÉN gang mere med den hentede blob, foer vi giver op - forskellen er
+     * usynlig for den, der bare vil have sit billede.
+     */
+    try {
+      const blob = await tilPngBlob(src);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      knap.innerHTML = `${icon('tjek', 16)}<span>Copied</span>`;
+      toast('Image copied — paste it wherever you need it.');
+    } catch {
+      toast('Could not copy it here — use Open, then copy it from there.');
+      knap.innerHTML = foer;
+    }
+  }
+  knap.disabled = false;
+  setTimeout(() => { if (document.getElementById('lightbox')) knap.innerHTML = foer; }, 2500);
 }
 
 /* ---- p7_udgiv.js ---- */

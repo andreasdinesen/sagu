@@ -715,6 +715,11 @@ async function sideSettings() {
     : ''}
   </div>
 
+  <h2>Two-step verification</h2>
+  <div class="card" id="totpKort">
+    <p class="meta saetning">Loading…</p>
+  </div>
+
   <h2>Access keys</h2>
   <div class="card">
     <p class="meta saetning">For iPhone shortcuts, Siri and anything else that talks to Sagu
@@ -949,6 +954,8 @@ function bindSettings() {
     scopeValg.addEventListener('change', vis);
     vis();
   }
+
+  tegnTotp();
 
   const kvoteGem = document.getElementById('kvoteGem');
   if (kvoteGem) {
@@ -1620,4 +1627,199 @@ const SCOPES = [
 function scopeNavn(id) {
   const s = SCOPES.find((x) => x.id === id);
   return s ? s.etiket : id;
+}
+
+/* ================================ totrinsbekræftelse (F21) ==============
+ *
+ * »doda har fået tilføjet 2FA kan du også tilføje det« (Andreas, 2026-08-22).
+ *
+ * ── Hvorfor den findes ved siden af passkeys ──────────────────────────────
+ *
+ * Passkeys er stærkere — de kan ikke phishes — men de kræver https, og Sagu
+ * nås også på `IP:port` over ren http fra panelet, hvor `navigator.credentials`
+ * slet ikke findes. Kodeordet skal derfor altid virke, og så er kodeordet
+ * *alene* det svageste led. TOTP lukker netop dét hul, dér hvor en passkey
+ * ikke kan (RUNE-ERFARINGER §9d).
+ *
+ * ── De to ting fladen skal gøre rigtigt ───────────────────────────────────
+ *
+ *  1. **Nødkoderne vises ÉN gang.** De hashes på serveren, præcis som et
+ *     kodeord, så de kan ikke hentes frem igen. Ruden bliver derfor stående,
+ *     til man selv lukker den — den må ikke forsvinde i en gentegning, sådan
+ *     som bogmærket gjorde, før `genindlaes()` blev fjernet derfra.
+ *  2. **Der står, hvad man mister.** At slå det fra kræver kodeordet, og det
+ *     står skrevet, før man trykker — ikke i en fejlbesked bagefter.
+ */
+async function tegnTotp() {
+  const host = document.getElementById('totpKort');
+  if (!host) return;
+  let st;
+  try { st = await api('GET', '/api/v1/totp'); } catch { host.innerHTML = ''; return; }
+
+  if (st.enabled) {
+    host.innerHTML = `<p class="lead" style="margin-top:0">
+        <strong>On.</strong> Signing in needs a code from your authenticator app.</p>
+      <p class="meta saetning">${st.recoveryLeft} recovery code${st.recoveryLeft === 1 ? '' : 's'} left.
+      They are the way back in if you lose the phone — there is no support desk on your own server.</p>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn" id="totpNyeKoder">New recovery codes</button>
+        <button class="btn ghost danger" id="totpFra">Turn off</button>
+      </div>`;
+    host.querySelector('#totpNyeKoder').addEventListener('click', () => spoergKodeord({
+      titel: 'New recovery codes',
+      forklaring: 'The ten you have now stop working the moment the new ones appear.',
+      knap: 'Make new codes',
+      sti: '/api/v1/totp/recovery',
+      efter: (d) => visNoedkoder(d.recovery),
+    }));
+    host.querySelector('#totpFra').addEventListener('click', () => spoergKodeord({
+      titel: 'Turn off two-step verification',
+      forklaring: 'Your password alone will be enough to sign in again. '
+        + 'The secret and every recovery code are deleted.',
+      knap: 'Turn it off',
+      sti: '/api/v1/totp/disable',
+      efter: () => { toast('Two-step verification is off.'); tegnTotp(); },
+    }));
+    return;
+  }
+
+  host.innerHTML = `<p class="meta saetning">A code from an authenticator app as the second step,
+    on top of your password. Passkeys are stronger, but they need https — this works on
+    <code>IP:port</code> over plain http too, which is exactly where the password stands alone.</p>
+    ${st.pending ? '<p class="meta saetning">A setup was started but never finished. '
+    + 'Starting again gives you a new QR code.</p>' : ''}
+    <div class="btnrow" style="margin-top:12px">
+      <button class="btn primary" id="totpStart">${st.pending ? 'Start over' : 'Set it up'}</button>
+    </div>
+    <div id="totpOpsaet"></div>`;
+  host.querySelector('#totpStart').addEventListener('click', () => startTotp());
+}
+
+async function startTotp() {
+  const ud = document.getElementById('totpOpsaet');
+  if (!ud) return;
+  ud.innerHTML = '<p class="meta saetning">Making a secret…</p>';
+  let d;
+  try { d = await api('POST', '/api/v1/totp/setup', {}); } catch (ex) { toast(ex.message); ud.innerHTML = ''; return; }
+
+  ud.innerHTML = `<div class="totp-opsaet">
+      <div class="totp-qr">${d.svg}</div>
+      <div class="totp-trin">
+        <p class="meta saetning"><strong>1.</strong> Scan this with Google Authenticator,
+        1Password, Aegis — any authenticator app.</p>
+        <p class="meta saetning"><strong>Cannot scan?</strong> Type the secret by hand:<br>
+          <code class="totp-hem">${esc(d.secret)}</code></p>
+        <label class="field" style="margin-top:12px"><span><strong>2.</strong> The code it shows</span>
+          <input class="input" id="totpKode" inputmode="numeric" autocomplete="one-time-code"
+            placeholder="123456" spellcheck="false" style="max-width:150px"></label>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn primary" id="totpBekraeft">Turn it on</button>
+        </div>
+        <p class="meta saetning" style="margin-top:10px">Nothing is switched on until that code
+        fits. A mis-scan cannot lock you out of your own server.</p>
+      </div>
+    </div>`;
+
+  const felt = ud.querySelector('#totpKode');
+  const knap = ud.querySelector('#totpBekraeft');
+  felt.focus();
+  const gaa = async () => {
+    const kode = felt.value.trim();
+    if (kode.length < 6) { toast('Six digits from the app.'); felt.focus(); return; }
+    knap.disabled = true;
+    try {
+      const r = await api('POST', '/api/v1/totp/enable', { code: kode });
+      visNoedkoder(r.recovery);
+      await tegnTotp();
+    } catch (ex) { toast(ex.message); felt.value = ''; felt.focus(); knap.disabled = false; }
+  };
+  knap.addEventListener('click', gaa);
+  felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gaa(); } });
+}
+
+/*
+ * Koderne vises ÉN gang.
+ *
+ * Serveren gemmer kun en hash af dem, præcis som et kodeord, så der er ingen
+ * vej til at få dem at se igen. Ruden lukker derfor ikke af sig selv, og
+ * teksten siger det højt — det er billigere end at forklare bagefter.
+ */
+function visNoedkoder(koder) {
+  const gammel = document.getElementById('noedPanel');
+  if (gammel) gammel.remove();
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'noedPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Your recovery codes</h2>
+        <button class="iconbtn" id="noedLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="lead">Save them now — <strong>they are never shown again.</strong>
+        Each one works once, and they are the way back in if you lose the phone.</p>
+        <div class="noedkoder">${koder.map((k) => `<code>${esc(k)}</code>`).join('')}</div>
+        <div class="btnrow" style="margin-top:14px">
+          ${navigator.clipboard ? '<button class="btn primary" id="noedKopi">Copy all</button>' : ''}
+          <button class="btn" id="noedFaerdig">I have saved them</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#noedLuk').addEventListener('click', luk);
+  host.querySelector('#noedFaerdig').addEventListener('click', luk);
+  const kopi = host.querySelector('#noedKopi');
+  if (kopi) {
+    kopi.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(koder.join('\n')); toast('Copied.'); }
+      catch { toast('Could not copy — select them by hand.'); }
+    });
+  }
+  // Ingen lukning ved klik udenfor: det er for let at ramme ved siden af og
+  // miste ti koder, man ikke kan faa igen.
+}
+
+/** Ruden, der beder om kodeordet, før noget farligt sker. */
+function spoergKodeord(o) {
+  const gammel = document.getElementById('kodeordPanel');
+  if (gammel) gammel.remove();
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'kodeordPanel';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>${esc(o.titel)}</h2>
+        <button class="iconbtn" id="kpLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">${esc(o.forklaring)}</p>
+        <label class="field" style="margin-top:12px"><span>Your password</span>
+          <input class="input" id="kpFelt" type="password" autocomplete="current-password"></label>
+        <div class="btnrow" style="margin-top:12px">
+          <button class="btn primary" id="kpGem">${esc(o.knap)}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#kpLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+  const felt = host.querySelector('#kpFelt');
+  const knap = host.querySelector('#kpGem');
+  felt.focus();
+  const gaa = async () => {
+    knap.disabled = true;
+    try {
+      const d = await api('POST', o.sti, { password: felt.value });
+      luk();
+      o.efter(d);
+    } catch (ex) { toast(ex.message); felt.value = ''; felt.focus(); knap.disabled = false; }
+  };
+  knap.addEventListener('click', gaa);
+  felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gaa(); } });
 }
