@@ -793,7 +793,37 @@
     return linjer.join('\n');
   }
 
+  /**
+   * De billeder, noten faktisk viser.
+   *
+   * Bruges naar en note skal kopieres UD af Sagu: hver `sagu:`-adresse skal
+   * skiftes ud med billedet selv, for udenfor Sagu betyder adressen intet.
+   *
+   * Kodeblokke springes over. Skriver man et eksempel paa billedsyntaksen i
+   * en \`\`\`-blok, er det tekst, ikke et billede - byttede vi det ud, ville
+   * eksemplet blive oedelagt af en flere megabyte lang data:-adresse.
+   * Bagslag: billedsyntaks i kort kode midt i en linje slipper igennem. Det
+   * kraever hele inline-tolkningen at fange, og en fuld 32-tegns adresse
+   * skrevet som eksempel midt i en saetning findes ikke i praksis.
+   */
+  function billederIMarkdown(md) {
+    const tekst = String(md == null ? '' : md);
+    const kode = new Set();
+    for (const b of blokke(tekst)) {
+      if (b.slags !== 'kode') continue;
+      for (let i = b.fra; i <= b.til; i += 1) kode.add(i);
+    }
+    const fundne = [];
+    tekst.split('\n').forEach((linje, nr) => {
+      if (kode.has(nr)) return;
+      for (const m of linje.matchAll(/!\[([^\]\n]*)\]\((sagu:[a-f0-9]{32})\)/g)) {
+        fundne.push({ helt: m[0], alt: m[1], sagu: m[2] });
+      }
+    });
+    return fundne;
+  }
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
     slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, blokSomLinje,
-    pentNavn, pentBrugernavn, SYNTAKS };
+    billederIMarkdown, pentNavn, pentBrugernavn, SYNTAKS };
 }));

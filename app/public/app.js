@@ -1050,9 +1050,39 @@
     return linjer.join('\n');
   }
 
+  /**
+   * De billeder, noten faktisk viser.
+   *
+   * Bruges naar en note skal kopieres UD af Sagu: hver `sagu:`-adresse skal
+   * skiftes ud med billedet selv, for udenfor Sagu betyder adressen intet.
+   *
+   * Kodeblokke springes over. Skriver man et eksempel paa billedsyntaksen i
+   * en \`\`\`-blok, er det tekst, ikke et billede - byttede vi det ud, ville
+   * eksemplet blive oedelagt af en flere megabyte lang data:-adresse.
+   * Bagslag: billedsyntaks i kort kode midt i en linje slipper igennem. Det
+   * kraever hele inline-tolkningen at fange, og en fuld 32-tegns adresse
+   * skrevet som eksempel midt i en saetning findes ikke i praksis.
+   */
+  function billederIMarkdown(md) {
+    const tekst = String(md == null ? '' : md);
+    const kode = new Set();
+    for (const b of blokke(tekst)) {
+      if (b.slags !== 'kode') continue;
+      for (let i = b.fra; i <= b.til; i += 1) kode.add(i);
+    }
+    const fundne = [];
+    tekst.split('\n').forEach((linje, nr) => {
+      if (kode.has(nr)) return;
+      for (const m of linje.matchAll(/!\[([^\]\n]*)\]\((sagu:[a-f0-9]{32})\)/g)) {
+        fundne.push({ helt: m[0], alt: m[1], sagu: m[2] });
+      }
+    });
+    return fundne;
+  }
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
     slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, blokSomLinje,
-    pentNavn, pentBrugernavn, SYNTAKS };
+    billederIMarkdown, pentNavn, pentBrugernavn, SYNTAKS };
 }));
 
 /* ---- shared/notion.js ---- */
@@ -3277,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -9956,6 +9986,8 @@ function visMarkdownPanel() {
         <span class="meta saetning" id="mdSvar">${md.length.toLocaleString('en-GB')} characters</span>
         <span style="flex:1"></span>
         <button class="btn" id="mdMarker">Select all</button>
+        ${saguMarkdown.billederIMarkdown(md).length
+    ? `<button class="btn" id="mdKopiBilleder">Copy with images</button>` : ''}
         <button class="btn primary" id="mdKopi">Copy</button>
       </div>
     </div>`;
@@ -9977,6 +10009,39 @@ function visMarkdownPanel() {
     // Ingen blindgyde: markér, saa brugeren selv kan trykke ⌘C.
     svar.textContent = markerTekst(kilde) ? 'Selected — press ⌘C' : 'Could not copy.';
   });
+
+  const medBilleder = host.querySelector('#mdKopiBilleder');
+  if (medBilleder) {
+    medBilleder.addEventListener('click', async () => {
+      if (!navigator.clipboard || !window.ClipboardItem) {
+        svar.textContent = 'This browser cannot carry images on the clipboard.';
+        return;
+      }
+      medBilleder.disabled = true;
+      svar.textContent = 'Fetching the images…';
+      try {
+        const r = await medIndlejredeBilleder(md);
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/plain': new Blob([r.markdown], { type: 'text/plain' }),
+          'text/html': new Blob([r.html], { type: 'text/html' }),
+        })]);
+        /*
+         * Beskeden siger hvad man FIK, ikke bare at det lykkedes.
+         *
+         * Blev et billede sprunget over for loftets skyld, skal man vide det
+         * nu - ikke opdage det i det dokument, man har indsat i.
+         */
+        const med = r.ialt - r.sprunget;
+        svar.textContent = r.sprunget
+          ? `Copied with ${med} of ${r.ialt} images — the rest were too large to carry. `
+            + 'Open a large one in the note and use Copy image to move it on its own.'
+          : `Copied with ${med} image${med === 1 ? '' : 's'}.`;
+      } catch (ex) {
+        svar.textContent = udklipsFejl(ex);
+      }
+      medBilleder.disabled = false;
+    });
+  }
 }
 
 /* ==================================================== vedhaeftninger (F4) == */
@@ -10637,6 +10702,114 @@ async function kopierBillede(src, knap) {
   }
   knap.disabled = false;
   setTimeout(() => { if (document.getElementById('lightbox')) knap.innerHTML = foer; }, 2500);
+}
+
+/* ================= kopier en note MED billederne (F24) ==================
+ *
+ * »Er der nogen måde hvor på jeg kan få billeder med hvis jeg fx laver en
+ * kopi af en note i markdown for at paste den over i noget andet?«
+ * (Andreas, 2026-08-25).
+ *
+ * ── Hvorfor `sagu:<id>` ikke duer udenfor ─────────────────────────────────
+ *
+ * Et billede står i noten som `![navn](sagu:<id>)`. Den form er med vilje:
+ * en note skal kunne flyttes til wikien eller en eksport uden at billederne
+ * dør, så værten oversætter. Men uden for Sagu betyder `sagu:` ingenting, og
+ * en absolut adresse ville kræve, at modtageren er logget ind i Sagu.
+ *
+ * ── Derfor bæres billedet MED ─────────────────────────────────────────────
+ *
+ * Filerne hentes og lægges i selve teksten som `data:`-adresser. Så er det,
+ * man indsætter, selvbærende: det virker i en mail, et dokument eller en
+ * anden app, også for en, der aldrig har hørt om Sagu.
+ *
+ * ── To formater på udklipsholderen, ikke ét ───────────────────────────────
+ *
+ * `text/html` med rigtige `<img>` for de steder, der tager imod formatering
+ * (Word, Mail, Notion), og `text/plain` med markdown for de steder, der ikke
+ * gør. Modtageren vælger selv; vi gætter ikke.
+ *
+ * ── Og et loft ────────────────────────────────────────────────────────────
+ *
+ * `data:` er base64, og det er en tredjedel større end filen. En note med
+ * feriebilleder bliver til mange megabyte, og en udklipsholder, der bliver
+ * bedt om det, kan gå i stå uden at sige noget. Derfor et loft — og en
+ * besked, der siger HVAD man så kan gøre, ikke bare at det ikke gik.
+ */
+const BILLED_LOFT = 8 * 1024 * 1024;
+
+/**
+ * Browserens egen fejl oversat til noget, man kan handle paa.
+ *
+ * »Failed to execute 'write' on 'Clipboard': Document is not focused« er
+ * sandt og ubrugeligt. Den, der laeser det, ved ikke, at kuren er at klikke i
+ * vinduet foerst. Oversaettelsen hoerer ÉT sted (RUNE-ERFARINGER, doda v11 -
+ * samme regel som doda-broens netvaerksbeskeder).
+ */
+function udklipsFejl(ex) {
+  const m = String((ex && ex.message) || '');
+  if (/not focused/i.test(m)) {
+    return 'The browser would not hand over the clipboard — click inside the window, then try again.';
+  }
+  if (/NotAllowedError|denied|permission/i.test(m)) {
+    return 'The browser refused access to the clipboard. Allow it for this site, or use Select all.';
+  }
+  return 'Could not copy. Use Select all and press ⌘C — the images will not come along that way.';
+}
+
+/** `![alt](sagu:<id>)` i teksten. Ét sted, så de to formater ser det samme. */
+/**
+ * Henter notens billeder og giver teksten tilbage med dem indlejret.
+ *
+ * @returns {{markdown: string, html: string, bytes: number, sprunget: number}}
+ */
+async function medIndlejredeBilleder(md) {
+  const fundne = saguMarkdown.billederIMarkdown(md);
+  const kort = new Map();
+  let bytes = 0;
+  let sprunget = 0;
+
+  for (const b of fundne) {
+    if (kort.has(b.sagu)) continue;
+    const url = saguUrl(b.sagu);
+    if (!url) { sprunget += 1; continue; }
+    try {
+      const svar = await fetch(url);
+      if (!svar.ok) { sprunget += 1; continue; }
+      const blob = await svar.blob();
+      // Loftet maales paa det, der ER hentet - ikke paa et gaet. Springes et
+      // billede over, bliver dets `sagu:`-adresse staaende, saa noten stadig
+      // giver mening for den, der har Sagu.
+      if (bytes + blob.size * 1.37 > BILLED_LOFT) { sprunget += 1; continue; }
+      const data = await new Promise((ok, nej) => {
+        const l = new FileReader();
+        l.onload = () => ok(l.result);
+        l.onerror = () => nej(new Error('kunne ikke laese'));
+        l.readAsDataURL(blob);
+      });
+      bytes += String(data).length;
+      kort.set(b.sagu, data);
+    } catch { sprunget += 1; }
+  }
+
+  let markdown = md;
+  for (const [sagu, data] of kort) {
+    // `split`/`join` og ikke `replace` med et moenster: en `data:`-adresse
+    // indeholder `$`-tegn, og de ville blive tolket som erstatningsgrupper.
+    markdown = markdown.split(sagu).join(data);
+  }
+
+  // HTML'en laves af DEN SAMME tekst gennem husets egen renderer, saa de to
+  // formater aldrig kan vise noget forskelligt.
+  let html = '';
+  try {
+    html = saguMarkdown.render(markdown, {
+      billedUrl: (u) => (String(u).startsWith('data:') ? u : saguUrl(u)),
+      linkUrl: (u) => saguUrl(u) || noteUrl(u),
+    }).html;
+  } catch { html = ''; }
+
+  return { markdown, html, bytes, sprunget, ialt: kort.size + sprunget };
 }
 
 /* ---- p7_udgiv.js ---- */
