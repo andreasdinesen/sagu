@@ -23,6 +23,17 @@
   --pill: 999px;
 
   --sidebar-w: 264px;
+  /*
+   * Menuknappens plads i topbjaelken, MAALT: 8 px skyggemargen + 36 px knap
+   * + 10 px mellemrum = 54. Tallet indeholder altsaa allerede `--spalte-luft`
+   * - laegger man den til igen, ryger indholdet otte pixel for langt ind, og
+   * det kan ses.
+   */
+  --navtoggle-plads: 54px;
+  /* Topbjaelken har en indvendig margen, saa soegekortets skygge ikke bliver
+     klippet. Indholdet skal have DEN SAMME - ellers starter de to spalter
+     otte pixel fra hinanden, og det kan ses. */
+  --spalte-luft: 8px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -230,7 +241,55 @@ code { font-size: .92em; background: var(--accent-soft); padding: 1px 5px; borde
  *
  * Arver du en skal, saa test den ogsaa med tomt indhold.
  */
-#pageHost, .topbar { width: 100%; max-width: 820px; }
+/*
+ * ── ÉN spaltebredde til hele appen ────────────────────────────────────────
+ *
+ * Den var 820 px for alt - indtil v22 gav listesiderne 1240, saa tabellerne
+ * ikke blev klippet med sidemenuen foldet vaek. Men soegefeltet blev staaende
+ * paa 820, og saa skiftede indholdet bredde, hver gang man gik fra en liste
+ * til en anden skaerm: »indhold felterne skifter i bredde ... de skal følge
+ * søgefeltet i bredde« (Andreas, 2026-08-25).
+ *
+ * Nu er det ÉT tal, og bjaelken faar det ogsaa. Saa staar soegefeltet og
+ * indholdet altid praecis lige bredt, og intet hopper, naar man gaar gennem
+ * menupunkterne.
+ *
+ * `min()` og ikke et fast tal: paa en smal skaerm er 1240 px et loefte om
+ * plads, der ikke findes.
+ */
+#pageHost, .topbar { width: 100%; max-width: min(1240px, 100%); }
+
+/*
+ * Prosa faar sin egen graense INDE i spalten - og VENSTRESTILLES.
+ *
+ * Lange linjer er svaere at laese, og det er hele grunden til, at en note er
+ * smal. Men centrerede man den smalle tekst i den brede spalte, flugtede
+ * ingenting: soegefeltet spaendte fuldt ud, mens notens venstrekant laa
+ * rykket ind - og det er praecis den slags spring, der var klagen.
+ *
+ * Venstrestillet er der ÉN lodret linje ned gennem hele appen: soegefeltets
+ * kant, sidernes kant og notens kant er den samme. Det er kun HOEJRE side,
+ * der stopper tidligere paa en note, og det laeses som »teksten holder op« -
+ * ikke som at noget har flyttet sig.
+ */
+#pageHost.note > * { max-width: 820px; margin-left: 0; margin-right: auto; }
+
+/*
+ * Menuknappen skubber soegefeltet ind - saa skubbes indholdet med.
+ *
+ * Er sidemenuen foldet vaek, staar hamburgeren i topbjaelkens raekke og tager
+ * 54 px foran feltet. Uden den her regel laa feltets venstrekant 54 px inde,
+ * mens sidens indhold laa ude ved spaltens kant - og saa var der to lodrette
+ * linjer i stedet for én.
+ *
+ * Tallet staar ÉT sted (`--navtoggle-plads`), saa knappens bredde og
+ * indrykningen ikke kan komme i utakt.
+ */
+#pageHost { padding-left: var(--spalte-luft); padding-right: var(--spalte-luft); }
+body.navskjult #pageHost { padding-left: var(--navtoggle-plads); }
+@media (max-width: 900px) {
+  #pageHost { padding-left: var(--navtoggle-plads); }
+}
 #pageHost h2 { scroll-margin-top: 24px; }
 
 .topbar { margin-bottom: 24px; }
@@ -508,7 +567,7 @@ table.data td.center, table.data th.center { text-align: center; }
 
 /* Knappen og søgefeltet side om side. Feltet tager resten. */
 .topraekke { display: flex; align-items: flex-start; gap: 10px; }
-.topraekke > .omni-card { flex: 1; min-width: 0; }
+.topraekke-felt { flex: 1; min-width: 0; }
 .backdrop { display: none; }
 
 /*
@@ -2582,7 +2641,7 @@ html, body { overscroll-behavior-y: contain; }
  * `min()` og ikke et fast tal: på en smal skærm er 1240 px et løfte om plads,
  * der ikke findes, og så var vi tilbage ved den vandrette rulning.
  */
-#pageHost.bred { max-width: min(1240px, 100%); }
+/* `#pageHost.bred` er vaek: den bredde er nu standarden for alt. */
 
 /* Titlen må gerne tage pladsen; datoen og knappen skal ikke ombrydes. */
 .notetabel td:first-child { width: 55%; }

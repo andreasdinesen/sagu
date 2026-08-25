@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -501,6 +501,14 @@ function navHtml() {
  *
  * Derfor kan `body.navskjult .main { padding-left: 64px }` ogsaa forsvinde -
  * den fandtes kun for at holde plads fri til en knap, der svaevede.
+ *
+ * ── Og hvorfor feltet har sin egen indpakning ─────────────────────────────
+ *
+ * `omniHtml()` giver BAADE soegekortet og maerke-chipsene, og chipsene hoerer
+ * UNDER kortet - ikke ved siden af det. Uden `.topraekke-felt` blev de et
+ * flex-element nummer to i raekken, raekkens `gap` slog til, og soegefeltet
+ * blev ti pixel smallere end indholdet nedenunder. Maalt, da Andreas spurgte
+ * hvorfor bredderne ikke passede (2026-08-25).
  */
 function shellHtml() {
   return `
@@ -540,7 +548,7 @@ function shellHtml() {
         </div>
         <div class="topraekke">
           <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
-          ${omniHtml()}
+          <div class="topraekke-felt">${omniHtml()}</div>
         </div>
       </div>
       <div id="pageHost"></div>

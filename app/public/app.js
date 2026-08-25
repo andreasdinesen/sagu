@@ -3277,7 +3277,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3773,6 +3773,14 @@ function navHtml() {
  *
  * Derfor kan `body.navskjult .main { padding-left: 64px }` ogsaa forsvinde -
  * den fandtes kun for at holde plads fri til en knap, der svaevede.
+ *
+ * ── Og hvorfor feltet har sin egen indpakning ─────────────────────────────
+ *
+ * `omniHtml()` giver BAADE soegekortet og maerke-chipsene, og chipsene hoerer
+ * UNDER kortet - ikke ved siden af det. Uden `.topraekke-felt` blev de et
+ * flex-element nummer to i raekken, raekkens `gap` slog til, og soegefeltet
+ * blev ti pixel smallere end indholdet nedenunder. Maalt, da Andreas spurgte
+ * hvorfor bredderne ikke passede (2026-08-25).
  */
 function shellHtml() {
   return `
@@ -3812,7 +3820,7 @@ function shellHtml() {
         </div>
         <div class="topraekke">
           <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
-          ${omniHtml()}
+          <div class="topraekke-felt">${omniHtml()}</div>
         </div>
       </div>
       <div id="pageHost"></div>
@@ -4514,20 +4522,19 @@ async function tegnSide() {
 }
 
 /*
- * De skaerme, der er en TABEL og ikke prosa.
+ * Spaltens bredde er den SAMME overalt (se style.css).
  *
- * Laesebredden paa 820 px er rigtig for en note: lange linjer er svaere at
- * laese, og det er hele grunden til, at spalten er smal. En tabel med titel,
- * maerker, dato og en knap er ikke prosa - dér betyder de samme 820 px, at
- * spalterne bliver klippet og skal rulles vandret, ogsaa naar der er masser
- * af plads ved siden af (Andreas, 2026-08-22, med sidemenuen foldet vaek).
+ * Her stod `BREDE_SIDER` - en liste over de skaerme, der maatte vaere brede.
+ * Den er vaek, fordi den var selve problemet: indholdet skiftede bredde fra
+ * skaerm til skaerm, mens soegefeltet stod stille.
+ *
+ * Tilbage staar ét flag: en NOTE er prosa, og dens tekst holder sig i
+ * laesebredden inde i den faelles spalte.
  */
-const BREDE_SIDER = new Set(['notes', 'trash', 'shared', 'comments', 'tags']);
-
 async function tegnSideIndhold() {
   const host = document.getElementById('pageHost');
   if (!host) return;
-  host.classList.toggle('bred', BREDE_SIDER.has(state.view));
+  host.classList.toggle('note', state.view === 'note');
   const v = viewById(state.view);
   /*
    * »All Notes« skriver sin egen undertekst.
