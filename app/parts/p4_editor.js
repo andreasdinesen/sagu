@@ -1903,6 +1903,9 @@ function visNoteMenu() {
   host.innerHTML = `
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
+    <button class="usermenu-item" data-do="kopi">${icon('copy', 16)}<span>${
+  saguMarkdown.billederIMarkdown(noteSomMarkdown(n)).length
+    ? 'Copy the note with images' : 'Copy the note'}</span></button>
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
@@ -1925,6 +1928,12 @@ function visNoteMenu() {
       host.remove();
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
+        /*
+         * Ingen `await` foran den her. `kopierNoten()` opretter sit
+         * `ClipboardItem` synkront, fordi Safari kraever det inde i klikket -
+         * ventede vi paa noget foerst, var tilladelsen brugt op.
+         */
+        if (hvad === 'kopi') { kopierNoten(n); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         /*
          * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).

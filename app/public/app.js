@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -8410,6 +8410,9 @@ function visNoteMenu() {
   host.innerHTML = `
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
+    <button class="usermenu-item" data-do="kopi">${icon('copy', 16)}<span>${
+  saguMarkdown.billederIMarkdown(noteSomMarkdown(n)).length
+    ? 'Copy the note with images' : 'Copy the note'}</span></button>
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
@@ -8432,6 +8435,12 @@ function visNoteMenu() {
       host.remove();
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
+        /*
+         * Ingen `await` foran den her. `kopierNoten()` opretter sit
+         * `ClipboardItem` synkront, fordi Safari kraever det inde i klikket -
+         * ventede vi paa noget foerst, var tilladelsen brugt op.
+         */
+        if (hvad === 'kopi') { kopierNoten(n); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         /*
          * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).
@@ -10704,6 +10713,80 @@ async function kopierBillede(src, knap) {
   setTimeout(() => { if (document.getElementById('lightbox')) knap.innerHTML = foer; }, 2500);
 }
 
+/**
+ * Hele noten paa udklipsholderen, klar til at saette ind et andet sted.
+ *
+ * »Kan du lave en knap under ...-menuen hvor man kan lave en kopi af hele
+ * noten med billeder saa det fx kan pastes ind i apple notes« (Andreas,
+ * 2026-08-25). F24 kunne det allerede, men kun efter at man foerst havde
+ * aabnet markdown-ruden. Det her er ét klik.
+ *
+ * ── De to flavours er IKKE det samme ──────────────────────────────────────
+ *
+ * `text/html` baerer billederne som `data:`-adresser. Det er den, Apple
+ * Notes, Mail, Word og Pages tager, og det er hele pointen med knappen.
+ *
+ * `text/plain` er den RENE markdown med `sagu:`-adresserne i behold - ikke
+ * den med billeddata i. Saetter man ind i et tekstfelt, vil man have noget,
+ * man kan laese; en halv megabyte base64 er ikke en tekst, det er en mur.
+ * (Ruden »Show as markdown« goer det modsat med vilje: dér ser man PAA
+ * markdown'en og kan have brug for den selvbaerende udgave.)
+ *
+ * ── Hvorfor loeftet laves foer der ventes ─────────────────────────────────
+ *
+ * Safari kraever, at `ClipboardItem` oprettes i selve klik-haendelsen. Ventede
+ * vi paa billederne foerst, ville tilladelsen vaere brugt op, naar vi endelig
+ * skrev - samme regel som `kopierBillede()`.
+ */
+function kopierNoten(n) {
+  const md = noteSomMarkdown(n);
+  const antal = saguMarkdown.billederIMarkdown(md).length;
+
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    // Ingen blindgyde: ruden kan altid markeres og kopieres i haanden.
+    visMarkdownPanel();
+    toast('This browser cannot carry images on the clipboard — use Select all.');
+    return;
+  }
+
+  const klar = medIndlejredeBilleder(md);
+  if (antal) toast(`Fetching ${antal} image${antal === 1 ? '' : 's'}…`);
+
+  const sig = (r) => {
+    if (!r.sprunget) {
+      toast(antal
+        ? `Note copied with ${antal - r.sprunget} image${antal - r.sprunget === 1 ? '' : 's'}.`
+        : 'Note copied.');
+      return;
+    }
+    toast(`Note copied with ${r.ialt - r.sprunget} of ${r.ialt} images — `
+      + 'the rest were too large to carry.');
+  };
+
+  const html = klar.then((r) => new Blob([r.html || ''], { type: 'text/html' }));
+  const ren = new Blob([md], { type: 'text/plain' });
+
+  navigator.clipboard.write([new ClipboardItem({ 'text/plain': ren, 'text/html': html })])
+    .then(() => klar.then(sig))
+    .catch(async () => {
+      /*
+       * Nogle browsere afviser et loefte og vil have en faerdig blob - samme
+       * bagslag som ved billedkopieringen. Proev ÉN gang mere med det, der nu
+       * er hentet, foer vi giver op.
+       */
+      try {
+        const r = await klar;
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/plain': ren,
+          'text/html': new Blob([r.html || ''], { type: 'text/html' }),
+        })]);
+        sig(r);
+      } catch (ex) {
+        toast(udklipsFejl(ex));
+      }
+    });
+}
+
 /* ================= kopier en note MED billederne (F24) ==================
  *
  * »Er der nogen måde hvor på jeg kan få billeder med hvis jeg fx laver en
@@ -10763,6 +10846,36 @@ function udklipsFejl(ex) {
  *
  * @returns {{markdown: string, html: string, bytes: number, sprunget: number}}
  */
+/**
+ * Appens HTML gjort STATISK, saa den kan leve et andet sted.
+ *
+ * Rendereren skriver til Sagu: et flueben er en `<button role="checkbox">`,
+ * fordi man skal kunne trykke paa det. Uden for Sagu er der ingen, der
+ * lytter - og maalt paa den rigtige markup var tabet ikke bare en knap, det
+ * var ASYMMETRISK:
+ *
+ *     - [x] afsluttet   ->  »✓ afsluttet«      (tegnet staar i knappen)
+ *     - [ ] uafsluttet  ->  »uafsluttet«       (knappen er TOM)
+ *
+ * Sat ind i Apple Notes ville en tjekliste altsaa tabe præcis de punkter, man
+ * ikke er faerdig med - de ville se ud som almindelig tekst. Begge dele
+ * skrives derfor om til et tegn, der overlever enhver app.
+ *
+ * DOM og ikke regexp: markup'en er husets egen, og at laese den med den
+ * parser, browseren allerede har, kan ikke komme til at ramme ved siden af et
+ * attributnavn eller et linjeskift inde i et tag.
+ */
+function tilFremmedHtml(html) {
+  if (!html) return '';
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  d.querySelectorAll('.tjek-boks').forEach((b) => {
+    const tegn = b.getAttribute('aria-checked') === 'true' ? '\u2611 ' : '\u2610 ';
+    b.replaceWith(document.createTextNode(tegn));
+  });
+  return d.innerHTML;
+}
+
 async function medIndlejredeBilleder(md) {
   const fundne = saguMarkdown.billederIMarkdown(md);
   const kort = new Map();
@@ -10804,12 +10917,23 @@ async function medIndlejredeBilleder(md) {
   let html = '';
   try {
     html = saguMarkdown.render(markdown, {
-      billedUrl: (u) => (String(u).startsWith('data:') ? u : saguUrl(u)),
+      /*
+       * Et billede, loftet sprang over, beholder sin adresse - men den skal
+       * vaere ABSOLUT. `saguUrl()` giver `/api/v1/files/<id>`, og en relativ
+       * sti betyder ingenting i Apple Notes eller en mail; den kan ikke
+       * engang slaas op. Absolut kan den i det mindste naas af en, der er
+       * logget ind i Sagu.
+       */
+      billedUrl: (u) => {
+        if (String(u).startsWith('data:')) return u;
+        const sti = saguUrl(u);
+        return sti ? offentligBase() + sti : null;
+      },
       linkUrl: (u) => saguUrl(u) || noteUrl(u),
     }).html;
   } catch { html = ''; }
 
-  return { markdown, html, bytes, sprunget, ialt: kort.size + sprunget };
+  return { markdown, html: tilFremmedHtml(html), bytes, sprunget, ialt: kort.size + sprunget };
 }
 
 /* ---- p7_udgiv.js ---- */
