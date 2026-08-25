@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -7566,7 +7566,7 @@ function sideNote() {
       <div class="note-tools">
         <span id="gemMaerke">${gemMaerke()}</span>
         <button class="iconbtn" id="kopiNote"
-          title="Copy the whole note as markdown">${icon('copy', 15)}</button>
+          title="Copy the whole note — with the images">${icon('copy', 15)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
         ${favoritKnapHtml(n)}
         ${delKnapHtml(n)}
@@ -8257,32 +8257,29 @@ function bindNoteSide() {
   if (favKnap) favKnap.addEventListener('click', () => skiftFavorit());
 
   /*
-   * Hele noten som markdown i udklipsholderen.
+   * Hele noten i udklipsholderen - MED billederne.
    *
-   * Markdown ER det, der ligger i databasen (DESIGN.md §2), saa der er intet
-   * at konvertere - og derfor heller intet, der kan tabes undervejs. Titlen
-   * kommer med som en overskrift, hvis teksten ikke selv har en: en note
-   * indsat i en mail uden sit navn er svaer at forstaa.
+   * Knappen kopierede foer ren markdown. »Kan du lave saa den ny copy
+   * funktion bliver lagt ved siden af saved i stedet for den nuvaerende...
+   * Copy i markdown findes alligevel under show as markdown« (Andreas,
+   * 2026-08-25). Den, man som regel vil have, staar nu forrest, og den anden
+   * er ikke vaek - den ligger, hvor man ser PAA markdown'en.
    *
-   * `navigator.clipboard` kraever et secure context, og Sagu kan naas over
-   * ren http paa LAN-adressen. Knappen falder derfor tilbage til at MARKERE
-   * teksten i en rude, man selv kan kopiere fra - frem for at fejle, naar man
-   * trykker (RUNE-ERFARINGER, tools v1).
+   * Menupunktet bag »...« er fjernet i samme omgang. Det stod to centimeter
+   * fra ikonet og gjorde det samme.
+   *
+   * Titlen kommer med som en overskrift, hvis teksten ikke selv har en: en
+   * note indsat i en mail uden sit navn er svaer at forstaa. Det goer
+   * `noteSomMarkdown()`, som begge veje deler.
    */
   const kopiKnap = document.getElementById('kopiNote');
   if (kopiKnap) {
-    kopiKnap.addEventListener('click', async () => {
-      const note = editor.note;
-      if (!note) return;
-      const md = noteSomMarkdown(note);
-      try {
-        if (!navigator.clipboard) throw new Error('ingen udklipsholder');
-        await navigator.clipboard.writeText(md);
-        toast('The note is on your clipboard as markdown.');
-      } catch {
-        visMarkdownPanel();
-        toast('The browser would not let me copy — here it is to take by hand.');
-      }
+    /*
+     * Ingen `await` foran `kopierNoten()`. Den opretter sit `ClipboardItem`
+     * synkront, fordi Safari kraever det inde i klikket.
+     */
+    kopiKnap.addEventListener('click', () => {
+      if (editor.note) kopierNoten(editor.note);
     });
   }
 
@@ -8410,9 +8407,6 @@ function visNoteMenu() {
   host.innerHTML = `
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
-    <button class="usermenu-item" data-do="kopi">${icon('copy', 16)}<span>${
-  saguMarkdown.billederIMarkdown(noteSomMarkdown(n)).length
-    ? 'Copy the note with images' : 'Copy the note'}</span></button>
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
@@ -8435,12 +8429,6 @@ function visNoteMenu() {
       host.remove();
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
-        /*
-         * Ingen `await` foran den her. `kopierNoten()` opretter sit
-         * `ClipboardItem` synkront, fordi Safari kraever det inde i klikket -
-         * ventede vi paa noget foerst, var tilladelsen brugt op.
-         */
-        if (hvad === 'kopi') { kopierNoten(n); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         /*
          * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).
@@ -10717,6 +10705,36 @@ async function kopierBillede(src, knap) {
 
 /**
  * Skriv BEGGE flavours til udklipsholderen. Sandt, hvis det lykkedes.
+ *
+ * ── Graensen: Apple Notes tager ikke `data:`-billeder ─────────────────────
+ *
+ * Maalt (Andreas, 2026-08-25, med skaermbilleder fra begge apps): den samme
+ * kopi giver billederne i OneNote paa web - og i Apple Notes et blaat »?«,
+ * macOS' ikon for »et billede jeg ikke kan hente«. HTML'en og `<img>`-taggene
+ * naar altsaa frem begge steder; Apple Notes naegter bare kilden.
+ *
+ * Den rigtige vej ville vaere RTF med billedet som `\pngblip` - macOS' eget
+ * rige tekstformat, og det Apple Notes helst tager. Det kan vi ikke:
+ *
+ *   - `e.clipboardData.setData('text/rtf', …)` bliver TAVST kasseret.
+ *     Proevet med en gyldig RTF paa 22 KB: bagefter laa der kun
+ *     `«class utf8», 10` paa udklipsholderen - den rene tekst og intet andet.
+ *   - macOS konverterer ikke selv HTML til RTF undervejs. Der var slet ingen
+ *     RTF-flavor at hente (`osascript -e 'the clipboard as «class RTF »'`).
+ *   - `ClipboardItem` tager kun de rensede typer; et egetdefineret format
+ *     faar praefikset `web ` og kan kun laeses af andre websider.
+ *
+ * Saa langt raekker en browser. Det, der virker i dag:
+ *
+ *     OneNote, Word, Mail, Pages   billederne kommer med
+ *     Apple Notes                  tekst og formatering kommer med;
+ *                                  billederne tages ét ad gangen med
+ *                                  »Copy image« i lightboxen
+ *
+ * Vil man laengere, skal man uden om udklipsholderen: en .html-fil man
+ * traekker ind, eller en Apple Genvej der bygger noten gennem AppleScript.
+ * Begge dele er stoerre end den her knap, og Andreas valgte dem fra
+ * (2026-08-25).
  *
  * ── En rettelse af min egen rettelse ─────────────────────────────────────
  *

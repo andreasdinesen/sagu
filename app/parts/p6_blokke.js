@@ -1379,6 +1379,36 @@ async function kopierBillede(src, knap) {
 /**
  * Skriv BEGGE flavours til udklipsholderen. Sandt, hvis det lykkedes.
  *
+ * ── Graensen: Apple Notes tager ikke `data:`-billeder ─────────────────────
+ *
+ * Maalt (Andreas, 2026-08-25, med skaermbilleder fra begge apps): den samme
+ * kopi giver billederne i OneNote paa web - og i Apple Notes et blaat »?«,
+ * macOS' ikon for »et billede jeg ikke kan hente«. HTML'en og `<img>`-taggene
+ * naar altsaa frem begge steder; Apple Notes naegter bare kilden.
+ *
+ * Den rigtige vej ville vaere RTF med billedet som `\pngblip` - macOS' eget
+ * rige tekstformat, og det Apple Notes helst tager. Det kan vi ikke:
+ *
+ *   - `e.clipboardData.setData('text/rtf', …)` bliver TAVST kasseret.
+ *     Proevet med en gyldig RTF paa 22 KB: bagefter laa der kun
+ *     `«class utf8», 10` paa udklipsholderen - den rene tekst og intet andet.
+ *   - macOS konverterer ikke selv HTML til RTF undervejs. Der var slet ingen
+ *     RTF-flavor at hente (`osascript -e 'the clipboard as «class RTF »'`).
+ *   - `ClipboardItem` tager kun de rensede typer; et egetdefineret format
+ *     faar praefikset `web ` og kan kun laeses af andre websider.
+ *
+ * Saa langt raekker en browser. Det, der virker i dag:
+ *
+ *     OneNote, Word, Mail, Pages   billederne kommer med
+ *     Apple Notes                  tekst og formatering kommer med;
+ *                                  billederne tages ét ad gangen med
+ *                                  »Copy image« i lightboxen
+ *
+ * Vil man laengere, skal man uden om udklipsholderen: en .html-fil man
+ * traekker ind, eller en Apple Genvej der bygger noten gennem AppleScript.
+ * Begge dele er stoerre end den her knap, og Andreas valgte dem fra
+ * (2026-08-25).
+ *
  * ── En rettelse af min egen rettelse ─────────────────────────────────────
  *
  * v33 byttede `navigator.clipboard.write()` ud med `copy`-haendelsen, fordi

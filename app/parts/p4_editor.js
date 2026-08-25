@@ -1059,7 +1059,7 @@ function sideNote() {
       <div class="note-tools">
         <span id="gemMaerke">${gemMaerke()}</span>
         <button class="iconbtn" id="kopiNote"
-          title="Copy the whole note as markdown">${icon('copy', 15)}</button>
+          title="Copy the whole note — with the images">${icon('copy', 15)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
         ${favoritKnapHtml(n)}
         ${delKnapHtml(n)}
@@ -1750,32 +1750,29 @@ function bindNoteSide() {
   if (favKnap) favKnap.addEventListener('click', () => skiftFavorit());
 
   /*
-   * Hele noten som markdown i udklipsholderen.
+   * Hele noten i udklipsholderen - MED billederne.
    *
-   * Markdown ER det, der ligger i databasen (DESIGN.md §2), saa der er intet
-   * at konvertere - og derfor heller intet, der kan tabes undervejs. Titlen
-   * kommer med som en overskrift, hvis teksten ikke selv har en: en note
-   * indsat i en mail uden sit navn er svaer at forstaa.
+   * Knappen kopierede foer ren markdown. »Kan du lave saa den ny copy
+   * funktion bliver lagt ved siden af saved i stedet for den nuvaerende...
+   * Copy i markdown findes alligevel under show as markdown« (Andreas,
+   * 2026-08-25). Den, man som regel vil have, staar nu forrest, og den anden
+   * er ikke vaek - den ligger, hvor man ser PAA markdown'en.
    *
-   * `navigator.clipboard` kraever et secure context, og Sagu kan naas over
-   * ren http paa LAN-adressen. Knappen falder derfor tilbage til at MARKERE
-   * teksten i en rude, man selv kan kopiere fra - frem for at fejle, naar man
-   * trykker (RUNE-ERFARINGER, tools v1).
+   * Menupunktet bag »...« er fjernet i samme omgang. Det stod to centimeter
+   * fra ikonet og gjorde det samme.
+   *
+   * Titlen kommer med som en overskrift, hvis teksten ikke selv har en: en
+   * note indsat i en mail uden sit navn er svaer at forstaa. Det goer
+   * `noteSomMarkdown()`, som begge veje deler.
    */
   const kopiKnap = document.getElementById('kopiNote');
   if (kopiKnap) {
-    kopiKnap.addEventListener('click', async () => {
-      const note = editor.note;
-      if (!note) return;
-      const md = noteSomMarkdown(note);
-      try {
-        if (!navigator.clipboard) throw new Error('ingen udklipsholder');
-        await navigator.clipboard.writeText(md);
-        toast('The note is on your clipboard as markdown.');
-      } catch {
-        visMarkdownPanel();
-        toast('The browser would not let me copy — here it is to take by hand.');
-      }
+    /*
+     * Ingen `await` foran `kopierNoten()`. Den opretter sit `ClipboardItem`
+     * synkront, fordi Safari kraever det inde i klikket.
+     */
+    kopiKnap.addEventListener('click', () => {
+      if (editor.note) kopierNoten(editor.note);
     });
   }
 
@@ -1903,9 +1900,6 @@ function visNoteMenu() {
   host.innerHTML = `
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
-    <button class="usermenu-item" data-do="kopi">${icon('copy', 16)}<span>${
-  saguMarkdown.billederIMarkdown(noteSomMarkdown(n)).length
-    ? 'Copy the note with images' : 'Copy the note'}</span></button>
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
@@ -1928,12 +1922,6 @@ function visNoteMenu() {
       host.remove();
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
-        /*
-         * Ingen `await` foran den her. `kopierNoten()` opretter sit
-         * `ClipboardItem` synkront, fordi Safari kraever det inde i klikket -
-         * ventede vi paa noget foerst, var tilladelsen brugt op.
-         */
-        if (hvad === 'kopi') { kopierNoten(n); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         /*
          * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).

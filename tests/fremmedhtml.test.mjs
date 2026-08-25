@@ -84,7 +84,7 @@ test('copy-hændelsen bliver stående som reserve, med begge flavours', () => {
 test('begge knapper bruger DEN SAMME vej — ellers har de hver sin fejl', () => {
   const kald = (kilde.match(/skrivToFlavours\(/g) || []).length;
   assert.ok(kald >= 3, `skrivToFlavours kaldes ${kald} gange, forventede mindst 3 `
-    + '(definition + menuens knap + rudens knap)');
+    + '(definition + ikonet ved SAVED + rudens knap)');
 });
 
 
