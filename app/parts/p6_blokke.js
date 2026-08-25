@@ -1379,29 +1379,36 @@ async function kopierBillede(src, knap) {
 /**
  * Skriv BEGGE flavours til udklipsholderen. Sandt, hvis det lykkedes.
  *
- * ── Hvorfor `copy`-haendelsen og ikke `navigator.clipboard.write` ─────────
+ * ── En rettelse af min egen rettelse ─────────────────────────────────────
  *
- * Meldt fra brug (Andreas, 2026-08-25, med skaermbilleder): en note indsat i
- * Apple Notes kom ind som RAA MARKDOWN med billedet skrevet ud som en
- * kilometerlang `data:`-adresse i teksten. Det samme i OneNote paa web.
+ * v33 byttede `navigator.clipboard.write()` ud med `copy`-haendelsen, fordi
+ * en note indsat i Apple Notes kom ind som raa markdown, og jeg sluttede, at
+ * `text/html` aldrig naaede frem. Det var forkert. Overskrifterne i den
+ * indsatte note VAR blevet til Apple Notes' egne typografier - havde ren
+ * tekst vundet, havde der staaet `#` foran dem. HTML'en naaede frem hele
+ * tiden; den indeholdt bare billedet som tekst, fordi rendererens
+ * adresse-loft paa 2.000 tegn ikke kan rumme en `data:`-adresse
+ * (se `medIndlejredeBilleder`).
  *
- * To uafhaengige apps, der begge falder tilbage til ren tekst, er ikke to
- * apps med samme smag - det er en `text/html`, der aldrig naaede frem.
- * `navigator.clipboard.write()` foerer sin egen HTML gennem en rensning, og
- * den kom ikke ud i den anden ende.
+ * `navigator.clipboard.write` er derfor hovedvejen igen: den moderne, den
+ * sanktionerede, og den der virkede.
  *
- * MAALT paa macOS' egen udklipsholder gennem `osascript`: med
- * `copy`-haendelsen staar der `«class HTML», 566` med `<img src="data:image/
- * png…` i. Det er den vej, der virker, og den kraever ingen tilladelse - kun
- * at brugeren har trykket paa noget.
- *
- * At der maa VENTES paa billederne foerst, er i orden: proevet med et rigtigt
- * klik, hvor hentningen laa foer `execCommand`, og HTML'en landede alligevel.
- *
- * `navigator.clipboard.write` staar tilbage som reserve. Den er den moderne
- * og den fremtidssikre; den er bare ikke den, der virker her.
+ * `copy`-haendelsen bliver staaende som RESERVE. Den er ikke spildt: den
+ * kraever ingen tilladelse, kun at brugeren har trykket paa noget, saa den
+ * baerer de tilfaelde, hvor udklipsholder-tilladelsen er naegtet. Maalt paa
+ * macOS' egen udklipsholder gennem `osascript` lander den «class HTML».
  */
 function skrivToFlavours(ren, html) {
+  if (navigator.clipboard && window.ClipboardItem) {
+    try {
+      navigator.clipboard.write([new ClipboardItem({
+        'text/plain': new Blob([ren], { type: 'text/plain' }),
+        'text/html': new Blob([html || ''], { type: 'text/html' }),
+      })]);
+      return true;
+    } catch { /* falder igennem til reserven */ }
+  }
+
   let lykkedes = false;
   const paa = (e) => {
     e.clipboardData.setData('text/plain', ren);
@@ -1423,17 +1430,6 @@ function skrivToFlavours(ren, html) {
     felt.remove();
   } catch { /* lykkedes bliver staaende falsk */ }
   document.removeEventListener('copy', paa, true);
-
-  if (!lykkedes && navigator.clipboard && window.ClipboardItem) {
-    // Reserve. Den skriver maaske kun ren tekst igennem - bedre end intet.
-    try {
-      navigator.clipboard.write([new ClipboardItem({
-        'text/plain': new Blob([ren], { type: 'text/plain' }),
-        'text/html': new Blob([html || ''], { type: 'text/html' }),
-      })]);
-      return true;
-    } catch { return false; }
-  }
   return lykkedes;
 }
 
@@ -1609,18 +1605,40 @@ async function medIndlejredeBilleder(md) {
 
   // HTML'en laves af DEN SAMME tekst gennem husets egen renderer, saa de to
   // formater aldrig kan vise noget forskelligt.
+  /*
+   * HTML'en laves af den OPRINDELIGE markdown - den med `sagu:` i - og
+   * billeddataen kommer ind gennem `billedUrl`. Ikke af `markdown` ovenfor.
+   *
+   * Meldt fra brug to gange (Andreas, 2026-08-25). Rendererens inline-regexp
+   * har et loft paa adressen:
+   *
+   *     /!\[([^\]\n]{0,200})\]\(([^)\s]{1,2000})\)/g
+   *
+   * 2.000 tegn er rigeligt til en adresse og et fornuftigt vaern mod en
+   * regexp, der loeber loebsk. Men et base64-billede paa 252 KB fylder
+   * 337.000 tegn, og saa matcher moensteret slet ikke: `![x](data:…)` blev
+   * staaende som REN TEKST i HTML'en. Det var praecis det, der kom ud i
+   * Apple Notes - ikke fordi udklipsholderen tabte noget, men fordi det, vi
+   * lagde paa den, indeholdt markdown'en som tekst.
+   *
+   * `sagu:<32 hex>` er 37 tegn og gaar aldrig i klemme. Den lange adresse
+   * skrives kun UD, som en attribut, og dér er der ingen graense.
+   *
+   * Bagslag, der staar tilbage: skriver man selv en lang `data:`-adresse i en
+   * note, vises den stadig som tekst. Det gaelder ogsaa, hvis man saetter den
+   * selvbaerende markdown fra »Show as markdown« ind i Sagu igen.
+   */
   let html = '';
   try {
-    html = saguMarkdown.render(markdown, {
-      /*
-       * Et billede, loftet sprang over, beholder sin adresse - men den skal
-       * vaere ABSOLUT. `saguUrl()` giver `/api/v1/files/<id>`, og en relativ
-       * sti betyder ingenting i Apple Notes eller en mail; den kan ikke
-       * engang slaas op. Absolut kan den i det mindste naas af en, der er
-       * logget ind i Sagu.
-       */
+    html = saguMarkdown.render(md, {
       billedUrl: (u) => {
-        if (String(u).startsWith('data:')) return u;
+        const data = kort.get(u);
+        if (data) return data;
+        /*
+         * Et billede, loftet sprang over, beholder sin adresse - men den skal
+         * vaere ABSOLUT. `saguUrl()` giver `/api/v1/files/<id>`, og en relativ
+         * sti betyder ingenting i Apple Notes eller en mail.
+         */
         const sti = saguUrl(u);
         return sti ? offentligBase() + sti : null;
       },
