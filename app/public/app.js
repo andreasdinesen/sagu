@@ -3277,7 +3277,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3298,6 +3298,7 @@ const state = {
   notes: [],
   publicUrl: '',
   today: '',
+  prefs: {},
   // F14: viser vi noget, der kom fra offline-cachen?
   offline: false,
   // Login-skaermen kan staa i to tilstande: log ind eller opret konto.
@@ -4038,6 +4039,10 @@ async function hentState() {
     state.storage = d.storage || {};
     state.counts = d.counts || {};
     state.today = d.today || '';
+    // Personlige valg om, hvordan fladen opfoerer sig. De skal vaere kendt
+    // FOER foerste optegning - ellers tegnes den foerste note med den ene
+    // editor og hopper til den anden et oejeblik efter.
+    state.prefs = d.prefs || {};
     // Tom betyder "brug den vaert, browseren staar paa" - se offentligBase().
     state.publicUrl = d.publicUrl || '';
   } catch (ex) {
@@ -5210,6 +5215,18 @@ async function sideSettings() {
     : ''}
   </div>
 
+  <h2>Editing</h2>
+  <div class="card">
+    <label class="switch">
+      <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
+      <span>Click a line to edit the whole note as markdown</span></label>
+    <p class="meta saetning">Sagu normally opens just the paragraph you clicked, with the rest of
+    the note still rendered around it — good for changing a sentence. With this on, a click opens
+    the <strong>whole</strong> note as raw markdown instead, with the cursor at the line you
+    clicked. Better for moving things around, fixing a table, or cutting across paragraphs.
+    <strong>Esc</strong> closes either way.</p>
+  </div>
+
   <h2>Version history</h2>
   <div class="card" id="versionKort">
     <p class="meta saetning">Loading…</p>
@@ -5453,6 +5470,17 @@ function bindSettings() {
     };
     scopeValg.addEventListener('change', vis);
     vis();
+  }
+
+  const prefHel = document.getElementById('prefHel');
+  if (prefHel) {
+    prefHel.addEventListener('change', async () => {
+      try {
+        const r = await api('POST', '/api/v1/prefs', { editWhole: prefHel.checked });
+        state.prefs = Object.assign({}, state.prefs, { editWhole: r.editWhole });
+        toast(r.editWhole ? 'A click now opens the whole note.' : 'A click now opens one paragraph.');
+      } catch (ex) { toast(ex.message); prefHel.checked = !prefHel.checked; }
+    });
   }
 
   tegnVersioner();
@@ -7558,7 +7586,12 @@ function tegnKrop() {
   const n = editor.note;
   if (!host || !n) return;
 
-  if (editor.aabenBlok !== null) { tegnMedAabenBlok(host, n); return; }
+  if (editor.aabenBlok !== null) {
+    // To editorer, ét valg. Se `heleNoten()`.
+    if (heleNoten()) tegnHeleNoten(host, n);
+    else tegnMedAabenBlok(host, n);
+    return;
+  }
 
   try {
     const { html } = saguMarkdown.render(n.body, renderValg());
@@ -8665,6 +8698,108 @@ async function visHistorikPanel(note) {
     b.addEventListener('click', () => { if (b.dataset.v !== valgt) hent(b.dataset.v); });
   });
   hent(d.versions[0].id);
+}
+
+/* ==================== hele noten som markdown (F23) ====================
+ *
+ * »Tilføj en mulighed under settings som hvis slået til så når man klikker på
+ * en linje i en note gør hele noten til markdown og ikke kun det element som
+ * man har klikket på« (Andreas, 2026-08-25).
+ *
+ * ── Hvorfor det er et VALG og ikke en erstatning ──────────────────────────
+ *
+ * Den hybride editor — ét afsnit råt, resten renderet — er god, når man retter
+ * en sætning i en lang note: man ser stadig, hvad noten er. Den er i vejen,
+ * når man skal flytte rundt på det hele, rette en tabel eller klippe og
+ * klistre på tværs af afsnit. Det er to måder at arbejde på, ikke en rigtig og
+ * en forkert.
+ *
+ * ── Klikket lander samme sted ─────────────────────────────────────────────
+ *
+ * Markøren sættes ved den blok, man klikkede på — ikke i toppen. Ellers skal
+ * man lede efter sin egen linje i en note på hundrede afsnit, og så var det
+ * hurtigere at lade være med at klikke.
+ */
+function heleNoten() {
+  return !!(state.prefs && state.prefs.editWhole);
+}
+
+/** Erstatter HELE noten med ét råt markdown-felt. */
+function tegnHeleNoten(host, n) {
+  host.innerHTML = `<div class="blok-redigering hel">
+      <textarea class="blok-felt hel-felt" id="blokFelt" spellcheck="false"></textarea>
+      <button class="blok-hjaelp" id="blokHjaelp" type="button" tabindex="-1"
+        aria-label="How to write this" title="How to write this">?</button>
+    </div>`;
+
+  const felt = document.getElementById('blokFelt');
+  felt.value = n.body;
+  autoHoejde(felt);
+
+  const hj = document.getElementById('blokHjaelp');
+  // `mousedown`, ikke `click`: et klik ville tage fokus fra feltet, og `blur`
+  // lukker editoren - saa var man ude af det, man skrev, for at se hjaelpen.
+  hj.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); });
+  hj.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); },
+    { passive: false });
+
+  felt.focus();
+  /*
+   * Markoeren ved den blok, man klikkede paa.
+   *
+   * `editor.aabenBlok` er blokkens FOERSTE linje i markdown'en, saa
+   * tegnpositionen er summen af linjerne foer den. Findes linjen ikke
+   * (noten er aendret imens), lander vi i toppen frem for at gaette.
+   */
+  const linjer = n.body.split('\n');
+  const nr = Math.min(Math.max(0, editor.aabenBlok || 0), linjer.length);
+  const pos = linjer.slice(0, nr).reduce((sum, l) => sum + l.length + 1, 0);
+  felt.setSelectionRange(pos, pos);
+  // Rul feltet, saa markoeren er synlig. Uden det staar man paa linje 200 i
+  // et felt, der viser linje 1.
+  felt.blur();
+  felt.focus();
+
+  felt.addEventListener('input', () => {
+    autoHoejde(felt);
+    n.body = felt.value;
+    markerBeskidt();
+    opdaterWikiForslag(felt);
+  });
+
+  felt.addEventListener('paste', (e) => { haandterIndsaet(e, felt); });
+  felt.addEventListener('dragover', (e) => { e.preventDefault(); felt.classList.add('traekker'); });
+  felt.addEventListener('dragleave', () => felt.classList.remove('traekker'));
+  felt.addEventListener('drop', (e) => {
+    e.preventDefault();
+    felt.classList.remove('traekker');
+    haandterIndsaet(e, felt);
+  });
+
+  felt.addEventListener('keydown', (e) => {
+    if (wikiTast(e)) return;
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+    /*
+     * Piletasterne skal IKKE krydse nogen graense her.
+     *
+     * Den hybride editor springer til nabo-blokken, naar man staar yderst -
+     * fordi resten af noten er andre elementer. Her ER hele noten i feltet,
+     * saa browserens egen opfoersel er den rigtige. Springer man alligevel,
+     * lukker man editoren, hver gang man rammer foerste eller sidste linje.
+     */
+    e.stopPropagation();
+  });
+
+  felt.addEventListener('blur', () => {
+    // Kun hvis fokus forlod feltet - et klik paa hjaelpeknappen holder det.
+    setTimeout(() => {
+      if (document.activeElement && document.activeElement.id === 'blokFelt') return;
+      lukWikiForslag();
+      lukBlok();
+    }, 0);
+  });
+
+  byggToc();
 }
 
 /* ---- p5_omni.js ---- */

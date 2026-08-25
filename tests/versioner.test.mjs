@@ -17,7 +17,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { startServer, klient } from './hjaelp.mjs';
+import { startServer, startServerPaa, klient } from './hjaelp.mjs';
 
 let srv;
 let a;
@@ -193,4 +193,148 @@ test('indstillingerne er PERSONLIGE, og en nøgle kan ikke røre dem', async () 
     body: JSON.stringify({ enabled: false }),
   });
   assert.equal(r.status, 401, 'indstillinger er ikke en noegles sag');
+});
+
+/* ==================== oprydningen på tværs af noter ==================== */
+
+/*
+ * `gemVersion` rydder kun op i den note, den lige har skrevet. En note, man
+ * aldrig rører igen, beholder derfor sin ophobning — og historikken har været
+ * skrevet til siden F1 helt uden grænse.
+ *
+ * »Det burde også være en funktion så hvis man ændrer antallet af versioner så
+ * skal den lave en oprydning automatisk« (Andreas, 2026-08-25).
+ */
+function laegIndVersioner(noteId, antal) {
+  const db = new DatabaseSync(path.join(srv.dataDir, 'sagu.db'));
+  try {
+    const ind = db.prepare(
+      'INSERT INTO note_versions (id, note_id, title, body_md, at, user_id) VALUES (?,?,?,?,?,NULL)');
+    for (let i = 0; i < antal; i++) {
+      ind.run(`${noteId.slice(0, 24)}${String(i).padStart(8, '0')}`.slice(0, 32),
+        noteId, `v${i}`, `krop ${i}`, 1000 + i);
+    }
+  } finally { db.close(); }
+}
+
+const antalVersioner = (noteId) => {
+  const db = new DatabaseSync(path.join(srv.dataDir, 'sagu.db'));
+  try { return db.prepare('SELECT COUNT(*) c FROM note_versions WHERE note_id = ?').get(noteId).c; }
+  finally { db.close(); }
+};
+
+test('et nyt antal rydder op i ALLE noter — også dem man ikke rører', async () => {
+  const en = (await a.kald('POST', '/api/v1/notes', { title: 'Gammel A', body: 'x' })).data.note;
+  const to = (await a.kald('POST', '/api/v1/notes', { title: 'Gammel B', body: 'x' })).data.note;
+  laegIndVersioner(en.id, 40);
+  laegIndVersioner(to.id, 40);
+  assert.ok(antalVersioner(en.id) > 40, 'ophobningen er lagt ind');
+
+  await a.kald('POST', '/api/v1/versions', { keep: 5 });
+
+  assert.equal(antalVersioner(en.id), 5, 'noten, der aldrig blev roert, er beskaaret');
+  assert.equal(antalVersioner(to.id), 5, 'og den anden ogsaa');
+
+  // De NYESTE fem er dem, der staar tilbage.
+  const d = await a.kald('GET', `/api/v1/notes/${en.id}/versions`);
+  assert.equal(d.data.versions.length, 5);
+  const kroppe = [];
+  for (const v of d.data.versions) {
+    kroppe.push((await a.kald('GET', `/api/v1/notes/${en.id}/versions/${v.id}`)).data.version.body);
+  }
+  // Notens EGEN oprettelsesversion er nyere end de bagdaterede attrapper og
+  // staar derfor oeverst - det er rigtigt, og det var min forventning, der
+  // var forkert.
+  assert.deepEqual(kroppe, ['x', 'krop 39', 'krop 38', 'krop 37', 'krop 36']);
+  await a.kald('POST', '/api/v1/versions', { keep: 30 });
+});
+
+test('oprydningen rører ikke en ANDEN brugers noter', async () => {
+  /*
+   * Beskæringen går gennem `notes.user_id`. Uden det ville et nyt antal hos
+   * alice slette bobs historik — og han ville aldrig få det at vide.
+   */
+  const hans = (await b.kald('POST', '/api/v1/notes', { title: 'Bobs', body: 'x' })).data.note;
+  laegIndVersioner(hans.id, 20);
+  const foer = antalVersioner(hans.id);
+
+  await a.kald('POST', '/api/v1/versions', { keep: 2 });
+  assert.equal(antalVersioner(hans.id), foer, 'bobs er uroert');
+  await a.kald('POST', '/api/v1/versions', { keep: 30 });
+});
+
+test('en genstart rydder efterslæbet — også for noter, der aldrig røres igen', async () => {
+  /*
+   * Det er DENNE, der fjerner Andreas' rigtige efterslæb: historikken er
+   * skrevet til siden F1 uden en grænse, og `gemVersion` beskærer kun den
+   * note, den lige har skrevet.
+   *
+   * Serveren startes forfra på de SAMME data, så `sweep()` kører rigtigt —
+   * ikke som et funktionskald, men som opstarten gør det.
+   */
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Efterslæb', body: 'x' })).data.note;
+  laegIndVersioner(note.id, 60);
+  assert.ok(antalVersioner(note.id) > 60);
+
+  const dataDir = srv.dataDir;
+  srv.stopUdenAtSlette();
+  srv = await startServerPaa(dataDir);
+  a = klient(srv.base);
+  b = klient(srv.base);
+  await a.kald('POST', '/api/login', { username: 'alice', password: 'kodeord-1234' });
+
+  assert.equal(antalVersioner(note.id), 30, 'opstarten beskar til graensen');
+});
+
+test('slået fra beskærer opstarten ikke — en kontakt er ikke en ordre om at slette', async () => {
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'Slukket', body: 'x' })).data.note;
+  laegIndVersioner(note.id, 50);
+  const foer = antalVersioner(note.id);
+  await a.kald('POST', '/api/v1/versions', { enabled: false });
+
+  const dataDir = srv.dataDir;
+  srv.stopUdenAtSlette();
+  srv = await startServerPaa(dataDir);
+  a = klient(srv.base);
+  b = klient(srv.base);
+  await a.kald('POST', '/api/login', { username: 'alice', password: 'kodeord-1234' });
+
+  assert.equal(antalVersioner(note.id), foer, 'intet slettet, mens den var slaaet fra');
+  await a.kald('POST', '/api/v1/versions', { enabled: true });
+});
+
+/* ==================== personlige valg om fladen ======================== */
+
+/*
+ * »Tilføj en mulighed under settings som hvis slået til så når man klikker på
+ * en linje i en note gør hele noten til markdown« (Andreas, 2026-08-25).
+ *
+ * Selve editoren er flade og prøves i browseren. Her måles det, serveren
+ * lover: at valget er PERSONLIGT, at det følger med `state` (så første
+ * optegning bruger den rigtige editor), og at en nøgle ikke kan sætte det.
+ */
+test('valget om hele noten er personligt og følger med state', async () => {
+  // Prøverne ovenfor genstarter serveren, og en genstart dræber sessionerne.
+  // `b` skal logge ind igen, ellers måler vi et 401 og tror, det er en pref.
+  await b.kald('POST', '/api/login', { username: 'bob', password: 'kodeord-1234' });
+  const start = (await a.kald('GET', '/api/v1/state')).data;
+  assert.equal(start.prefs.editWhole, false, 'slaaet fra som udgangspunkt');
+
+  await a.kald('POST', '/api/v1/prefs', { editWhole: true });
+  assert.equal((await a.kald('GET', '/api/v1/state')).data.prefs.editWhole, true);
+  assert.equal((await b.kald('GET', '/api/v1/state')).data.prefs.editWhole, false, 'bobs er uroert');
+
+  await a.kald('POST', '/api/v1/prefs', { editWhole: false });
+  assert.equal((await a.kald('GET', '/api/v1/state')).data.prefs.editWhole, false);
+});
+
+test('en nøgle kan ikke sætte personlige valg', async () => {
+  const noegle = (await a.kald('POST', '/api/v1/keys', { name: 'k', scope: 'full' })).data.key;
+  const r = await fetch(`${srv.base}/api/v1/prefs`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${noegle}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ editWhole: true }),
+  });
+  assert.equal(r.status, 401);
+  assert.equal((await a.kald('GET', '/api/v1/state')).data.prefs.editWhole, false, 'uaendret');
 });

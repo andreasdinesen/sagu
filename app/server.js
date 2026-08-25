@@ -2220,6 +2220,36 @@ const VERSIONER_MAKS = 200;
  */
 const VERSIONER_SAMLE = 5 * 60;
 
+/**
+ * Beskaerer HVER af brugerens noter til graensen.
+ *
+ * ── Hvorfor den findes ────────────────────────────────────────────────────
+ *
+ * `gemVersion` rydder kun op i den note, den lige har skrevet. En note, man
+ * aldrig rører igen, beholder derfor sin ophobning - og historikken har vaeret
+ * skrevet til siden F1 helt uden graense. Andreas' arkiv har altsaa maaneders
+ * raekker liggende for noter, der ikke bliver redigeret mere.
+ *
+ * »Det burde også være en funktion så hvis man ændrer antallet af versioner
+ * så skal den lave en oprydning automatisk« (Andreas, 2026-08-25). Den koeres
+ * derfor to steder: naar antallet aendres, og én gang ved opstart.
+ *
+ * ÉT udsagn for alle noter, ikke ét pr. note: `NOT IN (…LIMIT ?)` pr. note
+ * ville vaere 247 forespoergsler paa en almindelig opstart.
+ *
+ * @returns {number} hvor mange raekker der forsvandt.
+ */
+function beskaerAlleVersioner(userId, keep) {
+  const r = db.prepare(`
+    DELETE FROM note_versions WHERE id IN (
+      SELECT id FROM (
+        SELECT v.id, ROW_NUMBER() OVER (PARTITION BY v.note_id ORDER BY v.at DESC, v.rowid DESC) AS nr
+          FROM note_versions v JOIN notes n ON n.id = v.note_id
+         WHERE n.user_id = ?
+      ) WHERE nr > ?)`).run(userId, keep);
+  return r.changes || 0;
+}
+
 function versionsOpsaetning(userId) {
   const slaaet = getSetting(userId, 'versions_off', '') !== '1';
   const raa = Number(getSetting(userId, 'versions_keep', ''));
@@ -3677,6 +3707,16 @@ const ROUTES = {
       // Tom betyder "brug den vaert, du selv staar paa" - se offentligVaert().
       publicUrl: offentligUrl(),
       today: new Date().toISOString().slice(0, 10),
+      /*
+       * Personlige valg om, hvordan fladen opfoerer sig.
+       *
+       * De foelger med `state`, fordi de skal vaere kendt FOER foerste
+       * optegning. Hentede fladen dem for sig, ville den foerste note tegnes
+       * med den forkerte editor og hoppe om et oejeblik efter.
+       */
+      prefs: {
+        editWhole: getSetting(u.id, 'edit_whole', '') === '1',
+      },
     });
   },
 
@@ -5168,6 +5208,29 @@ const MOENSTRE = [
     },
   },
   {
+    /*
+     * Personlige valg om fladen.
+     *
+     * »Tilføj en mulighed under settings som hvis slået til så når man klikker
+     * på en linje i en note gør hele noten til markdown« (Andreas,
+     * 2026-08-25).
+     *
+     * Én rute til den slags i stedet for én pr. valg: naeste valg er saa et
+     * felt, ikke et endepunkt. `requireUser` - en noegle saetter ikke
+     * indstillinger.
+     */
+    metode: 'POST', re: /^\/api\/v1\/prefs$/,
+    kald: async (req, res) => {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const body = await readJsonBody(req);
+      if (Object.prototype.hasOwnProperty.call(body, 'editWhole')) {
+        setSetting(user.id, 'edit_whole', body.editWhole ? '1' : '');
+      }
+      sendJson(res, 200, { editWhole: getSetting(user.id, 'edit_whole', '') === '1' });
+    },
+  },
+  {
     /* Kontakten og antallet. Personlige - Sagu er flerbruger. */
     metode: 'POST', re: /^\/api\/v1\/versions$/,
     kald: async (req, res) => {
@@ -5192,6 +5255,11 @@ const MOENSTRE = [
           return;
         }
         setSetting(user.id, 'versions_keep', String(antal));
+        // Et nyt antal skal GAELDE med det samme - ogsaa for de noter, man
+        // ikke roerer igen. Ellers er tallet et loefte om en oprydning, der
+        // aldrig sker.
+        const vaek = beskaerAlleVersioner(user.id, antal);
+        if (vaek) audit('versioner-beskaaret', user.id, null, String(vaek));
       }
       sendJson(res, 200, versionsOpsaetning(user.id));
     },
@@ -7486,6 +7554,24 @@ function sweep() {
      * skelnes fra en, der bevidst blev uploadet uden en note. En oprydning,
      * der gaettede paa NULL, ville derfor slette de forkerte.
      */
+    /*
+     * Versionshistorikken beskaeres for ALLE brugere.
+     *
+     * Tabellen er blevet skrevet til siden F1 uden en graense, saa der ligger
+     * et efterslaeb, `gemVersion` aldrig naar: den rydder kun op i den note,
+     * den lige har skrevet. Ved opstart tager vi resten.
+     *
+     * Er historikken slaaet FRA, beskaeres der ikke: det gemte er en
+     * kendsgerning om noten, og en kontakt, man har slaaet fra, er ikke en
+     * ordre om at slette (samme regel som i fladen).
+     */
+    for (const u of db.prepare('SELECT id FROM users').all()) {
+      const opsaet = versionsOpsaetning(u.id);
+      if (!opsaet.enabled) continue;
+      const vaek = beskaerAlleVersioner(u.id, opsaet.keep);
+      if (vaek) log(`versionshistorik beskaaret: ${vaek} raekker`);
+    }
+
     const gamle = db.prepare('SELECT id FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?')
       .all(t - 30 * 86400);
     for (const g of gamle) {

@@ -1116,7 +1116,12 @@ function tegnKrop() {
   const n = editor.note;
   if (!host || !n) return;
 
-  if (editor.aabenBlok !== null) { tegnMedAabenBlok(host, n); return; }
+  if (editor.aabenBlok !== null) {
+    // To editorer, ét valg. Se `heleNoten()`.
+    if (heleNoten()) tegnHeleNoten(host, n);
+    else tegnMedAabenBlok(host, n);
+    return;
+  }
 
   try {
     const { html } = saguMarkdown.render(n.body, renderValg());
@@ -2223,4 +2228,106 @@ async function visHistorikPanel(note) {
     b.addEventListener('click', () => { if (b.dataset.v !== valgt) hent(b.dataset.v); });
   });
   hent(d.versions[0].id);
+}
+
+/* ==================== hele noten som markdown (F23) ====================
+ *
+ * »Tilføj en mulighed under settings som hvis slået til så når man klikker på
+ * en linje i en note gør hele noten til markdown og ikke kun det element som
+ * man har klikket på« (Andreas, 2026-08-25).
+ *
+ * ── Hvorfor det er et VALG og ikke en erstatning ──────────────────────────
+ *
+ * Den hybride editor — ét afsnit råt, resten renderet — er god, når man retter
+ * en sætning i en lang note: man ser stadig, hvad noten er. Den er i vejen,
+ * når man skal flytte rundt på det hele, rette en tabel eller klippe og
+ * klistre på tværs af afsnit. Det er to måder at arbejde på, ikke en rigtig og
+ * en forkert.
+ *
+ * ── Klikket lander samme sted ─────────────────────────────────────────────
+ *
+ * Markøren sættes ved den blok, man klikkede på — ikke i toppen. Ellers skal
+ * man lede efter sin egen linje i en note på hundrede afsnit, og så var det
+ * hurtigere at lade være med at klikke.
+ */
+function heleNoten() {
+  return !!(state.prefs && state.prefs.editWhole);
+}
+
+/** Erstatter HELE noten med ét råt markdown-felt. */
+function tegnHeleNoten(host, n) {
+  host.innerHTML = `<div class="blok-redigering hel">
+      <textarea class="blok-felt hel-felt" id="blokFelt" spellcheck="false"></textarea>
+      <button class="blok-hjaelp" id="blokHjaelp" type="button" tabindex="-1"
+        aria-label="How to write this" title="How to write this">?</button>
+    </div>`;
+
+  const felt = document.getElementById('blokFelt');
+  felt.value = n.body;
+  autoHoejde(felt);
+
+  const hj = document.getElementById('blokHjaelp');
+  // `mousedown`, ikke `click`: et klik ville tage fokus fra feltet, og `blur`
+  // lukker editoren - saa var man ude af det, man skrev, for at se hjaelpen.
+  hj.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); });
+  hj.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); },
+    { passive: false });
+
+  felt.focus();
+  /*
+   * Markoeren ved den blok, man klikkede paa.
+   *
+   * `editor.aabenBlok` er blokkens FOERSTE linje i markdown'en, saa
+   * tegnpositionen er summen af linjerne foer den. Findes linjen ikke
+   * (noten er aendret imens), lander vi i toppen frem for at gaette.
+   */
+  const linjer = n.body.split('\n');
+  const nr = Math.min(Math.max(0, editor.aabenBlok || 0), linjer.length);
+  const pos = linjer.slice(0, nr).reduce((sum, l) => sum + l.length + 1, 0);
+  felt.setSelectionRange(pos, pos);
+  // Rul feltet, saa markoeren er synlig. Uden det staar man paa linje 200 i
+  // et felt, der viser linje 1.
+  felt.blur();
+  felt.focus();
+
+  felt.addEventListener('input', () => {
+    autoHoejde(felt);
+    n.body = felt.value;
+    markerBeskidt();
+    opdaterWikiForslag(felt);
+  });
+
+  felt.addEventListener('paste', (e) => { haandterIndsaet(e, felt); });
+  felt.addEventListener('dragover', (e) => { e.preventDefault(); felt.classList.add('traekker'); });
+  felt.addEventListener('dragleave', () => felt.classList.remove('traekker'));
+  felt.addEventListener('drop', (e) => {
+    e.preventDefault();
+    felt.classList.remove('traekker');
+    haandterIndsaet(e, felt);
+  });
+
+  felt.addEventListener('keydown', (e) => {
+    if (wikiTast(e)) return;
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+    /*
+     * Piletasterne skal IKKE krydse nogen graense her.
+     *
+     * Den hybride editor springer til nabo-blokken, naar man staar yderst -
+     * fordi resten af noten er andre elementer. Her ER hele noten i feltet,
+     * saa browserens egen opfoersel er den rigtige. Springer man alligevel,
+     * lukker man editoren, hver gang man rammer foerste eller sidste linje.
+     */
+    e.stopPropagation();
+  });
+
+  felt.addEventListener('blur', () => {
+    // Kun hvis fokus forlod feltet - et klik paa hjaelpeknappen holder det.
+    setTimeout(() => {
+      if (document.activeElement && document.activeElement.id === 'blokFelt') return;
+      lukWikiForslag();
+      lukBlok();
+    }, 0);
+  });
+
+  byggToc();
 }

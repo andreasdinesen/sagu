@@ -715,6 +715,18 @@ async function sideSettings() {
     : ''}
   </div>
 
+  <h2>Editing</h2>
+  <div class="card">
+    <label class="switch">
+      <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
+      <span>Click a line to edit the whole note as markdown</span></label>
+    <p class="meta saetning">Sagu normally opens just the paragraph you clicked, with the rest of
+    the note still rendered around it — good for changing a sentence. With this on, a click opens
+    the <strong>whole</strong> note as raw markdown instead, with the cursor at the line you
+    clicked. Better for moving things around, fixing a table, or cutting across paragraphs.
+    <strong>Esc</strong> closes either way.</p>
+  </div>
+
   <h2>Version history</h2>
   <div class="card" id="versionKort">
     <p class="meta saetning">Loading…</p>
@@ -958,6 +970,17 @@ function bindSettings() {
     };
     scopeValg.addEventListener('change', vis);
     vis();
+  }
+
+  const prefHel = document.getElementById('prefHel');
+  if (prefHel) {
+    prefHel.addEventListener('change', async () => {
+      try {
+        const r = await api('POST', '/api/v1/prefs', { editWhole: prefHel.checked });
+        state.prefs = Object.assign({}, state.prefs, { editWhole: r.editWhole });
+        toast(r.editWhole ? 'A click now opens the whole note.' : 'A click now opens one paragraph.');
+      } catch (ex) { toast(ex.message); prefHel.checked = !prefHel.checked; }
+    });
   }
 
   tegnVersioner();

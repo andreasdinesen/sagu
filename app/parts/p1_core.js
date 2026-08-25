@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -26,6 +26,7 @@ const state = {
   notes: [],
   publicUrl: '',
   today: '',
+  prefs: {},
   // F14: viser vi noget, der kom fra offline-cachen?
   offline: false,
   // Login-skaermen kan staa i to tilstande: log ind eller opret konto.
@@ -766,6 +767,10 @@ async function hentState() {
     state.storage = d.storage || {};
     state.counts = d.counts || {};
     state.today = d.today || '';
+    // Personlige valg om, hvordan fladen opfoerer sig. De skal vaere kendt
+    // FOER foerste optegning - ellers tegnes den foerste note med den ene
+    // editor og hopper til den anden et oejeblik efter.
+    state.prefs = d.prefs || {};
     // Tom betyder "brug den vaert, browseren staar paa" - se offentligBase().
     state.publicUrl = d.publicUrl || '';
   } catch (ex) {

@@ -2856,3 +2856,8 @@ body.fokus .topbar { position: static; }
   .historik-liste { width: 100%; max-height: 30vh; border-right: 0;
     border-bottom: 1px solid var(--border-soft); }
 }
+
+/* Hele noten som ét felt (F23). Den skal se ud som noten, ikke som en
+   formular — det er stadig teksten, man kigger på. */
+.blok-redigering.hel { margin: 0; }
+.hel-felt { min-height: 60vh; }
