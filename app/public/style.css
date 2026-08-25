@@ -2797,3 +2797,62 @@ body.fokus .topbar { position: static; }
 .doda-link { color: inherit; text-decoration: none; }
 .doda-link:hover, .doda-link:focus-visible { text-decoration: underline; color: var(--accent-text); }
 .doda-opgave.udfoert .doda-link:hover { color: var(--muted); }
+
+/* Sletningen i blok-menuen skal SES at være den farlige af de to. */
+.blok-menu-punkt.farlig { color: var(--danger); }
+.blok-menu-punkt.farlig:hover, .blok-menu-punkt.farlig:focus-visible {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ------------------------------------------------- versionshistorik (F22) */
+.historik { display: flex; gap: 18px; align-items: flex-start; }
+.historik-liste {
+  flex: none;
+  width: 230px;
+  max-height: 52vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-right: 1px solid var(--border-soft);
+}
+.historik-rk {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px 8px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.historik-rk:hover { background: var(--card-hover); }
+.historik-rk.paa { background: var(--accent-soft); color: var(--accent-text); }
+.historik-tid { font-size: 13px; font-weight: 600; }
+.historik-titel { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.historik-vis { flex: 1; min-width: 0; }
+/* Teksten vises som markdown - det er DEN, der bliver skrevet tilbage. */
+.historik-tekst {
+  max-height: 46vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--card-hover);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .historik { flex-direction: column; }
+  .historik-liste { width: 100%; max-height: 30vh; border-right: 0;
+    border-bottom: 1px solid var(--border-soft); }
+}

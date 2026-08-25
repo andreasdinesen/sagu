@@ -715,6 +715,11 @@ async function sideSettings() {
     : ''}
   </div>
 
+  <h2>Version history</h2>
+  <div class="card" id="versionKort">
+    <p class="meta saetning">Loading…</p>
+  </div>
+
   <h2>Two-step verification</h2>
   <div class="card" id="totpKort">
     <p class="meta saetning">Loading…</p>
@@ -955,6 +960,7 @@ function bindSettings() {
     vis();
   }
 
+  tegnVersioner();
   tegnTotp();
 
   const kvoteGem = document.getElementById('kvoteGem');
@@ -1822,4 +1828,63 @@ function spoergKodeord(o) {
   };
   knap.addEventListener('click', gaa);
   felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gaa(); } });
+}
+
+/* ============================ versionshistorik (F22) ====================
+ *
+ * »Denne funktion skal kunne slås fra inde i indstillinger og det skal også
+ * være muligt at sætte antallet af versioner den gemmer« (Andreas,
+ * 2026-08-25).
+ *
+ * ── Indstillingen er PERSONLIG ────────────────────────────────────────────
+ *
+ * Sagu er flerbruger. Ville alice have historik og bob ikke, ville en
+ * serverindstilling tvinge dem til at blive enige om noget, der kun handler
+ * om deres egne noter.
+ */
+async function tegnVersioner() {
+  const host = document.getElementById('versionKort');
+  if (!host) return;
+  let d;
+  // Opsaetningen ligger paa versions-endepunktet, som kraever en NOTE. Har man
+  // ingen, er der heller ingen historik at indstille - men kortet skal stadig
+  // kunne vise kontakten, saa vi spoerger gennem den billigste vej der findes.
+  try { d = await api('POST', '/api/v1/versions', {}); } catch { host.innerHTML = ''; return; }
+
+  host.innerHTML = `<label class="switch">
+      <input type="checkbox" id="verTil" ${d.enabled ? 'checked' : ''}>
+      <span>Keep earlier versions of my notes</span></label>
+    <p class="meta saetning">A version is kept each time you come back and change something.
+    Edits within the same sitting count as one, so the ${esc(String(d.keep))} you keep cover
+    ${esc(String(d.keep))} separate times you worked on the note — not the last few minutes.</p>
+    <label class="field" style="margin-top:14px"><span>Versions to keep per note</span>
+      <div class="btnrow">
+        <input class="input" id="verAntal" type="number" min="1" max="200" step="1"
+          style="max-width:110px" value="${esc(String(d.keep))}" ${d.enabled ? '' : 'disabled'}>
+        <button class="btn" id="verGem" ${d.enabled ? '' : 'disabled'}>Save</button>
+      </div></label>
+    <p class="meta saetning">Turning it off stops new versions from being kept.
+    <strong>What is already saved stays</strong> — it is a fact about the note, and throwing it
+    away because you changed a setting would be rewriting history. Open a note's
+    <strong>…</strong> menu to see and restore them.</p>`;
+
+  host.querySelector('#verTil').addEventListener('change', async (e) => {
+    try {
+      await api('POST', '/api/v1/versions', { enabled: e.target.checked });
+      toast(e.target.checked ? 'Versions are kept again.' : 'No new versions will be kept.');
+      tegnVersioner();
+    } catch (ex) { toast(ex.message); e.target.checked = !e.target.checked; }
+  });
+  const gem = host.querySelector('#verGem');
+  if (gem) {
+    gem.addEventListener('click', async () => {
+      const antal = Number(host.querySelector('#verAntal').value);
+      gem.disabled = true;
+      try {
+        await api('POST', '/api/v1/versions', { keep: antal });
+        toast('Saved.');
+        tegnVersioner();
+      } catch (ex) { toast(ex.message); gem.disabled = false; }
+    });
+  }
 }

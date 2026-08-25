@@ -378,17 +378,34 @@ test('"udeladt" og "tom" er ikke det samme felt', async () => {
 });
 
 test('versionshistorikken skrives fra dag ét', async () => {
+  /*
+   * Facit var ['et', 'to', 'tre'] — én post pr. gem. Det er ændret i F22:
+   * gemninger i samme skrivestund tæller som én, og øjebliksbilledet tages
+   * FØR skrivningen, så hver stunds slutresultat bevares.
+   *
+   * Her ligger de tre kald inden for vinduet, så kun oprettelsen står — og
+   * ændringen, der hverken rører titel eller krop, laver stadig ingen
+   * version.
+   */
   const n = (await a.kald('POST', '/api/v1/notes', { title: 'v1', body: 'et' })).data.note;
   await a.kald('PATCH', `/api/v1/notes/${n.id}`, { body: 'to' });
   await a.kald('PATCH', `/api/v1/notes/${n.id}`, { body: 'tre' });
-  // En aendring, der IKKE roerer titel eller krop, skal ikke lave en version.
   await a.kald('PATCH', `/api/v1/notes/${n.id}`, { fullWidth: true });
 
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(path.join(srv.dataDir, 'sagu.db'));
   const v = db.prepare('SELECT body_md FROM note_versions WHERE note_id = ? ORDER BY at, rowid').all(n.id);
+  // ... og saa en ny stund: bagdatér, ret, og se stundens SLUTRESULTAT lande.
+  db.prepare('UPDATE note_versions SET at = at - 3600 WHERE note_id = ?').run(n.id);
   db.close();
-  assert.deepEqual(v.map((x) => x.body_md), ['et', 'to', 'tre']);
+  await a.kald('PATCH', `/api/v1/notes/${n.id}`, { body: 'fire' });
+  const db2 = new DatabaseSync(path.join(srv.dataDir, 'sagu.db'));
+  const v2 = db2.prepare('SELECT body_md FROM note_versions WHERE note_id = ? ORDER BY at, rowid').all(n.id);
+  db2.close();
+
+  assert.deepEqual(v.map((x) => x.body_md), ['et'], 'samme stund = én version');
+  assert.deepEqual(v2.map((x) => x.body_md), ['et', 'tre'],
+    '»tre« var stundens resultat - det er dét, man vil tilbage til');
 });
 
 test('en slettet note forsvinder ogsaa fra SOEGEINDEKSET', async () => {

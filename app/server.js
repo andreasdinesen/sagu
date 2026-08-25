@@ -1866,10 +1866,25 @@ function gemNote(userId, id, felter) {
     return { note: hentNote(userId, id) };
   }
 
+  /*
+   * Versionen tages FOER skrivningen - ikke efter.
+   *
+   * Den stod efter `UPDATE`, saa en version var »noten som netop gemt«. Det
+   * er rigtigt nok, saa laenge hver gemning giver en raekke - men med
+   * sammenlaegning (F22) taber man hele skrivestundens resultat:
+   *
+   *   opret »et«           -> version: et
+   *   gem »to«, »tre«      -> sprunget over, samme stund
+   *   NAESTE stund, »fire« -> version: fire   <- »tre« findes ingen steder
+   *
+   * Med snapshottet FOER skrivningen bliver den sidste linje til
+   * »version: tre« - praecis den tilstand, man vil tilbage til. Hver
+   * skrivestunds slutresultat bevares, og det er dét, en historik er til for.
+   */
+  if (har('title') || har('body')) gemVersion(id, userId);
   put('updated_at', now());
   put('updated_by', userId);
   db.prepare(`UPDATE notes SET ${saet.join(', ')} WHERE id = ?`).run(...arg, id);
-  if (har('title') || har('body')) gemVersion(id, userId);
   if (har('body')) opdaterLinks(userId, id, typeof f.body === 'string' ? f.body : '');
   indekser(id);
   return { note: hentNote(userId, id) };
@@ -2185,11 +2200,83 @@ function opdaterLinks(userId, noteId, body) {
   }
 }
 
-function gemVersion(noteId, userId) {
+/* ------------------------------------------------- versionshistorik (F22) */
+
+const VERSIONER_STANDARD = 30;
+const VERSIONER_MIN = 1;
+// 200 er ogsaa loftet i listeopslaget. To tal, der skal passe sammen, er ét
+// tal for meget - saa staar de her, og forespoergslen bruger dette.
+const VERSIONER_MAKS = 200;
+/*
+ * Hvor taet to gemninger maa ligge, foer de taeller som ÉN version.
+ *
+ * Uden den her ville hver eneste autogemning give en raekke: editoren gemmer
+ * ~900 ms efter man holder op med at taste, saa en halv times skrivning
+ * bliver til hundredvis af »versioner«, der alle ligner hinanden - og de
+ * 30, man kan gaa tilbage, daekker saa de sidste to minutter.
+ *
+ * Vi beholder den FOERSTE i vinduet, ikke den sidste: en version skal vise,
+ * hvordan noten saa ud FOER den skrivepause, man vil tilbage til.
+ */
+const VERSIONER_SAMLE = 5 * 60;
+
+function versionsOpsaetning(userId) {
+  const slaaet = getSetting(userId, 'versions_off', '') !== '1';
+  const raa = Number(getSetting(userId, 'versions_keep', ''));
+  const antal = Number.isFinite(raa) && raa >= VERSIONER_MIN && raa <= VERSIONER_MAKS
+    ? Math.round(raa) : VERSIONER_STANDARD;
+  return { enabled: slaaet, keep: antal };
+}
+
+/**
+ * Gemmer notens NUVAERENDE indhold som en version - foer den bliver aendret.
+ *
+ * Kaldes altsaa med vilje FOER skrivningen: en version er det, man kan gaa
+ * tilbage TIL, ikke det man lige har lavet.
+ */
+/**
+ * @param {boolean} tving  Springer skrivestunds-vinduet over.
+ *   Saettes ved en GENDANNELSE: dér skal den tilstand, man erstatter, ALTID
+ *   gemmes. Uden det kunne en gendannelse falde ind i vinduet efter den
+ *   rettelse, man fortryder - og saa var det, man gik vaek fra, vaek for
+ *   altid. Maalt: gendan lige efter en rettelse, og »skrevet om« fandtes
+ *   ingen steder bagefter.
+ */
+function gemVersion(noteId, userId, tving) {
+  const opsaet = versionsOpsaetning(userId);
+  if (!opsaet.enabled) return;
   const r = db.prepare('SELECT title, body_md FROM notes WHERE id = ?').get(noteId);
   if (!r) return;
+
+  const t = now();
+  const nyeste = db.prepare(`SELECT at, title, body_md FROM note_versions
+                              WHERE note_id = ? ORDER BY at DESC, rowid DESC LIMIT 1`).get(noteId);
+  // Samme skrivestund som sidst? Saa er den allerede repraesenteret.
+  if (!tving && nyeste && t - nyeste.at < VERSIONER_SAMLE) return;
+  /*
+   * To ENS versioner i traek er spild af en plads ud af tredive.
+   *
+   * Det sker af sig selv: en rettelse, der kun roerer titlen, laver en
+   * version af den uaendrede krop - og en gendannelse tilbage til noget,
+   * der allerede staar. Sammenligningen er ordret; to versioner, der ser ens
+   * ud, er ens.
+   */
+  if (nyeste && nyeste.title === r.title && nyeste.body_md === r.body_md) return;
+
   db.prepare('INSERT INTO note_versions (id, note_id, title, body_md, at, user_id) VALUES (?,?,?,?,?,?)')
-    .run(newId(), noteId, r.title, r.body_md, now(), userId);
+    .run(newId(), noteId, r.title, r.body_md, t, userId);
+
+  /*
+   * Ryd op MED DET SAMME, ikke ved en lejlighed.
+   *
+   * Tabellen har vaeret skrevet til siden F1 uden nogen graense - der er
+   * ingen oprydning at udskyde til, og en historik, der vokser i det
+   * uendelige, er en database, der bliver langsom af noget, ingen bad om.
+   */
+  db.prepare(`DELETE FROM note_versions WHERE note_id = ? AND id NOT IN (
+                SELECT id FROM note_versions WHERE note_id = ?
+                 ORDER BY at DESC, rowid DESC LIMIT ?)`)
+    .run(noteId, noteId, opsaet.keep);
 }
 
 /* ------------------------------------------------------------ notesboeger */
@@ -5016,18 +5103,97 @@ const MOENSTRE = [
     kald: (req, res, ctx) => {
       const auth = godkend(req, res, 'read');
       if (!auth) return;
-      // Historikken skrives fra dag ét; UI'et kommer i F13. Endepunktet
-      // findes nu, saa data kan efterses uden at grave i databasen.
       if (!hentNote(auth.user.id, ctx.params[0])) {
         apiFejl(res, 404, 'not_found', 'No such note.');
         return;
       }
+      const opsaet = versionsOpsaetning(auth.user.id);
       sendJson(res, 200, {
+        // Fladen skal kunne SIGE hvorfor listen er tom: slaaet fra er noget
+        // andet end »der er ikke sket noget endnu«.
+        enabled: opsaet.enabled,
+        keep: opsaet.keep,
         versions: db.prepare(`
           SELECT id, title, at, user_id, length(body_md) AS size
-            FROM note_versions WHERE note_id = ? ORDER BY at DESC, rowid DESC LIMIT 200`)
-          .all(ctx.params[0]),
+            FROM note_versions WHERE note_id = ? ORDER BY at DESC, rowid DESC LIMIT ?`)
+          .all(ctx.params[0], VERSIONER_MAKS),
       });
+    },
+  },
+  {
+    /* Selve teksten i ÉN version. Listen baerer kun stoerrelsen. */
+    metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/versions\/([a-f0-9]{32})$/,
+    kald: (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const [noteId, vId] = ctx.params;
+      if (!hentNote(auth.user.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      // `note_id` skal MED i opslaget. Ellers kunne en version fra en anden
+      // note haentes gennem en note, man har adgang til.
+      const v = db.prepare(`SELECT id, title, body_md, at FROM note_versions
+                             WHERE id = ? AND note_id = ?`).get(vId, noteId);
+      if (!v) { apiFejl(res, 404, 'not_found', 'No such version.'); return; }
+      sendJson(res, 200, { version: { id: v.id, title: v.title, body: v.body_md, at: v.at } });
+    },
+  },
+  {
+    /*
+     * Gaa tilbage til en version.
+     *
+     * Den nuvaerende tekst gemmes som en version foerst - gennem den
+     * ALMINDELIGE vej (`opdaterNote` kalder `gemVersion`), saa en gendannelse
+     * kan fortrydes praecis som enhver anden rettelse. En vej tilbage, der
+     * ikke selv kan fortrydes, er en faelde.
+     */
+    metode: 'POST', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/versions\/([a-f0-9]{32})$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'write');
+      if (!auth) return;
+      const [noteId, vId] = ctx.params;
+      const note = hentNote(auth.user.id, noteId);
+      if (!note) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      if (!maaSkrive(auth.user.id, noteId)) {
+        apiFejl(res, 403, 'read_only', 'This page was shared with you for reading.');
+        return;
+      }
+      const v = db.prepare(`SELECT title, body_md FROM note_versions
+                             WHERE id = ? AND note_id = ?`).get(vId, noteId);
+      if (!v) { apiFejl(res, 404, 'not_found', 'No such version.'); return; }
+      // Gem det, vi er ved at forlade - UDEN om skrivestunds-vinduet.
+      gemVersion(noteId, auth.user.id, true);
+      const r = gemNote(auth.user.id, noteId, { title: v.title, body: v.body_md });
+      if (r.fejl) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      audit('version-gendannet', auth.user.id, note.title || '', vId);
+      sendJson(res, 200, { note: r.note });
+    },
+  },
+  {
+    /* Kontakten og antallet. Personlige - Sagu er flerbruger. */
+    metode: 'POST', re: /^\/api\/v1\/versions$/,
+    kald: async (req, res) => {
+      const user = requireUser(req, res);      // en noegle saetter ikke indstillinger
+      if (!user) return;
+      const body = await readJsonBody(req);
+      if (Object.prototype.hasOwnProperty.call(body, 'enabled')) {
+        /*
+         * At slaa fra SLETTER ingenting.
+         *
+         * Det, der allerede er gemt, er en kendsgerning om noten - at rydde
+         * det, fordi man skifter en indstilling, ville vaere at aendre
+         * historikken (samme regel som en frakoblet doda). Fladen siger det.
+         */
+        setSetting(user.id, 'versions_off', body.enabled ? '' : '1');
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'keep')) {
+        const antal = Math.round(Number(body.keep));
+        if (!Number.isFinite(antal) || antal < VERSIONER_MIN || antal > VERSIONER_MAKS) {
+          apiFejl(res, 400, 'bad_keep',
+            `Keep between ${VERSIONER_MIN} and ${VERSIONER_MAKS} versions of each note.`);
+          return;
+        }
+        setSetting(user.id, 'versions_keep', String(antal));
+      }
+      sendJson(res, 200, versionsOpsaetning(user.id));
     },
   },
   {

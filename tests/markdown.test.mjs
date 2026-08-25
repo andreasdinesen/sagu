@@ -637,3 +637,53 @@ test('hjælpens eksempler er hele og forskellige', () => {
     if (/https?:\/\//.test(s.kode)) assert.match(s.kode, /example\.com/);
   }
 });
+
+/*
+ * ── sletBlok ──────────────────────────────────────────────────────────────
+ *
+ * Menuen på trækhåndtaget kan fjerne en blok. Selve fjernelsen er ren tekst,
+ * så den prøves her og ikke gennem en browser — samme sted som `flytBlok`.
+ *
+ * Den strengeste prøve er ikke, at den rigtige blok forsvinder. Det er, at de
+ * ANDRE er urørte: en sletning, der stiltiende retter i det, der bliver
+ * stående, er værre end den, der fejler højlydt.
+ */
+test('sletBlok fjerner præcis én blok, uanset hvor den står', () => {
+  const NOTE = 'Foerste afsnit.\n\n## En overskrift\n\nTredje afsnit.\n\n- a\n- b\n';
+  const alle = md.blokke(NOTE);
+  for (const b of alle) {
+    const ud = md.sletBlok(NOTE, b.fra);
+    assert.equal(md.blokke(ud).length, alle.length - 1, `blok ${b.fra}`);
+    assert.ok(!/\n\n\n/.test(ud), `tomme linjer hobede sig op ved ${b.fra}`);
+    // De oevrige blokkes tekst skal staa ordret som foer.
+    const tilbage = md.blokke(ud).map((x) => ud.split('\n').slice(x.fra, x.til + 1).join('\n'));
+    const forventet = alle.filter((x) => x.fra !== b.fra)
+      .map((x) => NOTE.split('\n').slice(x.fra, x.til + 1).join('\n'));
+    assert.deepEqual(tilbage, forventet, `de andre blokke blev roert ved ${b.fra}`);
+  }
+});
+
+test('sletBlok tager den sidste blok uden at æde notens linjeskift', () => {
+  const NOTE = 'Et afsnit.\n\nOg det sidste.\n';
+  assert.equal(md.sletBlok(NOTE, 2), 'Et afsnit.\n');
+});
+
+test('sletBlok kan tømme en note helt', () => {
+  assert.equal(md.sletBlok('Kun én blok.\n', 0), '');
+  assert.equal(md.blokke(md.sletBlok('Kun én blok.\n', 0)).length, 0);
+});
+
+test('sletBlok rører ikke teksten, når blokken ikke findes', () => {
+  const NOTE = 'Noget.\n\nMere.\n';
+  assert.equal(md.sletBlok(NOTE, 99), NOTE);
+  assert.equal(md.sletBlok(NOTE, 1), NOTE, 'en linje MIDT i en blok er ikke en blok');
+  assert.equal(md.sletBlok('', 0), '');
+  assert.equal(md.sletBlok(null, 0), '');
+});
+
+test('sletBlok bevarer en kodeblok som ét stykke', () => {
+  const t = 'Om noget.\n\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\nSlut.\n';
+  const ud = md.sletBlok(t, 2);
+  assert.equal(ud, 'Om noget.\n\nSlut.\n');
+  assert.ok(!ud.includes('const'), 'hele hegnet fulgte med');
+});

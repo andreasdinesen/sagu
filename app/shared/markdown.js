@@ -759,7 +759,41 @@
     { navn: 'Another note', kode: '[[Title of the note]]' },
   ];
 
+  /**
+   * Fjerner én blok. Ren tekst ind, ren tekst ud.
+   *
+   * ── Separatoren foelger med, praecis som i `flytBlok` ─────────────────
+   *
+   * Fjernede man kun blokkens egne linjer, blev den tomme linje, der skilte
+   * den fra den naeste, staaende - og saa hober tomme linjer sig op ét sted.
+   * Reglen er den samme: den tomme linje EFTER blokken hoerer til den; er der
+   * ingen (blokken er den sidste), tages den foran i stedet.
+   *
+   * Der splejses, der sammensaettes ikke. En sletning maa ikke skrive om paa
+   * de blokke, der bliver staaende - en editor, der stiltiende retter i det,
+   * nogen har skrevet, er en editor man holder op med at stole paa.
+   *
+   * @param {number} fra blokkens foerste linje (`blokke()[i].fra`)
+   */
+  function sletBlok(md, fra) {
+    const tekst = String(md == null ? '' : md);
+    const b = blokke(tekst).find((x) => x.fra === fra);
+    if (!b) return tekst;
+
+    const linjer = tekst.split('\n');
+    let start = b.fra;
+    let antal = b.til - b.fra + 1;
+    if (b.til + 1 < linjer.length && !String(linjer[b.til + 1]).trim()) {
+      antal += 1;                                   // den tomme linje efter
+    } else if (b.fra > 0 && !String(linjer[b.fra - 1]).trim()) {
+      start -= 1;                                   // ... ellers den foran
+      antal += 1;
+    }
+    linjer.splice(start, antal);
+    return linjer.join('\n');
+  }
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, blokSomLinje,
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, blokSomLinje,
     pentNavn, pentBrugernavn, SYNTAKS };
 }));

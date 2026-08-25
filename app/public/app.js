@@ -1016,8 +1016,42 @@
     { navn: 'Another note', kode: '[[Title of the note]]' },
   ];
 
+  /**
+   * Fjerner én blok. Ren tekst ind, ren tekst ud.
+   *
+   * ── Separatoren foelger med, praecis som i `flytBlok` ─────────────────
+   *
+   * Fjernede man kun blokkens egne linjer, blev den tomme linje, der skilte
+   * den fra den naeste, staaende - og saa hober tomme linjer sig op ét sted.
+   * Reglen er den samme: den tomme linje EFTER blokken hoerer til den; er der
+   * ingen (blokken er den sidste), tages den foran i stedet.
+   *
+   * Der splejses, der sammensaettes ikke. En sletning maa ikke skrive om paa
+   * de blokke, der bliver staaende - en editor, der stiltiende retter i det,
+   * nogen har skrevet, er en editor man holder op med at stole paa.
+   *
+   * @param {number} fra blokkens foerste linje (`blokke()[i].fra`)
+   */
+  function sletBlok(md, fra) {
+    const tekst = String(md == null ? '' : md);
+    const b = blokke(tekst).find((x) => x.fra === fra);
+    if (!b) return tekst;
+
+    const linjer = tekst.split('\n');
+    let start = b.fra;
+    let antal = b.til - b.fra + 1;
+    if (b.til + 1 < linjer.length && !String(linjer[b.til + 1]).trim()) {
+      antal += 1;                                   // den tomme linje efter
+    } else if (b.fra > 0 && !String(linjer[b.fra - 1]).trim()) {
+      start -= 1;                                   // ... ellers den foran
+      antal += 1;
+    }
+    linjer.splice(start, antal);
+    return linjer.join('\n');
+  }
+
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, blokSomLinje,
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, blokSomLinje,
     pentNavn, pentBrugernavn, SYNTAKS };
 }));
 
@@ -2482,9 +2516,15 @@ function skjulTraek() {
 /**
  * Står ALT, fingeren rører, allerede i toppen?
  *
- * `window.scrollY` var ikke nok, og det er ikke en detalje: i Sagu er det
- * `body`, der ruller (`html, body { height: 100dvh; overflow-y: auto }`), saa
- * `window.scrollY` er ALTID 0. Værnet greb dermed aldrig, og et træk nedad
+ * `window.scrollY` var ikke nok, og det er ikke en detalje: paa en telefon er
+ * det `body`, der ruller, saa `window.scrollY` er ALTID 0 dér.
+ *
+ * Aarsagen er `html, body { height: 100% }` sammen med
+ * `@media (max-width: 900px) { html, body { overflow-x: hidden } }`: naar den
+ * ene akse ikke er `visible`, beregnes den anden til `auto`, og saa er body
+ * rulleboksen. Paa en bred skaerm er det stadig dokumentet. (Her stod
+ * tidligere `height: 100dvh; overflow-y: auto` - det er SIDEBARENS regel, og
+ * den, der ledte efter den paa html/body, ledte forgaeves.) Værnet greb dermed aldrig, og et træk nedad
  * midt i en lang note ville opfriske i stedet for at rulle - stik imod det,
  * fingeren bad om (målt i browseren, 2026-08-21).
  *
@@ -3237,7 +3277,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3928,7 +3968,40 @@ function gaaTil(view, opt) {
   tegnSide();
   // Scroll kun til toppen ved reelt sideskift - ellers kastes brugeren op,
   // hver gang en inline-redigering gentegner (RUNE-ERFARINGER §4).
-  if (skifter || havdeFilter) window.scrollTo(0, 0);
+  if (skifter || havdeFilter) tilToppen();
+}
+
+/**
+ * Til toppen - uanset HVEM der ruller.
+ *
+ * ── Hvorfor der staar tre linjer og ikke én ───────────────────────────────
+ *
+ * Her stod `window.scrollTo(0, 0)`, og paa en telefon gjorde den INGENTING.
+ * Maalt paa 375 px: rullet til 800, `window.scrollTo(0, 0)`, og
+ * `document.body.scrollTop` staar stadig paa 800. Skiftede man side, landede
+ * man midt i den nye.
+ *
+ * Grunden er `@media (max-width: 900px) { html, body { overflow-x: hidden } }`
+ * sammen med `html, body { height: 100% }`: naar den ene akse ikke er
+ * `visible`, beregnes den anden til `auto`, og saa er det BODY, der er
+ * rulleboksen. Paa en bred skaerm er det stadig dokumentet. Maalt:
+ * `getComputedStyle(document.body).overflowY === 'auto'` under 900 px.
+ *
+ * Vi saetter derfor alle tre i stedet for at gaette. Det er samme greb som
+ * `heltOppe()` i F19 - bare den anden vej.
+ *
+ * ── Og hvorfor den staar her, ikke inde i `gaaTil` ────────────────────────
+ *
+ * En kollega-session fandt fejlen ved at lede efter faelden ét sted mere, end
+ * jeg selv gjorde: jeg skrev erkendelsen ned i en kommentar i F19 og rettede
+ * kun dét ene sted. **En erkendelse, der kun bliver til en kommentar, er ikke
+ * en rettelse.** Naeste gang nogen skal rulle et sted hen, findes funktionen
+ * nu - saa der ikke er noget at gaette om.
+ */
+function tilToppen() {
+  window.scrollTo(0, 0);
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
 }
 
 function opdaterNav() {
@@ -4218,9 +4291,13 @@ document.addEventListener('visibilitychange', () => {
  * princippet rigtig og i praksis skroebelig:
  *
  *  - **Hvem ruller?** `window.scrollY` er 0 i nogle tilstande og
- *    `document.body.scrollTop` i andre, fordi baade `html` og `body` har
- *    `height: 100dvh; overflow-y: auto`. Den fejl har allerede kostet én
- *    gang, i traek-ned-for-at-opfriske.
+ *    `document.body.scrollTop` i andre. Aarsagen er `html, body { height:
+ *    100% }` sammen med `overflow-x: hidden` under 900 px: naar den ene akse
+ *    ikke er `visible`, beregnes den anden til `auto`, og saa er BODY
+ *    rulleboksen. (Her stod tidligere `height: 100dvh; overflow-y: auto` -
+ *    det er sidebarens regel, ikke sidens, og den, der ledte efter den,
+ *    ledte forgaeves.) Den fejl har kostet to gange: i
+ *    traek-ned-for-at-opfriske og i »op til toppen ved sideskift«.
  *  - **Og haendelsen kom ikke.** Maalt: en programmatisk rulning gav NUL
  *    scroll-haendelser, mens klassen blev haengende.
  *
@@ -5133,6 +5210,11 @@ async function sideSettings() {
     : ''}
   </div>
 
+  <h2>Version history</h2>
+  <div class="card" id="versionKort">
+    <p class="meta saetning">Loading…</p>
+  </div>
+
   <h2>Two-step verification</h2>
   <div class="card" id="totpKort">
     <p class="meta saetning">Loading…</p>
@@ -5373,6 +5455,7 @@ function bindSettings() {
     vis();
   }
 
+  tegnVersioner();
   tegnTotp();
 
   const kvoteGem = document.getElementById('kvoteGem');
@@ -6240,6 +6323,65 @@ function spoergKodeord(o) {
   };
   knap.addEventListener('click', gaa);
   felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gaa(); } });
+}
+
+/* ============================ versionshistorik (F22) ====================
+ *
+ * »Denne funktion skal kunne slås fra inde i indstillinger og det skal også
+ * være muligt at sætte antallet af versioner den gemmer« (Andreas,
+ * 2026-08-25).
+ *
+ * ── Indstillingen er PERSONLIG ────────────────────────────────────────────
+ *
+ * Sagu er flerbruger. Ville alice have historik og bob ikke, ville en
+ * serverindstilling tvinge dem til at blive enige om noget, der kun handler
+ * om deres egne noter.
+ */
+async function tegnVersioner() {
+  const host = document.getElementById('versionKort');
+  if (!host) return;
+  let d;
+  // Opsaetningen ligger paa versions-endepunktet, som kraever en NOTE. Har man
+  // ingen, er der heller ingen historik at indstille - men kortet skal stadig
+  // kunne vise kontakten, saa vi spoerger gennem den billigste vej der findes.
+  try { d = await api('POST', '/api/v1/versions', {}); } catch { host.innerHTML = ''; return; }
+
+  host.innerHTML = `<label class="switch">
+      <input type="checkbox" id="verTil" ${d.enabled ? 'checked' : ''}>
+      <span>Keep earlier versions of my notes</span></label>
+    <p class="meta saetning">A version is kept each time you come back and change something.
+    Edits within the same sitting count as one, so the ${esc(String(d.keep))} you keep cover
+    ${esc(String(d.keep))} separate times you worked on the note — not the last few minutes.</p>
+    <label class="field" style="margin-top:14px"><span>Versions to keep per note</span>
+      <div class="btnrow">
+        <input class="input" id="verAntal" type="number" min="1" max="200" step="1"
+          style="max-width:110px" value="${esc(String(d.keep))}" ${d.enabled ? '' : 'disabled'}>
+        <button class="btn" id="verGem" ${d.enabled ? '' : 'disabled'}>Save</button>
+      </div></label>
+    <p class="meta saetning">Turning it off stops new versions from being kept.
+    <strong>What is already saved stays</strong> — it is a fact about the note, and throwing it
+    away because you changed a setting would be rewriting history. Open a note's
+    <strong>…</strong> menu to see and restore them.</p>`;
+
+  host.querySelector('#verTil').addEventListener('change', async (e) => {
+    try {
+      await api('POST', '/api/v1/versions', { enabled: e.target.checked });
+      toast(e.target.checked ? 'Versions are kept again.' : 'No new versions will be kept.');
+      tegnVersioner();
+    } catch (ex) { toast(ex.message); e.target.checked = !e.target.checked; }
+  });
+  const gem = host.querySelector('#verGem');
+  if (gem) {
+    gem.addEventListener('click', async () => {
+      const antal = Number(host.querySelector('#verAntal').value);
+      gem.disabled = true;
+      try {
+        await api('POST', '/api/v1/versions', { keep: antal });
+        toast('Saved.');
+        tegnVersioner();
+      } catch (ex) { toast(ex.message); gem.disabled = false; }
+    });
+  }
 }
 
 /* ---- p3_passkey.js ---- */
@@ -8201,6 +8343,7 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
+    <button class="usermenu-item" data-do="historik">${icon('kalender', 16)}<span>Version history</span></button>
     ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
@@ -8250,6 +8393,7 @@ function visNoteMenu() {
           }
           return;
         }
+        if (hvad === 'historik') { visHistorikPanel(n); return; }
         if (hvad === 'id') {
           try {
             await navigator.clipboard.writeText(n.id);
@@ -8401,6 +8545,126 @@ function visIdPanel(id, overskrift) {
   const felt = host.querySelector('#idFelt');
   felt.focus();
   felt.select();
+}
+
+/* ============================ versionshistorik (F22) ====================
+ *
+ * »Det skal være muligt at gå 30 versioner tilbage af en note« (Andreas,
+ * 2026-08-25).
+ *
+ * ── Hvad ruden skal kunne, og hvad den ikke skal ──────────────────────────
+ *
+ * Den skal vise HVORNÅR, og hvad der stod. Den skal ikke være en
+ * forskelsvisning: at se to tekster side om side med farvede linjer er en
+ * anden funktion, og den, der leder efter »hvad stod der i tirsdags«, er
+ * hjulpet af at læse det — ikke af at se hvad der blev ændret.
+ *
+ * ── Gendannelsen sker ét sted ─────────────────────────────────────────────
+ *
+ * Serveren gemmer den nuværende tekst som en version, FØR den skriver den
+ * gamle tilbage. Fladen behøver derfor ikke passe på noget: en gendannelse er
+ * en rettelse som alle andre, og vejen tilbage findes i den samme liste.
+ */
+async function visHistorikPanel(note) {
+  const gammel = document.getElementById('historikPanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'historikPanel';
+  host.innerHTML = `<div class="modal-kort bred">
+      <div class="modal-top">
+        <h2>Version history</h2>
+        <button class="iconbtn" id="hisLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop" id="hisKrop"><p class="meta saetning">Loading…</p></div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#hisLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  const krop = host.querySelector('#hisKrop');
+  let d;
+  try { d = await api('GET', `/api/v1/notes/${note.id}/versions`); }
+  catch (ex) { krop.innerHTML = `<p class="lead">${esc(ex.message)}</p>`; return; }
+
+  if (!d.versions.length) {
+    /*
+     * Tom af to grunde, og de betyder ikke det samme.
+     *
+     * »Slået fra« skal ikke se ud som »der er ikke sket noget endnu« - i det
+     * ene tilfælde er der en knap at trykke på, i det andet er der ingenting
+     * at gøre.
+     */
+    krop.innerHTML = d.enabled
+      ? '<p class="lead">Nothing yet. A version is kept each time you come back and change '
+        + 'something — edits within the same sitting count as one.</p>'
+      : '<p class="lead">Version history is switched off.</p>'
+        + '<div class="btnrow" style="margin-top:12px">'
+        + '<button class="btn" id="hisTilIndst">Open settings</button></div>';
+    const knap = krop.querySelector('#hisTilIndst');
+    if (knap) knap.addEventListener('click', () => { luk(); gaaTil('settings'); });
+    return;
+  }
+
+  /*
+   * Overskriften skal passe til KONTAKTEN, ikke bare til listen.
+   *
+   * Her stod »Keeping the last 30 versions« uanset hvad - ogsaa naar
+   * historikken var slaaet fra og der altsaa ikke bliver gemt flere. Den
+   * tomme rude sagde det rigtige; den fyldte sagde noget andet. En
+   * hjaelpetekst er en kravspecifikation, ogsaa naar den staar over en liste,
+   * der ser rigtig ud.
+   */
+  krop.innerHTML = `<p class="meta saetning">${d.enabled
+    ? `Keeping the last ${esc(String(d.keep))} versions of each note. `
+      + 'Edits within the same sitting count as one.'
+    : '<strong>Switched off.</strong> These were kept earlier — no new ones are being added.'}</p>
+    <div class="historik">
+      <ul class="historik-liste">${d.versions.map((v, i) => `
+        <li><button class="historik-rk${i === 0 ? ' paa' : ''}" data-v="${esc(v.id)}">
+          <span class="historik-tid">${esc(visTid(v.at))}</span>
+          <span class="historik-titel">${esc(v.title || 'Untitled')}</span>
+          <span class="meta">${esc(visStoerrelse(v.size))}</span>
+        </button></li>`).join('')}</ul>
+      <div class="historik-vis" id="hisVis"><p class="meta saetning">Pick a version.</p></div>
+    </div>`;
+
+  const vis = krop.querySelector('#hisVis');
+  let valgt = null;
+  const hent = async (id) => {
+    valgt = id;
+    krop.querySelectorAll('.historik-rk').forEach((b) => b.classList.toggle('paa', b.dataset.v === id));
+    vis.innerHTML = '<p class="meta saetning">Loading…</p>';
+    try {
+      const r = await api('GET', `/api/v1/notes/${note.id}/versions/${id}`);
+      // Teksten vises som MARKDOWN, ikke renderet: det er den, der bliver
+      // skrevet tilbage, og så skal det være den, man ser.
+      vis.innerHTML = `<div class="btnrow" style="margin-bottom:10px">
+          <button class="btn primary" id="hisGendan">Restore this version</button>
+        </div>
+        <pre class="historik-tekst">${esc(r.version.body)}</pre>`;
+      vis.querySelector('#hisGendan').addEventListener('click', async () => {
+        try {
+          const svar = await api('POST', `/api/v1/notes/${note.id}/versions/${id}`);
+          luk();
+          editor.note = svar.note;
+          editor.beskidt = false;
+          editor.aabenBlok = null;
+          tegnSide();
+          toast('Restored. The version you left is in the history too.');
+        } catch (ex) { toast(ex.message); }
+      });
+    } catch (ex) { vis.innerHTML = `<p class="meta saetning">${esc(ex.message)}</p>`; }
+  };
+  krop.querySelectorAll('.historik-rk').forEach((b) => {
+    b.addEventListener('click', () => { if (b.dataset.v !== valgt) hent(b.dataset.v); });
+  });
+  hent(d.versions[0].id);
 }
 
 /* ---- p5_omni.js ---- */
@@ -9971,15 +10235,29 @@ function blokSomOpgave(linjeNr) {
 
 function visBlokMenu(g) {
   lukBlokMenu();
-  if (!dodaState.connected) return;
-  const tekst = blokSomOpgave(Number(g.dataset.greb));
-  if (tekst.length < 2) return;
+  /*
+   * Menuen aabner nu ALTID - foer kraevede den, at doda var forbundet.
+   *
+   * Dengang var »Send to doda« det eneste punkt, saa en menu uden doda var en
+   * tom menu. Nu kan man ogsaa slette blokken, og DEN mulighed har intet med
+   * doda at goere. Havde vagten faaet lov at blive staaende, ville sletningen
+   * vaere usynlig for enhver, der ikke har koblet de to apps sammen.
+   */
+  const linje = Number(g.dataset.greb);
+  const tekst = blokSomOpgave(linje);
+  // Uden en tekst er der intet at sende og intet at vise - men blokken kan
+  // stadig slettes, saa menuen aabner alligevel.
+  const tilDoda = dodaState.connected && tekst.length >= 2;
 
   blokMenu = document.createElement('div');
   blokMenu.className = 'blok-menu';
-  blokMenu.innerHTML = `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
-      ${icon('tjek', 15)}<span>Send to doda</span></button>
-    <div class="blok-menu-uddrag">${esc(tekst.slice(0, 90))}${tekst.length > 90 ? '…' : ''}</div>`;
+  blokMenu.innerHTML = `${tilDoda
+    ? `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
+        ${icon('tjek', 15)}<span>Send to doda</span></button>` : ''}
+    <button type="button" class="blok-menu-punkt farlig" id="blokSlet">
+      ${icon('trash', 15)}<span>Delete this block</span></button>
+    ${tekst ? `<div class="blok-menu-uddrag">${esc(tekst.slice(0, 90))}${
+  tekst.length > 90 ? '…' : ''}</div>` : ''}`;
   document.body.appendChild(blokMenu);
 
   const r = g.getBoundingClientRect();
@@ -9988,15 +10266,60 @@ function visBlokMenu(g) {
   blokMenu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - m.width - 8))}px`;
   blokMenu.style.top = `${Math.round(Math.min(r.bottom + 4, window.innerHeight - m.height - 8))}px`;
 
-  blokMenu.querySelector('#blokTilDoda').addEventListener('click', async () => {
+  const dodaKnap = blokMenu.querySelector('#blokTilDoda');
+  if (dodaKnap) {
+    dodaKnap.addEventListener('click', async () => {
+      lukBlokMenu();
+      if (tekst.length > 500) toast('That was long — the first 500 characters became the task.');
+      await sendOpgaveTilDoda(tekst.slice(0, 500));
+    });
+  }
+
+  blokMenu.querySelector('#blokSlet').addEventListener('click', () => {
     lukBlokMenu();
-    if (tekst.length > 500) toast('That was long — the first 500 characters became the task.');
-    await sendOpgaveTilDoda(tekst.slice(0, 500));
+    sletBlokFraMenu(linje);
   });
 
   document.addEventListener('keydown', blokMenuTast, true);
   document.addEventListener('pointerdown', blokMenuUdenfor, true);
-  blokMenu.querySelector('#blokTilDoda').focus();
+  (dodaKnap || blokMenu.querySelector('#blokSlet')).focus();
+}
+
+/**
+ * Fjerner blokken - og tilbyder at fortryde.
+ *
+ * ── Hvorfor der ikke spoerges foerst ──────────────────────────────────────
+ *
+ * En »er du sikker?«-rude for hver eneste sletning er en afgift, man betaler
+ * hver gang for at daekke den ene gang, man rammer forkert. Fortrydelsen er
+ * den bedre handel: handlingen sker med det samme, og vejen tilbage staar
+ * fremme, saa laenge det er relevant.
+ *
+ * Den gamle tekst gemmes FOER der roeres ved noget. Havde vi bygget den op
+ * igen af de blokke, der blev tilbage, ville »fortryd« give en tekst, der
+ * lignede den gamle - ikke den gamle.
+ */
+function sletBlokFraMenu(linje) {
+  const n = editor.note;
+  if (!n || !maaRette(n)) return;
+  const foer = n.body;
+  const ny = saguMarkdown.sletBlok(foer, linje);
+  if (ny === foer) return;
+
+  n.body = ny;
+  editor.aabenBlok = null;
+  markerBeskidt();
+  tegnKrop();
+  toast('Block deleted.', {
+    label: 'Undo',
+    run: () => {
+      if (!editor.note || editor.note.id !== n.id) return;
+      editor.note.body = foer;
+      editor.aabenBlok = null;
+      markerBeskidt();
+      tegnKrop();
+    },
+  });
 }
 
 // Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.

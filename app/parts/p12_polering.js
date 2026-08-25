@@ -374,9 +374,15 @@ function skjulTraek() {
 /**
  * Står ALT, fingeren rører, allerede i toppen?
  *
- * `window.scrollY` var ikke nok, og det er ikke en detalje: i Sagu er det
- * `body`, der ruller (`html, body { height: 100dvh; overflow-y: auto }`), saa
- * `window.scrollY` er ALTID 0. Værnet greb dermed aldrig, og et træk nedad
+ * `window.scrollY` var ikke nok, og det er ikke en detalje: paa en telefon er
+ * det `body`, der ruller, saa `window.scrollY` er ALTID 0 dér.
+ *
+ * Aarsagen er `html, body { height: 100% }` sammen med
+ * `@media (max-width: 900px) { html, body { overflow-x: hidden } }`: naar den
+ * ene akse ikke er `visible`, beregnes den anden til `auto`, og saa er body
+ * rulleboksen. Paa en bred skaerm er det stadig dokumentet. (Her stod
+ * tidligere `height: 100dvh; overflow-y: auto` - det er SIDEBARENS regel, og
+ * den, der ledte efter den paa html/body, ledte forgaeves.) Værnet greb dermed aldrig, og et træk nedad
  * midt i en lang note ville opfriske i stedet for at rulle - stik imod det,
  * fingeren bad om (målt i browseren, 2026-08-21).
  *

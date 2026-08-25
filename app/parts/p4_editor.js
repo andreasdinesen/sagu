@@ -1901,6 +1901,7 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
+    <button class="usermenu-item" data-do="historik">${icon('kalender', 16)}<span>Version history</span></button>
     ${mit ? `<button class="usermenu-item" data-do="dup">${icon('copy', 16)}<span>Duplicate</span></button>
     <button class="usermenu-item" data-do="dupall">${icon('copy', 16)}<span>Duplicate with subpages</span></button>
     ${foer ? `<button class="usermenu-item" data-do="ind">${icon('ind', 16)}<span>Make it a subpage of “${
@@ -1950,6 +1951,7 @@ function visNoteMenu() {
           }
           return;
         }
+        if (hvad === 'historik') { visHistorikPanel(n); return; }
         if (hvad === 'id') {
           try {
             await navigator.clipboard.writeText(n.id);
@@ -2101,4 +2103,124 @@ function visIdPanel(id, overskrift) {
   const felt = host.querySelector('#idFelt');
   felt.focus();
   felt.select();
+}
+
+/* ============================ versionshistorik (F22) ====================
+ *
+ * »Det skal være muligt at gå 30 versioner tilbage af en note« (Andreas,
+ * 2026-08-25).
+ *
+ * ── Hvad ruden skal kunne, og hvad den ikke skal ──────────────────────────
+ *
+ * Den skal vise HVORNÅR, og hvad der stod. Den skal ikke være en
+ * forskelsvisning: at se to tekster side om side med farvede linjer er en
+ * anden funktion, og den, der leder efter »hvad stod der i tirsdags«, er
+ * hjulpet af at læse det — ikke af at se hvad der blev ændret.
+ *
+ * ── Gendannelsen sker ét sted ─────────────────────────────────────────────
+ *
+ * Serveren gemmer den nuværende tekst som en version, FØR den skriver den
+ * gamle tilbage. Fladen behøver derfor ikke passe på noget: en gendannelse er
+ * en rettelse som alle andre, og vejen tilbage findes i den samme liste.
+ */
+async function visHistorikPanel(note) {
+  const gammel = document.getElementById('historikPanel');
+  if (gammel) gammel.remove();
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'historikPanel';
+  host.innerHTML = `<div class="modal-kort bred">
+      <div class="modal-top">
+        <h2>Version history</h2>
+        <button class="iconbtn" id="hisLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop" id="hisKrop"><p class="meta saetning">Loading…</p></div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#hisLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  const krop = host.querySelector('#hisKrop');
+  let d;
+  try { d = await api('GET', `/api/v1/notes/${note.id}/versions`); }
+  catch (ex) { krop.innerHTML = `<p class="lead">${esc(ex.message)}</p>`; return; }
+
+  if (!d.versions.length) {
+    /*
+     * Tom af to grunde, og de betyder ikke det samme.
+     *
+     * »Slået fra« skal ikke se ud som »der er ikke sket noget endnu« - i det
+     * ene tilfælde er der en knap at trykke på, i det andet er der ingenting
+     * at gøre.
+     */
+    krop.innerHTML = d.enabled
+      ? '<p class="lead">Nothing yet. A version is kept each time you come back and change '
+        + 'something — edits within the same sitting count as one.</p>'
+      : '<p class="lead">Version history is switched off.</p>'
+        + '<div class="btnrow" style="margin-top:12px">'
+        + '<button class="btn" id="hisTilIndst">Open settings</button></div>';
+    const knap = krop.querySelector('#hisTilIndst');
+    if (knap) knap.addEventListener('click', () => { luk(); gaaTil('settings'); });
+    return;
+  }
+
+  /*
+   * Overskriften skal passe til KONTAKTEN, ikke bare til listen.
+   *
+   * Her stod »Keeping the last 30 versions« uanset hvad - ogsaa naar
+   * historikken var slaaet fra og der altsaa ikke bliver gemt flere. Den
+   * tomme rude sagde det rigtige; den fyldte sagde noget andet. En
+   * hjaelpetekst er en kravspecifikation, ogsaa naar den staar over en liste,
+   * der ser rigtig ud.
+   */
+  krop.innerHTML = `<p class="meta saetning">${d.enabled
+    ? `Keeping the last ${esc(String(d.keep))} versions of each note. `
+      + 'Edits within the same sitting count as one.'
+    : '<strong>Switched off.</strong> These were kept earlier — no new ones are being added.'}</p>
+    <div class="historik">
+      <ul class="historik-liste">${d.versions.map((v, i) => `
+        <li><button class="historik-rk${i === 0 ? ' paa' : ''}" data-v="${esc(v.id)}">
+          <span class="historik-tid">${esc(visTid(v.at))}</span>
+          <span class="historik-titel">${esc(v.title || 'Untitled')}</span>
+          <span class="meta">${esc(visStoerrelse(v.size))}</span>
+        </button></li>`).join('')}</ul>
+      <div class="historik-vis" id="hisVis"><p class="meta saetning">Pick a version.</p></div>
+    </div>`;
+
+  const vis = krop.querySelector('#hisVis');
+  let valgt = null;
+  const hent = async (id) => {
+    valgt = id;
+    krop.querySelectorAll('.historik-rk').forEach((b) => b.classList.toggle('paa', b.dataset.v === id));
+    vis.innerHTML = '<p class="meta saetning">Loading…</p>';
+    try {
+      const r = await api('GET', `/api/v1/notes/${note.id}/versions/${id}`);
+      // Teksten vises som MARKDOWN, ikke renderet: det er den, der bliver
+      // skrevet tilbage, og så skal det være den, man ser.
+      vis.innerHTML = `<div class="btnrow" style="margin-bottom:10px">
+          <button class="btn primary" id="hisGendan">Restore this version</button>
+        </div>
+        <pre class="historik-tekst">${esc(r.version.body)}</pre>`;
+      vis.querySelector('#hisGendan').addEventListener('click', async () => {
+        try {
+          const svar = await api('POST', `/api/v1/notes/${note.id}/versions/${id}`);
+          luk();
+          editor.note = svar.note;
+          editor.beskidt = false;
+          editor.aabenBlok = null;
+          tegnSide();
+          toast('Restored. The version you left is in the history too.');
+        } catch (ex) { toast(ex.message); }
+      });
+    } catch (ex) { vis.innerHTML = `<p class="meta saetning">${esc(ex.message)}</p>`; }
+  };
+  krop.querySelectorAll('.historik-rk').forEach((b) => {
+    b.addEventListener('click', () => { if (b.dataset.v !== valgt) hent(b.dataset.v); });
+  });
+  hent(d.versions[0].id);
 }

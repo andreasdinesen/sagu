@@ -263,7 +263,20 @@ test('en note kan ikke linke til SIG SELV', async () => {
 
 /* --------------------------------------------------------- historikken */
 
-test('historikken har en post pr. gem - F1s acceptkriterium', async () => {
+/*
+ * ── Reglen er ÆNDRET i F22, og det er med vilje ───────────────────────────
+ *
+ * Her stod »én post pr. gem — F1s acceptkriterium«. Det var rigtigt, dengang
+ * historikken hverken havde en grænse eller en flade: tabellen voksede i det
+ * uendelige, og ingen kiggede på den.
+ *
+ * Med 30 versioner og en editor, der gemmer ~900 ms efter man holder op med
+ * at taste, ville én post pr. gem betyde, at de 30 dækkede de sidste par
+ * minutter. Gemninger inden for samme skrivestund tæller derfor som ÉN, og
+ * det er den FØRSTE, der beholdes: en version skal vise, hvordan noten så ud
+ * før den skrivepause, man vil tilbage til.
+ */
+test('gemninger i samme skrivestund tæller som ÉN version', async () => {
   const note = (await a.kald('POST', '/api/v1/notes', { title: 'Med historik', body: 'et' })).data.note;
   await a.kald('PATCH', `/api/v1/notes/${note.id}`, { body: 'to' });
   await a.kald('PATCH', `/api/v1/notes/${note.id}`, { title: 'Nyt navn' });
@@ -271,8 +284,44 @@ test('historikken har en post pr. gem - F1s acceptkriterium', async () => {
 
   const r = await a.kald('GET', `/api/v1/notes/${note.id}/versions`);
   assert.equal(r.status, 200);
-  assert.equal(r.data.versions.length, 3, 'oprettelse + to indholdsaendringer, ikke ikonet');
-  assert.equal(r.data.versions[0].title, 'Nyt navn', 'nyeste foerst');
+  assert.equal(r.data.versions.length, 1, 'oprettelsen - de tre rettelser laa inden for vinduet');
+  assert.equal(r.data.versions[0].title, 'Med historik', 'og det er den FOERSTE, der staar');
+  assert.equal(r.data.enabled, true);
+  assert.equal(r.data.keep, 30, 'tredive som udgangspunkt');
+});
+
+test('en ny skrivestund giver en ny version', async () => {
+  /*
+   * Vinduet kan ikke ventes ud i en test, så den eksisterende række
+   * bagdateres i databasen. Det rykker kun URET; selve reglen røres ikke.
+   */
+  const note = (await a.kald('POST', '/api/v1/notes', { title: 'To stunder', body: 'foerst' })).data.note;
+  const { DatabaseSync } = await import('node:sqlite');
+  const nyStund = (id) => {
+    const db = new DatabaseSync(path.join(srv.dataDir, 'sagu.db'));
+    try { db.prepare('UPDATE note_versions SET at = at - 3600 WHERE note_id = ?').run(id); }
+    finally { db.close(); }
+  };
+  nyStund(note.id);
+
+  await a.kald('PATCH', `/api/v1/notes/${note.id}`, { body: 'senere' });
+  let r = await a.kald('GET', `/api/v1/notes/${note.id}/versions`);
+  /*
+   * Stadig ÉN. Vinduet var udløbet, men notens tilstand (»foerst«) står
+   * allerede i den version, oprettelsen lavede — og to ens versioner i træk
+   * er spild af en plads ud af tredive.
+   */
+  assert.equal(r.data.versions.length, 1);
+  assert.equal((await a.kald('GET', `/api/v1/notes/${note.id}/versions/${r.data.versions[0].id}`))
+    .data.version.body, 'foerst');
+
+  // Med et NYT indhold i en ny stund kommer der derimod en til.
+  nyStund(note.id);
+  await a.kald('PATCH', `/api/v1/notes/${note.id}`, { body: 'endnu senere' });
+  r = await a.kald('GET', `/api/v1/notes/${note.id}/versions`);
+  assert.equal(r.data.versions.length, 2);
+  assert.equal((await a.kald('GET', `/api/v1/notes/${note.id}/versions/${r.data.versions[0].id}`))
+    .data.version.body, 'senere', 'stundens slutresultat');
 });
 
 test('en 200 KB note gemmes og hentes uden maerkbar forsinkelse', async () => {

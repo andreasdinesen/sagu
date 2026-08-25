@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -696,7 +696,40 @@ function gaaTil(view, opt) {
   tegnSide();
   // Scroll kun til toppen ved reelt sideskift - ellers kastes brugeren op,
   // hver gang en inline-redigering gentegner (RUNE-ERFARINGER §4).
-  if (skifter || havdeFilter) window.scrollTo(0, 0);
+  if (skifter || havdeFilter) tilToppen();
+}
+
+/**
+ * Til toppen - uanset HVEM der ruller.
+ *
+ * ── Hvorfor der staar tre linjer og ikke én ───────────────────────────────
+ *
+ * Her stod `window.scrollTo(0, 0)`, og paa en telefon gjorde den INGENTING.
+ * Maalt paa 375 px: rullet til 800, `window.scrollTo(0, 0)`, og
+ * `document.body.scrollTop` staar stadig paa 800. Skiftede man side, landede
+ * man midt i den nye.
+ *
+ * Grunden er `@media (max-width: 900px) { html, body { overflow-x: hidden } }`
+ * sammen med `html, body { height: 100% }`: naar den ene akse ikke er
+ * `visible`, beregnes den anden til `auto`, og saa er det BODY, der er
+ * rulleboksen. Paa en bred skaerm er det stadig dokumentet. Maalt:
+ * `getComputedStyle(document.body).overflowY === 'auto'` under 900 px.
+ *
+ * Vi saetter derfor alle tre i stedet for at gaette. Det er samme greb som
+ * `heltOppe()` i F19 - bare den anden vej.
+ *
+ * ── Og hvorfor den staar her, ikke inde i `gaaTil` ────────────────────────
+ *
+ * En kollega-session fandt fejlen ved at lede efter faelden ét sted mere, end
+ * jeg selv gjorde: jeg skrev erkendelsen ned i en kommentar i F19 og rettede
+ * kun dét ene sted. **En erkendelse, der kun bliver til en kommentar, er ikke
+ * en rettelse.** Naeste gang nogen skal rulle et sted hen, findes funktionen
+ * nu - saa der ikke er noget at gaette om.
+ */
+function tilToppen() {
+  window.scrollTo(0, 0);
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
 }
 
 function opdaterNav() {
@@ -986,9 +1019,13 @@ document.addEventListener('visibilitychange', () => {
  * princippet rigtig og i praksis skroebelig:
  *
  *  - **Hvem ruller?** `window.scrollY` er 0 i nogle tilstande og
- *    `document.body.scrollTop` i andre, fordi baade `html` og `body` har
- *    `height: 100dvh; overflow-y: auto`. Den fejl har allerede kostet én
- *    gang, i traek-ned-for-at-opfriske.
+ *    `document.body.scrollTop` i andre. Aarsagen er `html, body { height:
+ *    100% }` sammen med `overflow-x: hidden` under 900 px: naar den ene akse
+ *    ikke er `visible`, beregnes den anden til `auto`, og saa er BODY
+ *    rulleboksen. (Her stod tidligere `height: 100dvh; overflow-y: auto` -
+ *    det er sidebarens regel, ikke sidens, og den, der ledte efter den,
+ *    ledte forgaeves.) Den fejl har kostet to gange: i
+ *    traek-ned-for-at-opfriske og i »op til toppen ved sideskift«.
  *  - **Og haendelsen kom ikke.** Maalt: en programmatisk rulning gav NUL
  *    scroll-haendelser, mens klassen blev haengende.
  *

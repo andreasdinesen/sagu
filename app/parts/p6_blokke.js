@@ -1077,15 +1077,29 @@ function blokSomOpgave(linjeNr) {
 
 function visBlokMenu(g) {
   lukBlokMenu();
-  if (!dodaState.connected) return;
-  const tekst = blokSomOpgave(Number(g.dataset.greb));
-  if (tekst.length < 2) return;
+  /*
+   * Menuen aabner nu ALTID - foer kraevede den, at doda var forbundet.
+   *
+   * Dengang var »Send to doda« det eneste punkt, saa en menu uden doda var en
+   * tom menu. Nu kan man ogsaa slette blokken, og DEN mulighed har intet med
+   * doda at goere. Havde vagten faaet lov at blive staaende, ville sletningen
+   * vaere usynlig for enhver, der ikke har koblet de to apps sammen.
+   */
+  const linje = Number(g.dataset.greb);
+  const tekst = blokSomOpgave(linje);
+  // Uden en tekst er der intet at sende og intet at vise - men blokken kan
+  // stadig slettes, saa menuen aabner alligevel.
+  const tilDoda = dodaState.connected && tekst.length >= 2;
 
   blokMenu = document.createElement('div');
   blokMenu.className = 'blok-menu';
-  blokMenu.innerHTML = `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
-      ${icon('tjek', 15)}<span>Send to doda</span></button>
-    <div class="blok-menu-uddrag">${esc(tekst.slice(0, 90))}${tekst.length > 90 ? '…' : ''}</div>`;
+  blokMenu.innerHTML = `${tilDoda
+    ? `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
+        ${icon('tjek', 15)}<span>Send to doda</span></button>` : ''}
+    <button type="button" class="blok-menu-punkt farlig" id="blokSlet">
+      ${icon('trash', 15)}<span>Delete this block</span></button>
+    ${tekst ? `<div class="blok-menu-uddrag">${esc(tekst.slice(0, 90))}${
+  tekst.length > 90 ? '…' : ''}</div>` : ''}`;
   document.body.appendChild(blokMenu);
 
   const r = g.getBoundingClientRect();
@@ -1094,15 +1108,60 @@ function visBlokMenu(g) {
   blokMenu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - m.width - 8))}px`;
   blokMenu.style.top = `${Math.round(Math.min(r.bottom + 4, window.innerHeight - m.height - 8))}px`;
 
-  blokMenu.querySelector('#blokTilDoda').addEventListener('click', async () => {
+  const dodaKnap = blokMenu.querySelector('#blokTilDoda');
+  if (dodaKnap) {
+    dodaKnap.addEventListener('click', async () => {
+      lukBlokMenu();
+      if (tekst.length > 500) toast('That was long — the first 500 characters became the task.');
+      await sendOpgaveTilDoda(tekst.slice(0, 500));
+    });
+  }
+
+  blokMenu.querySelector('#blokSlet').addEventListener('click', () => {
     lukBlokMenu();
-    if (tekst.length > 500) toast('That was long — the first 500 characters became the task.');
-    await sendOpgaveTilDoda(tekst.slice(0, 500));
+    sletBlokFraMenu(linje);
   });
 
   document.addEventListener('keydown', blokMenuTast, true);
   document.addEventListener('pointerdown', blokMenuUdenfor, true);
-  blokMenu.querySelector('#blokTilDoda').focus();
+  (dodaKnap || blokMenu.querySelector('#blokSlet')).focus();
+}
+
+/**
+ * Fjerner blokken - og tilbyder at fortryde.
+ *
+ * ── Hvorfor der ikke spoerges foerst ──────────────────────────────────────
+ *
+ * En »er du sikker?«-rude for hver eneste sletning er en afgift, man betaler
+ * hver gang for at daekke den ene gang, man rammer forkert. Fortrydelsen er
+ * den bedre handel: handlingen sker med det samme, og vejen tilbage staar
+ * fremme, saa laenge det er relevant.
+ *
+ * Den gamle tekst gemmes FOER der roeres ved noget. Havde vi bygget den op
+ * igen af de blokke, der blev tilbage, ville »fortryd« give en tekst, der
+ * lignede den gamle - ikke den gamle.
+ */
+function sletBlokFraMenu(linje) {
+  const n = editor.note;
+  if (!n || !maaRette(n)) return;
+  const foer = n.body;
+  const ny = saguMarkdown.sletBlok(foer, linje);
+  if (ny === foer) return;
+
+  n.body = ny;
+  editor.aabenBlok = null;
+  markerBeskidt();
+  tegnKrop();
+  toast('Block deleted.', {
+    label: 'Undo',
+    run: () => {
+      if (!editor.note || editor.note.id !== n.id) return;
+      editor.note.body = foer;
+      editor.aabenBlok = null;
+      markerBeskidt();
+      tegnKrop();
+    },
+  });
 }
 
 // Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.
