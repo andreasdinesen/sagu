@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -10030,10 +10030,12 @@ function visMarkdownPanel() {
       svar.textContent = 'Fetching the images…';
       try {
         const r = await medIndlejredeBilleder(md);
-        await navigator.clipboard.write([new ClipboardItem({
-          'text/plain': new Blob([r.markdown], { type: 'text/plain' }),
-          'text/html': new Blob([r.html], { type: 'text/html' }),
-        })]);
+        /*
+         * Samme vej som menuens knap. Her er `text/plain` den SELVBAERENDE
+         * markdown med billeddata i - man staar og ser paa markdown'en og kan
+         * have brug for netop den. Menuens knap goer det modsat.
+         */
+        if (!skrivToFlavours(r.markdown, r.html)) throw new Error('afvist');
         /*
          * Beskeden siger hvad man FIK, ikke bare at det lykkedes.
          *
@@ -10714,6 +10716,67 @@ async function kopierBillede(src, knap) {
 }
 
 /**
+ * Skriv BEGGE flavours til udklipsholderen. Sandt, hvis det lykkedes.
+ *
+ * ── Hvorfor `copy`-haendelsen og ikke `navigator.clipboard.write` ─────────
+ *
+ * Meldt fra brug (Andreas, 2026-08-25, med skaermbilleder): en note indsat i
+ * Apple Notes kom ind som RAA MARKDOWN med billedet skrevet ud som en
+ * kilometerlang `data:`-adresse i teksten. Det samme i OneNote paa web.
+ *
+ * To uafhaengige apps, der begge falder tilbage til ren tekst, er ikke to
+ * apps med samme smag - det er en `text/html`, der aldrig naaede frem.
+ * `navigator.clipboard.write()` foerer sin egen HTML gennem en rensning, og
+ * den kom ikke ud i den anden ende.
+ *
+ * MAALT paa macOS' egen udklipsholder gennem `osascript`: med
+ * `copy`-haendelsen staar der `«class HTML», 566` med `<img src="data:image/
+ * png…` i. Det er den vej, der virker, og den kraever ingen tilladelse - kun
+ * at brugeren har trykket paa noget.
+ *
+ * At der maa VENTES paa billederne foerst, er i orden: proevet med et rigtigt
+ * klik, hvor hentningen laa foer `execCommand`, og HTML'en landede alligevel.
+ *
+ * `navigator.clipboard.write` staar tilbage som reserve. Den er den moderne
+ * og den fremtidssikre; den er bare ikke den, der virker her.
+ */
+function skrivToFlavours(ren, html) {
+  let lykkedes = false;
+  const paa = (e) => {
+    e.clipboardData.setData('text/plain', ren);
+    if (html) e.clipboardData.setData('text/html', html);
+    e.preventDefault();
+    lykkedes = true;
+  };
+  document.addEventListener('copy', paa, true);
+  try {
+    // Uden en markering har nogle browsere ingenting at kopiere, og saa
+    // fyrer haendelsen aldrig. Et tomt, skjult felt er nok til at give den en.
+    const felt = document.createElement('textarea');
+    felt.value = ' ';
+    felt.setAttribute('aria-hidden', 'true');
+    felt.style.cssText = 'position:fixed;top:-9999px;opacity:0';
+    document.body.appendChild(felt);
+    felt.select();
+    document.execCommand('copy');
+    felt.remove();
+  } catch { /* lykkedes bliver staaende falsk */ }
+  document.removeEventListener('copy', paa, true);
+
+  if (!lykkedes && navigator.clipboard && window.ClipboardItem) {
+    // Reserve. Den skriver maaske kun ren tekst igennem - bedre end intet.
+    try {
+      navigator.clipboard.write([new ClipboardItem({
+        'text/plain': new Blob([ren], { type: 'text/plain' }),
+        'text/html': new Blob([html || ''], { type: 'text/html' }),
+      })]);
+      return true;
+    } catch { return false; }
+  }
+  return lykkedes;
+}
+
+/**
  * Hele noten paa udklipsholderen, klar til at saette ind et andet sted.
  *
  * »Kan du lave en knap under ...-menuen hvor man kan lave en kopi af hele
@@ -10741,50 +10804,21 @@ async function kopierBillede(src, knap) {
 function kopierNoten(n) {
   const md = noteSomMarkdown(n);
   const antal = saguMarkdown.billederIMarkdown(md).length;
-
-  if (!navigator.clipboard || !window.ClipboardItem) {
-    // Ingen blindgyde: ruden kan altid markeres og kopieres i haanden.
-    visMarkdownPanel();
-    toast('This browser cannot carry images on the clipboard — use Select all.');
-    return;
-  }
-
-  const klar = medIndlejredeBilleder(md);
   if (antal) toast(`Fetching ${antal} image${antal === 1 ? '' : 's'}…`);
 
-  const sig = (r) => {
-    if (!r.sprunget) {
-      toast(antal
-        ? `Note copied with ${antal - r.sprunget} image${antal - r.sprunget === 1 ? '' : 's'}.`
-        : 'Note copied.');
+  medIndlejredeBilleder(md).then((r) => {
+    if (!skrivToFlavours(md, r.html)) {
+      toast('Could not copy the note here. Use “Show as markdown” and Select all.');
       return;
     }
-    toast(`Note copied with ${r.ialt - r.sprunget} of ${r.ialt} images — `
-      + 'the rest were too large to carry.');
-  };
-
-  const html = klar.then((r) => new Blob([r.html || ''], { type: 'text/html' }));
-  const ren = new Blob([md], { type: 'text/plain' });
-
-  navigator.clipboard.write([new ClipboardItem({ 'text/plain': ren, 'text/html': html })])
-    .then(() => klar.then(sig))
-    .catch(async () => {
-      /*
-       * Nogle browsere afviser et loefte og vil have en faerdig blob - samme
-       * bagslag som ved billedkopieringen. Proev ÉN gang mere med det, der nu
-       * er hentet, foer vi giver op.
-       */
-      try {
-        const r = await klar;
-        await navigator.clipboard.write([new ClipboardItem({
-          'text/plain': ren,
-          'text/html': new Blob([r.html || ''], { type: 'text/html' }),
-        })]);
-        sig(r);
-      } catch (ex) {
-        toast(udklipsFejl(ex));
-      }
-    });
+    if (r.sprunget) {
+      toast(`Note copied with ${r.ialt - r.sprunget} of ${r.ialt} images — `
+        + 'the rest were too large to carry.');
+    } else {
+      const med = antal - r.sprunget;
+      toast(antal ? `Note copied with ${med} image${med === 1 ? '' : 's'}.` : 'Note copied.');
+    }
+  }).catch((ex) => toast(udklipsFejl(ex)));
 }
 
 /* ================= kopier en note MED billederne (F24) ==================
