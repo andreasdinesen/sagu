@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -6610,6 +6610,7 @@ const SEKTION_LOESE = 'sektion:loose';
  */
 const BILAG_FILER = 'bilag:files';
 const BILAG_KOM = 'bilag:comments';
+const BILAG_DODA = 'bilag:doda';
 
 /** Er bilaget foldet ud? */
 function bilagAabent(noegle) {
@@ -11970,15 +11971,22 @@ function dodaOpgaverHtml() {
   if (!dodaState.connected && !dodaState.opgaver.length) return '';
   const aabne = dodaState.opgaver.filter((t) => t.status !== 'done' && t.status !== 'dropped'
     && t.status !== 'deleted');
+  /*
+   * Tallet paa knappen kan vaere GAMMELT, og saa skal knappen sige det.
+   *
+   * Er broen nede, staar listen stille - det er med vilje (en bro, der bliver
+   * tom, naar den anden ende er nede, ligner en bro, der har mistet noget).
+   * Men foldes afsnittet sammen, er tallet det eneste, man ser, og et tal
+   * uden forbehold er et tal, man tror paa. Maerket foelger derfor MED op paa
+   * `summary`, praecis som »N waiting« goer ved kommentarerne.
+   */
   return `<section class="dodaopgaver" id="dodaOpgaver">
-    <h2>Tasks in doda${dodaState.opgaver.length
-    ? ` <span class="group-count">${aabne.length}/${dodaState.opgaver.length}</span>` : ''}</h2>
+    <details class="bilagfold"${bilagAabent(BILAG_DODA) ? ' open' : ''}>
+      <summary><span class="bilag-navn">Tasks in doda</span>
+        ${dodaState.opgaver.length
+    ? `<span class="group-count">${aabne.length}/${dodaState.opgaver.length}</span>` : ''}
+        ${dodaState.gammel ? '<span class="kom-maerke venter">not fresh</span>' : ''}</summary>
     ${dodaState.gammel
-    /*
-     * En liste, der ikke er frisk, skal SIGE det - og blive staaende. En bro,
-     * der bliver tom, naar den anden ende er nede, ligner en bro, der har
-     * mistet noget.
-     */
     ? `<p class="meta saetning">Showing what doda last said — ${esc(dodaState.gammel)}</p>` : ''}
     ${dodaState.opgaver.length
     ? `<ul class="doda-liste">${dodaState.opgaver.map((t) => `
@@ -12033,6 +12041,7 @@ function dodaOpgaverHtml() {
     ? '<button class="linkbtn" id="dodaOpfrisk">Check doda now</button>' : ''}
       </div>
     </div>
+    </details>
   </section>`;
 }
 
@@ -12046,6 +12055,7 @@ function tegnDodaOpgaver() {
 function bindDodaOpgaver() {
   const host = document.getElementById('dodaOpgaver');
   if (!host) return;
+  bindBilagsfold(host, BILAG_DODA);
   const felt = host.querySelector('#dodaFelt');
   const send = host.querySelector('#dodaSend');
   if (send && felt) {

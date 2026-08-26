@@ -103,6 +103,7 @@ const SEKTION_LOESE = 'sektion:loose';
  */
 const BILAG_FILER = 'bilag:files';
 const BILAG_KOM = 'bilag:comments';
+const BILAG_DODA = 'bilag:doda';
 
 /** Er bilaget foldet ud? */
 function bilagAabent(noegle) {
