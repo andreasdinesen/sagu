@@ -1571,6 +1571,56 @@ function springTilNaboBlok(ned) {
   aabnBlok(maal.fra);
 }
 
+/**
+ * Noten som PDF.
+ *
+ * »Kan du lave en funktion saa man kan lave en pdf af en sagu note. den skal
+ * ligge under ... menuen« (Andreas, 2026-08-25).
+ *
+ * Der er ingen PDF-motor, og der kommer ingen: Sagu har nul pakker, og at
+ * skrive en PDF i haanden er skrifttyper, indlejring og sideombrydning - et
+ * projekt for sig, som ville kunne mindre end det, browseren allerede kan.
+ * Der ER browserens egen »Gem som PDF«, og saa er hele opgaven at give den et
+ * ark, der er NOTEN og ikke appen. Det staar i `@media print`.
+ *
+ * ── De to ting, der skal ske FOER udskriften ──────────────────────────────
+ *
+ * 1. **Den aabne blok lukkes.** Den er et `<textarea>`, og et tekstfelt
+ *    printer som en formular-kasse med rullebjaelke - ikke som den saetning,
+ *    der stod der. Man ville faa en PDF med et hul praecis dér, hvor man sidst
+ *    havde markoeren.
+ *
+ * 2. **`document.title` bliver notens navn.** Browseren bruger titlen som
+ *    forslag til filnavnet, og »Sagu« paa tolv PDF'er i en mappe er tolv
+ *    filer, man skal aabne for at se hvad er hvad (RUNE-ERFARINGER §4,
+ *    Beanledger v19). Den gendannes paa `afterprint` - ellers hedder fanen
+ *    noten for evigt.
+ *
+ * `afterprint` fyrer ogsaa, naar man FORTRYDER i dialogen, og det er netop
+ * derfor gendannelsen ligger dér og ikke efter `print()`.
+ */
+function gemSomPdf(n) {
+  lukBlok();
+  const foer = document.title;
+  const navn = (n && n.title ? n.title : 'Untitled').replace(/[\\/:*?"<>|]/g, '-').slice(0, 90);
+  document.title = navn;
+  const tilbage = () => {
+    document.title = foer;
+    window.removeEventListener('afterprint', tilbage);
+  };
+  window.addEventListener('afterprint', tilbage);
+  /*
+   * Et hak, foer der printes.
+   *
+   * `lukBlok()` tegner kroppen om, og udskriften skal se den FAERDIGE side -
+   * ikke den, der stod der et oejeblik foer. `print()` er synkron og ville
+   * ellers naa at fange den halve optegning.
+   */
+  setTimeout(() => {
+    try { window.print(); } catch { toast('The browser would not open the print dialog.'); tilbage(); }
+  }, 50);
+}
+
 function lukBlok() {
   if (editor.aabenBlok === null) return;
   editor.aabenBlok = null;
@@ -1955,6 +2005,7 @@ function visNoteMenu() {
     ${ret ? `<button class="usermenu-item" data-do="sub">${icon('plus', 16)}<span>New subpage</span></button>
     <button class="usermenu-item" data-do="fil">${icon('klips', 16)}<span>Attach a file…</span></button>` : ''}
     <button class="usermenu-item" data-do="md">${icon('notes', 16)}<span>Show as markdown</span></button>
+    <button class="usermenu-item" data-do="pdf">${icon('import', 16)}<span>Save as PDF…</span></button>
     <button class="usermenu-item" data-do="id">${icon('key', 16)}<span>Copy the note ID</span></button>
     <button class="usermenu-item" data-do="link">${icon('globe', 16)}<span>Copy the link to this note</span></button>
     <button class="usermenu-item" data-do="historik">${icon('kalender', 16)}<span>Version history</span></button>
@@ -1977,6 +2028,7 @@ function visNoteMenu() {
       try {
         if (hvad === 'fil') { vaelgFiler(); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
+        if (hvad === 'pdf') { gemSomPdf(n); return; }
         /*
          * Note-id'et er det, API'et kalder `?to=NOTE_ID` (F9).
          *

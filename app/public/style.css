@@ -1702,6 +1702,100 @@ body.fokus .topbar { display: none; }
   .kodeblok-top, .lightbox, .modal { display: none !important; }
 }
 
+/* ------------------------------------------------ noten som PDF (F25)
+ *
+ * »Kan du lave en funktion så man kan lave en pdf af en sagu note«
+ * (Andreas, 2026-08-25). Der er ingen PDF-motor — der er browserens egen
+ * »Gem som PDF«, og så er hele opgaven at give den et ark, der er noten og
+ * ikke appen.
+ *
+ * Tre ting måtte gøres rigtige, og de er alle tre lette at overse, fordi de
+ * ser rigtige ud på skærmen: */
+@media print {
+  /* 1. Alt, der er BETJENING og ikke indhold. Værktøjsrækken, trækhåndtagene,
+        kopiknapperne, »+ Add a tag«, og de tre bilag med deres skrivefelter —
+        et tomt kommentarfelt på et stykke papir er ingenting værd. */
+  .note-tools, .blok-greb, .inlinekode-kopi, .tilfoej, .krummer,
+  .filer, .dodaopgaver, .kommentarer, .backlinks, .delingsbaand,
+  .blok-menu, .syntakspanel { display: none !important; }
+
+  /* 2. Titlen er et `<input>`. Uden det her printer den som et FELT med kant
+        og fast bredde — og et tekstfelt øverst på et dokument ser ud som en
+        formular, ikke som en overskrift. */
+  .note-title {
+    border: 0 !important;
+    background: none !important;
+    color: #111 !important;
+    font-size: 30px;
+    width: 100%;
+    padding: 0;
+  }
+  .note-hoved, .note-top { display: block; }
+  #noteIkon { display: none !important; }
+
+  /* 3. Fluebenet er en TOM `<button>` — den ville forsvinde sporløst, og en
+        tjekliste ville blive til en punktliste uden tilstand. Samme fælde som
+        ved kopiering til Apple Notes (v36). Tegnet skrives derfor på. */
+  .tjek-boks {
+    border: 0 !important;
+    background: none !important;
+    width: auto !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .tjek-boks::before { content: "\2610"; color: #111; font-size: 15px; }
+  .tjek-boks[aria-checked="true"] { color: transparent; }
+  .tjek-boks[aria-checked="true"]::before { content: "\2611"; color: #111; }
+
+  /* Et billede eller en kodeblok, der brækkes over to sider, er ulæseligt. */
+  .note-img, .kodeblok, .tjek, blockquote, table { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+  .note-img { max-width: 100%; height: auto; }
+
+  /* Kodeblokken beholder sin ramme, men ikke sin farve — sort på hvidt. */
+  .kodeblok { background: none !important; border-color: #bbb !important; }
+  .kodeblok pre, .kodeblok code, code { color: #111 !important; background: none !important; }
+  code { border: 1px solid #ddd; }
+
+  /* Et link skal kunne SES som et link på papir, hvor man ikke kan klikke. */
+  #pageHost a { color: #111 !important; text-decoration: underline; }
+
+  /* ── De fire, der bar mørke tema-farver med sig ud på papiret ─────────
+   *
+   * Reglen findes i forvejen — »print-HTML må ALDRIG bruge var(--…)-farver«
+   * — men den var kun skrevet for `body` og `.card`. Målt på et rigtigt
+   * print-ark: */
+
+  /* 1. Tabellens hoved var SORT PÅ SORT: baggrund rgb(40,35,32), tekst
+        rgb(17,17,17). Overskriftsrækken i enhver tabel var ulæselig. */
+  .md-tabel thead th {
+    background: #f0f0f0 !important;
+    color: #111 !important;
+    border-color: #bbb !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .md-tabel td, .md-tabel th { border-color: #bbb !important; }
+
+  /* 2. Citatet stod i rgb(149,137,124) — lysegråt på hvidt. */
+  blockquote { color: #333 !important; border-left-color: #999 !important; }
+
+  /* 3. Mærkerne var mørke klatter med guld tekst. På papir er en etiket en
+        kant, ikke en fyldt flade. */
+  .chip {
+    background: none !important;
+    color: #111 !important;
+    border: 1px solid #999 !important;
+  }
+  .chip .fjern, .chip button { display: none !important; }
+
+  /* 4. En afkrydset linje er dæmpet på skærmen, hvor der er kontrast at tage
+        af. På hvidt papir forsvandt den — og en tjekliste, hvor det UDFØRTE
+        er det svageste, er læst forkert. Stregen over siger det i stedet. */
+  .tjek.er-tjekket .tjek-tekst { color: #444 !important; text-decoration: line-through; }
+}
+
 /* ================================================ F4: vedhaeftninger ==== */
 
 .filer { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--border); }
