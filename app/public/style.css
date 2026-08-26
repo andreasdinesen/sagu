@@ -1411,6 +1411,50 @@ body.fokus .topbar { display: none; }
 
 .kodeblok-kopi:hover { background: var(--bg); color: var(--text); border-color: var(--border); }
 
+/* -------------------------------------------- kopiknap på `inline kode`
+ *
+ * Knappen ligger ABSOLUT ved kodens højre kant og fylder derfor ingenting i
+ * linjen — teksten må ikke flytte sig, når musen kommer forbi. Prisen er, at
+ * den lapper et par tegn ind over det, der følger efter, mens man peger; det
+ * er billigere end at gøre hver eneste kodestump i hver eneste note bredere.
+ *
+ * Ikke på touch: hover findes ikke der, og en knap fremme ved hver eneste
+ * kodestump ville være støj i hver eneste sætning. */
+.inlinekode { position: relative; }
+.inlinekode-kopi {
+  position: absolute;
+  /* Knappen ligger INDE over kodens egen højre ende — ikke efter den.
+     Først lå den efter, og så dækkede den ordet bagefter, mens man pegede
+     (målt: »til« forsvandt midt i en sætning). Nu rører den aldrig den
+     omkringliggende tekst; den dækker de sidste par tegn af den kode, man er
+     i færd med at kopiere, og dem har man ikke brug for at læse imens. */
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / .25);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .1s ease;
+  z-index: 2;
+}
+.inlinekode:hover > .inlinekode-kopi,
+.inlinekode-kopi:focus-visible { opacity: 1; pointer-events: auto; }
+.inlinekode-kopi:hover { color: var(--text); border-color: var(--muted); }
+.inlinekode-kopi.kopieret { color: var(--accent-text); border-color: var(--accent-text); }
+
+@media (hover: none) { .inlinekode-kopi { display: none; } }
+
 /* ------------------------------------------------------------ tjeklister */
 
 .tjekliste { margin: 0 0 14px; }
@@ -1730,10 +1774,31 @@ body.fokus .topbar { display: none; }
 .fil-ikon { flex: none; font-size: 15px; line-height: 1; }
 .fil-navn { flex: 1; min-width: 0; color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fil-stoerrelse { flex: none; font-variant-numeric: tabular-nums; }
+
+/* En vedhæftning, teksten ikke længere peger på.
+   Den skal kunne SES uden at råbe: den er ikke en fejl, den er på vej ud, og
+   »Insert« er vejen tilbage. Derfor et dæmpet navn og et mærke, der siger
+   hvad der sker — ikke en rød advarsel om noget, brugeren selv gjorde. */
+.fil-forladt .fil-navn { opacity: .55; }
+.fil-forladt-maerke {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  opacity: .8;
+  white-space: nowrap;
+}
 .fil .btn { flex: none; padding: 4px 9px; font-size: 12px; opacity: 0; }
 .fil:hover .btn, .fil .btn:focus-visible { opacity: 1; }
 /* Skjult paa hover er usynligt praecis dér, hvor det betyder mest. */
 @media (hover: none) { .fil .btn { opacity: 1; } }
+
+/* En forladt fil viser ALTID sine knapper. »Insert« er vejen tilbage, og en
+   redningsvej, man skal pege på for at se, er ingen redningsvej — allermindst
+   når mærket ved siden af siger, at filen forsvinder om et døgn. */
+.fil-forladt .btn { opacity: 1; }
 
 /* En traukket fil skal kunne SES lande. Uden en ramme aner man ikke, om
    siden overhovedet tager imod. */

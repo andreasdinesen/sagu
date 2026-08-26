@@ -1178,6 +1178,7 @@ function tegnKrop() {
     const { html } = saguMarkdown.render(n.body, renderValg());
     host.innerHTML = html || '<p class="tom-note meta saetning">Click here to start writing.</p>';
     pyntKodeblokke(host);
+    pyntInlineKode(host);
     bindTjek(host);
     bindBilleder(host);
     // Indlejringerne fyldes BAGEFTER: optegningen maa aldrig vente paa et
@@ -1391,6 +1392,7 @@ function tegnMedAabenBlok(host, n) {
   // glemmer den ene noget, virker funktionen kun, naar ingen blok er aaben,
   // og fejlen ligner »kortet forsvandt, da jeg klikkede« (F12).
   pyntKodeblokke(host);
+  pyntInlineKode(host);
   bindTjek(host);
   bindBilleder(host);
   fyldGhIndlejringer(host);

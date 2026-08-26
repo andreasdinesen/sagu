@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -7685,6 +7685,7 @@ function tegnKrop() {
     const { html } = saguMarkdown.render(n.body, renderValg());
     host.innerHTML = html || '<p class="tom-note meta saetning">Click here to start writing.</p>';
     pyntKodeblokke(host);
+    pyntInlineKode(host);
     bindTjek(host);
     bindBilleder(host);
     // Indlejringerne fyldes BAGEFTER: optegningen maa aldrig vente paa et
@@ -7898,6 +7899,7 @@ function tegnMedAabenBlok(host, n) {
   // glemmer den ene noget, virker funktionen kun, naar ingen blok er aaben,
   // og fejlen ligner »kortet forsvandt, da jeg klikkede« (F12).
   pyntKodeblokke(host);
+  pyntInlineKode(host);
   bindTjek(host);
   bindBilleder(host);
   fyldGhIndlejringer(host);
@@ -9400,6 +9402,61 @@ function kodeIndhold(pre) {
   return kode ? kode.textContent : pre.textContent;
 }
 
+/**
+ * Kopiknap paa `inline kode`, som paa en kodeblok.
+ *
+ * »Jeg vil gerne have en copi knap ved `inline code` som ved Code block«
+ * (Andreas, 2026-08-25).
+ *
+ * ── Tre ting, den ikke maa oedelaegge ─────────────────────────────────────
+ *
+ * 1. **Teksten maa ikke flytte sig.** Knappen ligger `position: absolute` ved
+ *    kodens hoejre kant og fylder derfor ingenting i linjen. Reserverede vi
+ *    plads i stedet, ville hver eneste kodestump i hver eneste note blive
+ *    bredere - en fast afgift for noget, man goer sjaeldent.
+ *
+ * 2. **Man skal stadig kunne klikke paa koden for at rette den.** Derfor er
+ *    det en KNAP ved siden af og ikke selve `<code>`, der kopierer. Gjorde
+ *    koden det, ville et afsnit, der KUN bestaar af en kodestump, ikke kunne
+ *    aabnes med et klik overhovedet.
+ *
+ * 3. **Klikket maa ikke aabne blokken.** `stopPropagation` - samme greb som
+ *    kodeblokkens knap og fluebenene.
+ *
+ * Paa touch findes hover ikke, og knappen vises derfor ikke. Det er ikke en
+ * mangel, det er den samme vej som hidtil: et tryk aabner blokken som raa
+ * markdown, og dér kan man markere. En knap, der stod fremme paa hver eneste
+ * kodestump paa en telefon, ville vaere stoej i hver eneste saetning.
+ */
+function pyntInlineKode(host) {
+  for (const kode of host.querySelectorAll('code')) {
+    if (kode.closest('pre')) continue;                    // kodeblokken har sin egen
+    if (kode.parentElement && kode.parentElement.classList.contains('inlinekode')) continue;
+
+    const ramme = document.createElement('span');
+    ramme.className = 'inlinekode';
+    kode.parentNode.insertBefore(ramme, kode);
+    ramme.appendChild(kode);
+
+    const knap = document.createElement('button');
+    knap.className = 'inlinekode-kopi';
+    knap.type = 'button';
+    knap.tabIndex = -1;             // ikke i tabuleringen: der kan vaere mange
+    knap.title = 'Copy';
+    knap.setAttribute('aria-label', `Copy ${kode.textContent}`);
+    knap.innerHTML = icon('copy', 12);
+    knap.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const ok = await kopier(kode.textContent);
+      knap.classList.add('kopieret');
+      knap.title = ok ? 'Copied' : 'Press ⌘C';
+      setTimeout(() => { knap.classList.remove('kopieret'); knap.title = 'Copy'; }, 1400);
+    });
+    ramme.appendChild(knap);
+  }
+}
+
 function pyntKodeblokke(host) {
   for (const pre of host.querySelectorAll('pre')) {
     if (pre.parentElement && pre.parentElement.classList.contains('kodeblok')) continue;
@@ -10111,6 +10168,22 @@ function visStoerrelse(b) {
  * antal, saa den her kan ikke bygges af listeobjektet - det er praecis den
  * fejl, dodas F7 beskriver (RUNE-ERFARINGER).
  */
+/**
+ * Hvor laenge en forladt vedhaeftning har igen.
+ *
+ * Beskeden skal sige, hvad der SKER - ikke hvornaar den blev forladt. »forladt
+ * i gaar« er en oplysning, man skal regne paa; »removed in 5 hours« er en, man
+ * kan handle paa.
+ */
+function restTid(siden) {
+  const tilbage = (Number(siden) + 24 * 3600) - Math.floor(Date.now() / 1000);
+  if (tilbage <= 0) return 'removed shortly';
+  const timer = Math.round(tilbage / 3600);
+  if (timer >= 2) return `removed in ${timer} hours`;
+  const min = Math.max(1, Math.round(tilbage / 60));
+  return `removed in ${min} minute${min === 1 ? '' : 's'}`;
+}
+
 function filerHtml(n) {
   const filer = n.files || [];
   if (!filer.length) return '';
@@ -10119,13 +10192,17 @@ function filerHtml(n) {
         <summary><span class="bilag-navn">Attachments</span>
           <span class="group-count">${filer.length}</span></summary>
       ${filer.map((f) => `
-        <div class="fil">
+        <div class="fil${f.orphan_since ? ' fil-forladt' : ''}">
           <span class="fil-ikon">${f.inline ? '🖼' : '📎'}</span>
           <a class="fil-navn" href="${esc(f.url)}"
              ${f.inline ? '' : 'download'} title="${esc(f.name)}">${esc(f.name)}</a>
+          ${f.orphan_since ? `<span class="fil-forladt-maerke"
+            title="The note no longer links to this file. Press Insert to keep it."
+            >not in the note — ${esc(restTid(f.orphan_since))}</span>` : ''}
           <span class="fil-stoerrelse meta">${esc(visStoerrelse(f.size))}</span>
           <button class="btn ghost fil-ind" data-filind="${esc(f.id)}"
-            title="Insert a link to this file in the note">Insert</button>
+            title="${f.orphan_since ? 'Put it back in the note and keep it'
+    : 'Insert a link to this file in the note'}">Insert</button>
           <button class="btn ghost danger" data-filslet="${esc(f.id)}">Remove</button>
         </div>`).join('')}
       </details>
@@ -10155,10 +10232,11 @@ function bindFiler() {
   });
 
   document.querySelectorAll('[data-filind]').forEach((el) => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', async () => {
       const n = editor.note;
       const f = (n.files || []).find((x) => x.id === el.dataset.filind);
       if (!f) return;
+      const forladt = !!f.orphan_since;
       const md = f.inline
         ? `![${f.name.replace(/[[\]]/g, '')}](sagu:${f.id})`
         : `[${f.name}](sagu:${f.id})`;
@@ -10166,7 +10244,26 @@ function bindFiler() {
       n.body = `${n.body.replace(/\s*$/, '')}\n\n${md}\n`;
       markerBeskidt();
       tegnKrop();
-      toast('Inserted at the end of the note.');
+      toast(forladt ? 'Back in the note — it stays.' : 'Inserted at the end of the note.');
+
+      /*
+       * Gem NU og hent filerne igen.
+       *
+       * Uden det bliver »not in the note«-maerket staaende, til man aabner
+       * noten forfra: serveren rydder stemplet ved gemningen, men fladen
+       * spoerger den aldrig igen. Maalt - serveren sagde `orphan=null`, mens
+       * skaermen stadig sagde, at filen forsvandt om et doegn.
+       *
+       * Det er ikke en skoenhedsfejl. Maerket er det eneste svar paa »virkede
+       * det?«, og et maerke, der bliver haengende, siger nej.
+       */
+      if (!forladt) return;
+      try {
+        await gemNu();
+        const d = await api('GET', `/api/v1/notes/${n.id}`);
+        editor.note.files = d.note.files;
+        tegnSide();
+      } catch { /* maerket forsvinder saa foerst ved naeste aabning */ }
     });
   });
 }

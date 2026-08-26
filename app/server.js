@@ -791,6 +791,31 @@ const MIGRATIONS = [
       CREATE INDEX recovery_user ON recovery_codes(user_id) WHERE used_at IS NULL;
     `);
   },
+
+  function m17(d) {
+    /*
+     * Naar en vedhaeftning ikke laengere staar i noten.
+     *
+     * »Hvorfor vises der attachments selvom de er slettet paa en note ...
+     * Denne boer kun vises hvis de er der« (Andreas, 2026-08-25). Listen
+     * viste hver eneste raekke med `note_id`, uanset om teksten stadig pegede
+     * paa filen - saa en note, man havde ryddet op i, blev ved med at have en
+     * hale af billeder, ingen kunne se hvor var.
+     *
+     * ── Hvorfor en kolonne for sig og ikke bare `deleted_at` ──────────────
+     *
+     * Fordi de to skal se FORSKELLIGE ud. Trykker man »Remove«, mente man
+     * det, og filen skal vaere vaek med det samme. Sletter man en linje i
+     * teksten, kan det vaere en fejl - og saa skal filen blive staaende et
+     * doegn med et maerke, saa man kan naa at saette den ind igen. To
+     * kendsgerninger, to felter (DESIGN.md §4).
+     *
+     * Feltet er nulstilleligt med vilje: kommer henvisningen tilbage - ved en
+     * fortrydelse, eller ved »Insert« - ryddes stemplet, og filen er en
+     * ganske almindelig vedhaeftning igen.
+     */
+    d.exec('ALTER TABLE attachments ADD COLUMN orphan_since INTEGER');
+  },
 ];
 
 /*
@@ -1732,9 +1757,16 @@ function formNote(r, medKrop, laeser) {
     // Kun den ENKELTE note faar filernes metadata. Konsekvensen, man skal
     // huske: detaljeruden kan ikke bruge objektet fra listen - den skal hente
     // det fulde element (RUNE-ERFARINGER, doda F7).
+    /*
+     * `orphan_since` kommer MED ud. Fladen skal kunne saette et maerke paa den
+     * fil, teksten ikke laengere peger paa - ellers forsvinder den bare en dag,
+     * og det er praecis den slags, man ikke opdager foer den er sket.
+     */
     ud.files = db.prepare(`
-      SELECT id, name, mime, size, width, height FROM attachments
-       WHERE note_id = ? AND deleted_at IS NULL ORDER BY created_at`).all(r.id)
+      SELECT id, name, mime, size, width, height, orphan_since FROM attachments
+       WHERE note_id = ? AND deleted_at IS NULL
+         AND (orphan_since IS NULL OR orphan_since > ?)
+       ORDER BY created_at`).all(r.id, now() - FORAELDRELOES_FRIST)
       .map((f) => Object.assign(f, { url: `/api/v1/files/${f.id}`, inline: INLINE_MIME.has(f.mime) }));
   }
   return ud;
@@ -1885,9 +1917,39 @@ function gemNote(userId, id, felter) {
   put('updated_at', now());
   put('updated_by', userId);
   db.prepare(`UPDATE notes SET ${saet.join(', ')} WHERE id = ?`).run(...arg, id);
-  if (har('body')) opdaterLinks(userId, id, typeof f.body === 'string' ? f.body : '');
+  if (har('body')) {
+    opdaterLinks(userId, id, typeof f.body === 'string' ? f.body : '');
+    maerkForaeldreloese(id, typeof f.body === 'string' ? f.body : '');
+  }
   indekser(id);
   return { note: hentNote(userId, id) };
+}
+
+/**
+ * Stempler de vedhaeftninger, teksten ikke laengere peger paa.
+ *
+ * Kaldes hver gang en note gemmes med en ny krop. ÉN saetning, der baade
+ * saetter og RYDDER: kommer henvisningen tilbage - ved en fortrydelse, eller
+ * ved »Insert« - bliver filen en ganske almindelig vedhaeftning igen, uden at
+ * nogen skal huske at rydde op efter sig.
+ *
+ * `COALESCE` og ikke bare `?`: stemplet skal staa stille. Satte hver eneste
+ * gemning et nyt tidspunkt, ville doegnet begynde forfra, hver gang man rettede
+ * et komma - og filen ville aldrig naa at blive ryddet vaek.
+ *
+ * `instr` frem for at tolke markdown'en: en henvisning ER `sagu:<id>`, uanset
+ * om den staar som billede, som link, i en kodeblok eller midt i en saetning.
+ * Staar id'et i teksten, MENER brugeren noget med filen - og en oprydning skal
+ * fejle til fordel for at beholde.
+ */
+const FORAELDRELOES_FRIST = 24 * 3600;
+
+function maerkForaeldreloese(noteId, krop) {
+  db.prepare(`
+    UPDATE attachments
+       SET orphan_since = CASE WHEN instr(?, 'sagu:' || id) > 0 THEN NULL
+                               ELSE COALESCE(orphan_since, ?) END
+     WHERE note_id = ? AND deleted_at IS NULL`).run(String(krop || ''), now(), noteId);
 }
 
 /**
@@ -4647,9 +4709,12 @@ const ROUTES = {
     const arg = [noteId || auth.user.id];
     sendJson(res, 200, {
       files: db.prepare(`
-        SELECT id, note_id, name, mime, size, width, height, created_at FROM attachments
-         WHERE ${hvor} AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500`)
-        .all(...arg)
+        SELECT id, note_id, name, mime, size, width, height, created_at, orphan_since
+           FROM attachments
+         WHERE ${hvor} AND deleted_at IS NULL
+           AND (orphan_since IS NULL OR orphan_since > ?)
+         ORDER BY created_at DESC LIMIT 500`)
+        .all(...arg, now() - FORAELDRELOES_FRIST)
         .map((f) => Object.assign(f, { url: `/api/v1/files/${f.id}`, inline: INLINE_MIME.has(f.mime) })),
       used: brugtPlads(auth.user.id),
       quota: maxSamlet(),
@@ -7577,6 +7642,21 @@ function sweep() {
     for (const g of gamle) {
       ryddFilerFor(g.id);
       db.prepare('DELETE FROM notes WHERE id = ?').run(g.id);
+    }
+
+    /*
+     * Vedhaeftninger, teksten ikke laengere peger paa.
+     *
+     * Efter doegnet gaar de den ALMINDELIGE vej: en bloed sletning, praecis
+     * som havde man trykket »Remove«. Det er med vilje, at automatikken ikke
+     * er haardere end den haand, der goer det bevidst - saa er der stadig 30
+     * dage, hvor filen kan hentes tilbage, hvis doegnet gik ubemaerket hen.
+     */
+    for (const f of db.prepare(`
+      SELECT id FROM attachments
+       WHERE deleted_at IS NULL AND orphan_since IS NOT NULL AND orphan_since < ?`)
+      .all(t - FORAELDRELOES_FRIST)) {
+      db.prepare('UPDATE attachments SET deleted_at = ? WHERE id = ?').run(t, f.id);
     }
 
     // Filer, brugeren selv har slettet. Fristen er den samme, saa en
