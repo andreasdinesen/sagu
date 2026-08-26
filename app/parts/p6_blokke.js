@@ -737,7 +737,9 @@ function filerHtml(n) {
   const filer = n.files || [];
   if (!filer.length) return '';
   return `<div class="filer">
-      <h2>Attachments <span class="meta">${filer.length}</span></h2>
+      <details class="bilagfold"${bilagAabent(BILAG_FILER) ? ' open' : ''}>
+        <summary><span class="bilag-navn">Attachments</span>
+          <span class="group-count">${filer.length}</span></summary>
       ${filer.map((f) => `
         <div class="fil">
           <span class="fil-ikon">${f.inline ? '🖼' : '📎'}</span>
@@ -748,10 +750,13 @@ function filerHtml(n) {
             title="Insert a link to this file in the note">Insert</button>
           <button class="btn ghost danger" data-filslet="${esc(f.id)}">Remove</button>
         </div>`).join('')}
+      </details>
     </div>`;
 }
 
 function bindFiler() {
+  bindBilagsfold(document.querySelector('.filer'), BILAG_FILER);
+
   document.querySelectorAll('[data-filslet]').forEach((el) => {
     el.addEventListener('click', async () => {
       const n = editor.note;

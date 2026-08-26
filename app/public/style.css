@@ -1664,6 +1664,59 @@ body.fokus .topbar { display: none; }
 .filer h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .filer h2 .meta { font-size: 11px; }
 
+/* --------------------------------------- notens bilag, foldet sammen
+ *
+ * Vedhæftninger og kommentarer. `summary` skal LIGNE den overskrift, den
+ * afløser — ellers flytter to afsnit sig, fordi man gav dem en knap — men
+ * den skal også kunne ses at være en knap. Derfor samme typografi som før,
+ * plus en trekant og en baggrund, når musen er over.
+ */
+.bilagfold > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  list-style-position: inside;
+}
+.bilagfold > summary:hover { background: var(--card-hover); color: var(--text); }
+.bilagfold[open] > summary { margin-bottom: 6px; }
+
+/* Trekanten tegnes SELV.
+   `display: flex` på et `summary` fjerner browserens egen `::marker` — så
+   stod overskriften der uden noget, der ser ud som en foldeknap. Målt: ingen
+   trekant i det hele taget, hverken foldet eller udfoldet. */
+.bilagfold > summary { list-style: none; }
+.bilagfold > summary::-webkit-details-marker { display: none; }
+.bilagfold > summary::before {
+  content: "";
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .12s ease;
+  flex: none;
+}
+.bilagfold[open] > summary::before { transform: rotate(90deg); }
+
+/* Tallet skal kunne læses i ét blik — det er hele grunden til, at man tør
+   folde afsnittet sammen. */
+.group-count {
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
 .fil {
   display: flex;
   align-items: center;

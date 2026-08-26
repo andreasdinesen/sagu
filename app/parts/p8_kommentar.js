@@ -131,13 +131,23 @@ function komSkrivHtml(svarPaa) {
 function kommentarerHtml() {
   const top = kom.liste.filter((c) => !c.parentId);
   const venter = kom.liste.filter((c) => c.status === 'pending').length;
+  /*
+   * »N waiting« staar paa SELVE knappen, ikke inde i det foldede.
+   *
+   * En kommentar, der venter paa moderering, er det eneste her, man skal
+   * REAGERE paa. Laa maerket bag foldningen, ville et foldet afsnit skjule
+   * netop den oplysning, foldningen ellers er harmloes for.
+   */
   return `<section class="kommentarer" id="kommentarer">
-    <h2>Comments${kom.liste.length ? ` <span class="group-count">${kom.liste.length}</span>` : ''}
-      ${venter ? `<span class="kom-maerke venter">${venter} waiting</span>` : ''}</h2>
-    ${top.length
+    <details class="bilagfold"${bilagAabent(BILAG_KOM) ? ' open' : ''}>
+      <summary><span class="bilag-navn">Comments</span>
+        ${kom.liste.length ? `<span class="group-count">${kom.liste.length}</span>` : ''}
+        ${venter ? `<span class="kom-maerke venter">${venter} waiting</span>` : ''}</summary>
+      ${top.length
     ? `<ul class="kom-liste">${top.map((c) => komHtml(c, kom.liste)).join('')}</ul>`
     : '<p class="meta saetning">No comments yet.</p>'}
-    ${kom.svarPaa ? '' : komSkrivHtml(null)}
+      ${kom.svarPaa ? '' : komSkrivHtml(null)}
+    </details>
   </section>`;
 }
 
@@ -169,6 +179,7 @@ async function sendKommentar(tekst, svarPaa) {
 function bindKommentarer() {
   const host = document.getElementById('kommentarer');
   if (!host) return;
+  bindBilagsfold(host, BILAG_KOM);
 
   const felt = host.querySelector('#komFelt');
   const send = host.querySelector('#komSend');

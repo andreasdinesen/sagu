@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -6580,6 +6580,57 @@ const SEKTION_BOEGER = 'sektion:notebooks';
 
 /** Samme mekanik for de loese noter - ét saet, ét sted det gemmes. */
 const SEKTION_LOESE = 'sektion:loose';
+
+/*
+ * Notens to bilag - vedhaeftninger og kommentarer - i det SAMME saet.
+ *
+ * »Kan du lave saa Attachments og comments kan foldes sammen. Men skal vise
+ * hvor mange der er« (Andreas, 2026-08-25). De ligger under noten og skubber
+ * hinanden ned; med tre skaermbilleder paa er kommentarfeltet ude af syne.
+ *
+ * De starter FOLDET UD - som i dag. Andreas bad om at kunne folde dem, ikke
+ * om at faa dem gemt vaek, og at skjule hans kommentarer uden at spoerge er
+ * ikke en foldeknap, det er en aendring han ikke bad om. Folder han dem
+ * sammen én gang, bliver de det.
+ *
+ * Det giver samtidig ÉN betydning i saettet: at staa i `editor.foldede`
+ * betyder foldet - praecis som for notesboegerne. Skulle de starte foldet,
+ * skulle noeglen betyde det modsatte, og saa var der to konventioner i samme
+ * saet at tage fejl af.
+ *
+ * Antallet staar paa knappen, saa man ved, hvad man folder ud - samme grund
+ * som fillisten i indstillingerne (v15) og wikiens navigation.
+ *
+ * Valget er GLOBALT og ikke pr. note. Den, der aldrig kigger paa
+ * vedhaeftninger, skal ikke folde dem sammen én gang pr. note; og den, der
+ * altid vil se dem, skal ikke folde dem ud igen hver gang. Samtidig loeser
+ * det, at begge afsnit tegnes om under brug - en ny kommentar tegner
+ * afsnittet forfra, og uden en husket tilstand ville det klappe i, hver gang
+ * man skrev noget.
+ */
+const BILAG_FILER = 'bilag:files';
+const BILAG_KOM = 'bilag:comments';
+
+/** Er bilaget foldet ud? */
+function bilagAabent(noegle) {
+  return !editor.foldede.has(noegle);
+}
+
+/**
+ * Bind et `<details>` op, saa dets tilstand overlever en optegning.
+ *
+ * `toggle` og ikke et klik paa `summary`: browseren aabner ogsaa med
+ * mellemrum og Enter, og et klik-lytter ville gaa glip af dem.
+ */
+function bindBilagsfold(host, noegle) {
+  const d = host && host.querySelector('details.bilagfold');
+  if (!d) return;
+  d.addEventListener('toggle', () => {
+    if (d.open) editor.foldede.delete(noegle);
+    else editor.foldede.add(noegle);
+    gemFoldede();
+  });
+}
 
 /**
  * Er ALLE notesboeger foldet sammen?
@@ -10064,7 +10115,9 @@ function filerHtml(n) {
   const filer = n.files || [];
   if (!filer.length) return '';
   return `<div class="filer">
-      <h2>Attachments <span class="meta">${filer.length}</span></h2>
+      <details class="bilagfold"${bilagAabent(BILAG_FILER) ? ' open' : ''}>
+        <summary><span class="bilag-navn">Attachments</span>
+          <span class="group-count">${filer.length}</span></summary>
       ${filer.map((f) => `
         <div class="fil">
           <span class="fil-ikon">${f.inline ? '🖼' : '📎'}</span>
@@ -10075,10 +10128,13 @@ function filerHtml(n) {
             title="Insert a link to this file in the note">Insert</button>
           <button class="btn ghost danger" data-filslet="${esc(f.id)}">Remove</button>
         </div>`).join('')}
+      </details>
     </div>`;
 }
 
 function bindFiler() {
+  bindBilagsfold(document.querySelector('.filer'), BILAG_FILER);
+
   document.querySelectorAll('[data-filslet]').forEach((el) => {
     el.addEventListener('click', async () => {
       const n = editor.note;
@@ -11565,13 +11621,23 @@ function komSkrivHtml(svarPaa) {
 function kommentarerHtml() {
   const top = kom.liste.filter((c) => !c.parentId);
   const venter = kom.liste.filter((c) => c.status === 'pending').length;
+  /*
+   * »N waiting« staar paa SELVE knappen, ikke inde i det foldede.
+   *
+   * En kommentar, der venter paa moderering, er det eneste her, man skal
+   * REAGERE paa. Laa maerket bag foldningen, ville et foldet afsnit skjule
+   * netop den oplysning, foldningen ellers er harmloes for.
+   */
   return `<section class="kommentarer" id="kommentarer">
-    <h2>Comments${kom.liste.length ? ` <span class="group-count">${kom.liste.length}</span>` : ''}
-      ${venter ? `<span class="kom-maerke venter">${venter} waiting</span>` : ''}</h2>
-    ${top.length
+    <details class="bilagfold"${bilagAabent(BILAG_KOM) ? ' open' : ''}>
+      <summary><span class="bilag-navn">Comments</span>
+        ${kom.liste.length ? `<span class="group-count">${kom.liste.length}</span>` : ''}
+        ${venter ? `<span class="kom-maerke venter">${venter} waiting</span>` : ''}</summary>
+      ${top.length
     ? `<ul class="kom-liste">${top.map((c) => komHtml(c, kom.liste)).join('')}</ul>`
     : '<p class="meta saetning">No comments yet.</p>'}
-    ${kom.svarPaa ? '' : komSkrivHtml(null)}
+      ${kom.svarPaa ? '' : komSkrivHtml(null)}
+    </details>
   </section>`;
 }
 
@@ -11603,6 +11669,7 @@ async function sendKommentar(tekst, svarPaa) {
 function bindKommentarer() {
   const host = document.getElementById('kommentarer');
   if (!host) return;
+  bindBilagsfold(host, BILAG_KOM);
 
   const felt = host.querySelector('#komFelt');
   const send = host.querySelector('#komSend');

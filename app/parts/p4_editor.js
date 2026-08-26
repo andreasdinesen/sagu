@@ -74,6 +74,57 @@ const SEKTION_BOEGER = 'sektion:notebooks';
 /** Samme mekanik for de loese noter - ét saet, ét sted det gemmes. */
 const SEKTION_LOESE = 'sektion:loose';
 
+/*
+ * Notens to bilag - vedhaeftninger og kommentarer - i det SAMME saet.
+ *
+ * »Kan du lave saa Attachments og comments kan foldes sammen. Men skal vise
+ * hvor mange der er« (Andreas, 2026-08-25). De ligger under noten og skubber
+ * hinanden ned; med tre skaermbilleder paa er kommentarfeltet ude af syne.
+ *
+ * De starter FOLDET UD - som i dag. Andreas bad om at kunne folde dem, ikke
+ * om at faa dem gemt vaek, og at skjule hans kommentarer uden at spoerge er
+ * ikke en foldeknap, det er en aendring han ikke bad om. Folder han dem
+ * sammen én gang, bliver de det.
+ *
+ * Det giver samtidig ÉN betydning i saettet: at staa i `editor.foldede`
+ * betyder foldet - praecis som for notesboegerne. Skulle de starte foldet,
+ * skulle noeglen betyde det modsatte, og saa var der to konventioner i samme
+ * saet at tage fejl af.
+ *
+ * Antallet staar paa knappen, saa man ved, hvad man folder ud - samme grund
+ * som fillisten i indstillingerne (v15) og wikiens navigation.
+ *
+ * Valget er GLOBALT og ikke pr. note. Den, der aldrig kigger paa
+ * vedhaeftninger, skal ikke folde dem sammen én gang pr. note; og den, der
+ * altid vil se dem, skal ikke folde dem ud igen hver gang. Samtidig loeser
+ * det, at begge afsnit tegnes om under brug - en ny kommentar tegner
+ * afsnittet forfra, og uden en husket tilstand ville det klappe i, hver gang
+ * man skrev noget.
+ */
+const BILAG_FILER = 'bilag:files';
+const BILAG_KOM = 'bilag:comments';
+
+/** Er bilaget foldet ud? */
+function bilagAabent(noegle) {
+  return !editor.foldede.has(noegle);
+}
+
+/**
+ * Bind et `<details>` op, saa dets tilstand overlever en optegning.
+ *
+ * `toggle` og ikke et klik paa `summary`: browseren aabner ogsaa med
+ * mellemrum og Enter, og et klik-lytter ville gaa glip af dem.
+ */
+function bindBilagsfold(host, noegle) {
+  const d = host && host.querySelector('details.bilagfold');
+  if (!d) return;
+  d.addEventListener('toggle', () => {
+    if (d.open) editor.foldede.delete(noegle);
+    else editor.foldede.add(noegle);
+    gemFoldede();
+  });
+}
+
 /**
  * Er ALLE notesboeger foldet sammen?
  *
