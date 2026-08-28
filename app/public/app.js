@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3840,7 +3840,6 @@ function shellHtml() {
         ${icon('offline', 15)}
         <span class="baand-tekst">Offline — showing what was loaded last.</span>
       </div>
-      <div class="rulvagt" id="rulVagt" aria-hidden="true"></div>
       <div class="topbar">
         <div class="toprow">
           <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
@@ -4328,46 +4327,109 @@ document.addEventListener('visibilitychange', () => {
  * Den klaebende topbjaelke bruger den til at folde tallene og legenden
  * sammen, saa kun soegefeltet bliver staaende (F20).
  *
- * ── En VAGTPOST, ikke en scroll-lytter ────────────────────────────────────
+ * ── Den fejl, ÉN taerskel gav ─────────────────────────────────────────────
  *
- * Foerste udgave lyttede paa `scroll` og maalte rullehoejden. Den var i
- * princippet rigtig og i praksis skroebelig:
+ * Meldt fra doda-sessionen (2026-08-25): bjaelken flimrede ved rulning, »som
+ * om den gaar i hak«. Aarsagen er, at sammenfoldningen SELV goer dokumentet
+ * kortere. Er der mindre tilbage at rulle i end den hoejde, bjaelken giver
+ * slip paa, klipper browseren rullepositionen til det, der er plads til -
+ * toppen kommer i syne, klassen ryger af, bjaelken vokser, dokumentet bliver
+ * laengere, man kan rulle igen. Frem og tilbage, mange gange i sekundet.
  *
- *  - **Hvem ruller?** `window.scrollY` er 0 i nogle tilstande og
- *    `document.body.scrollTop` i andre. Aarsagen er `html, body { height:
- *    100% }` sammen med `overflow-x: hidden` under 900 px: naar den ene akse
- *    ikke er `visible`, beregnes den anden til `auto`, og saa er BODY
- *    rulleboksen. (Her stod tidligere `height: 100dvh; overflow-y: auto` -
- *    det er sidebarens regel, ikke sidens, og den, der ledte efter den,
- *    ledte forgaeves.) Den fejl har kostet to gange: i
- *    traek-ned-for-at-opfriske og i »op til toppen ved sideskift«.
- *  - **Og haendelsen kom ikke.** Maalt: en programmatisk rulning gav NUL
- *    scroll-haendelser, mens klassen blev haengende.
+ *     (dokumenthoejde - skaermhoejde) < det, bjaelken krymper
  *
- * En `IntersectionObserver` paa en usynlig vagtpost lige OVER bjaelken
- * spoerger om det, der faktisk betyder noget: er toppen af siden ude af
- * billedet? Den er ligeglad med hvem der ruller, og den fyrer uden en
- * haendelse pr. billede.
+ * MAALT i Sagu paa 1280x800: bjaelken krymper **70 px**, og en note paa fire
+ * til seks korte afsnit har 0-56 px at rulle i, naar den er foldet.
+ * Betingelsen holder altsaa. Den rammer KUN korte sider, og det er praecis
+ * derfor den kan have staaet laenge uden at blive fanget.
  *
- * (En observer paa selve bjaelken ville aldrig fyre - den er sticky og
- * forlader aldrig skaermen. Derfor vagtposten.)
+ * `rootMargin: -8px` var taenkt som hysterese, og det ER det - men 8 px er
+ * langt mindre end de 70, bjaelken giver tilbage. Justeringen springer let
+ * hen over dem.
  *
- * `rootMargin` giver hysterese: vagtposten er 1 px hoej og regnes for ude,
- * naar den er 8 px over kanten. Uden en margen ville bjaelken blafre lige paa
- * graensen, fordi sammenfoldningen selv flytter indholdet.
+ * ── Kuren: to taerskler og et gulv ────────────────────────────────────────
+ *
+ * Afstanden mellem taersklerne skal vaere STOERRE end det, bjaelken krymper -
+ * ellers kan justeringen naa ned under den nedre, og loekken er der igen.
+ * 120 - 8 = 112 > 70.
+ *
+ * Og `RULLET_PLADS`: uden det ville bjaelken aldrig folde sig paa en kort
+ * side, fordi man ikke KAN naa 120 px. Doda-sessionen faldt selv i den -
+ * maalingen sagde »0 skift, ingen flimmer«, hvilket saa ud som en sejr, men
+ * fejlen var fjernet ved at fjerne funktionen. Gulvet siger i stedet: fold
+ * kun sammen, hvis der er rigeligt at rulle i.
+ *
+ * ── Hvorfor en scroll-lytter nu, naar v23 valgte den fra ──────────────────
+ *
+ * v23 skrev: »hvem ruller?« er en faelde, og en programmatisk rulning giver
+ * NUL scroll-haendelser. Begge dele staar ved magt - jeg har maalt dem igen i
+ * dag. Men de rammer PROEVEN, ikke brugeren: med et rigtigt hjul-scroll kom
+ * der baade scroll-haendelser og observer-fyringer i den samme rude. Og »hvem
+ * ruller« har vi siden faaet et svar paa i `heltOppe()`, som `rulletNed()`
+ * genbruger.
+ *
+ * En `IntersectionObserver` paa en vagtpost kan kun ÉT skifte, og det er dét,
+ * der ikke raekker: to taerskler kraever to tal at sammenligne med.
+ *
+ * Selve beslutningen ligger derfor i `skalVaereRullet()` - en REN funktion.
+ * Hverken observeren eller lytteren kan drives programmatisk i et testmiljoe,
+ * saa regnestykket er det eneste sted, fejlen kan fanges uden en finger paa
+ * et hjul.
  */
+const RULLET_TIL = 120;      // folder sammen her
+const RULLET_FRA = 8;        // folder foerst ud igen her
+const RULLET_PLADS = 200;    // og kun hvis der er saa meget at rulle i
+
+/**
+ * Hvor langt er der rullet? Max af de tre, der kan vaere rulleboksen.
+ *
+ * `window.scrollY` er ALTID 0, naar body er rulleboksen - og det er den under
+ * 900 px, fordi `overflow-x: hidden` faar den anden akse til at blive `auto`.
+ * Den fejl har kostet tre gange (traek-ned, op-til-toppen, og her).
+ */
+function rulletNed() {
+  return Math.max(window.scrollY || 0,
+    document.body.scrollTop || 0,
+    document.documentElement.scrollTop || 0);
+}
+
+/** Hvor meget er der overhovedet at rulle i? */
+function rullePlads() {
+  return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+    - window.innerHeight;
+}
+
+/**
+ * Skal bjaelken vaere foldet sammen?
+ *
+ * @param {boolean} rullet  staar den foldet lige nu?
+ * @param {number} y        hvor langt der er rullet
+ * @param {number} plads    hvor meget der er at rulle i
+ */
+function skalVaereRullet(rullet, y, plads) {
+  if (!rullet) return y > RULLET_TIL && plads > RULLET_PLADS;
+  return y >= RULLET_FRA;
+}
+
 function registrerRullevagt() {
-  const vagt = document.getElementById('rulVagt');
-  if (!vagt) return;
-  if (!('IntersectionObserver' in window)) {
-    // Uden observer: ingen sammenfoldning. Bjaelken klaeber stadig - man
-    // mister kun den ekstra plads, og det er bedre end en klasse, der
-    // saetter sig fast i den forkerte stilling.
-    return;
-  }
-  new IntersectionObserver(([post]) => {
-    document.body.classList.toggle('rullet', !post.isIntersecting);
-  }, { rootMargin: '-8px 0px 0px 0px', threshold: 0 }).observe(vagt);
+  let rullet = document.body.classList.contains('rullet');
+  const tjek = () => {
+    const nu = skalVaereRullet(rullet, rulletNed(), rullePlads());
+    if (nu === rullet) return;
+    rullet = nu;
+    document.body.classList.toggle('rullet', nu);
+  };
+  // Begge mulige rullebokse. Hvilken der er den rigtige, afhaenger af
+  // skaermbredden, og det maa den her ikke skulle vide.
+  window.addEventListener('scroll', tjek, { passive: true });
+  document.body.addEventListener('scroll', tjek, { passive: true });
+  /*
+   * Ogsaa ved `resize`: `rullePlads()` afhaenger af skaermhoejden. Drejer man
+   * en telefon, kan en side, der havde rigeligt at rulle i, pludselig ikke
+   * have det - og saa skal bjaelken ud igen, uden at nogen har rullet.
+   */
+  window.addEventListener('resize', tjek, { passive: true });
+  tjek();
 }
 
 /**

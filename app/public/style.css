@@ -2951,8 +2951,6 @@ body.fokus .topbar { position: static; }
 
 /* Vagtposten: 1 px, usynlig, lige over den klæbende bjælke. Den er kun til
    for at kunne SES forsvinde — se registrerRullevagt(). */
-.rulvagt { height: 1px; margin: 0; padding: 0; pointer-events: none; }
-
 /* ------------------------------------------ totrinsbekræftelse (F21) */
 .totp-opsaet {
   display: flex;
