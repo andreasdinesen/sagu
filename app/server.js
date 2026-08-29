@@ -2104,6 +2104,114 @@ function flytNote(userId, id, maal) {
   return { note: hentNote(userId, id) };
 }
 
+/**
+ * Slaar to notesboeger sammen.
+ *
+ * »Det skal vaere muligt at kunne slaa 2 notebooks sammen ... enten ved at
+ * flytte alle noter over i den ene notebook eller ved at lade den ene
+ * notebook blive en hovedside under den anden notebook med alle noter som sub
+ * notes til hoved notebooken« (Andreas, 2026-08-25).
+ *
+ * ── De to tilstande er to forskellige HENSIGTER ───────────────────────────
+ *
+ *   'noter'  De to boeger var i virkeligheden den samme. Noterne staar side
+ *            om side bagefter, og at de kom fra hver sin bog er glemt.
+ *
+ *   'side'   Den ene bog HOERER UNDER den anden. Der laves en side med bogens
+ *            navn, og dens noter bliver undersider. Oprindelsen bevares som
+ *            et niveau i traeet.
+ *
+ * Forskellen er ikke kosmetisk: 'noter' kan ikke fortrydes ved at kigge, mens
+ * 'side' efterlader et spor, man kan traekke fra hinanden igen.
+ *
+ * ── Hvad der IKKE roeres ──────────────────────────────────────────────────
+ *
+ * Undersider. En note, der allerede har en foraelder, beholder den - kun
+ * notesbogen skiftes. Ellers ville et undertrae blive fladet ud af en
+ * flytning, og »et undertrae ligger i ÉN notesbog« (DESIGN.md) er netop
+ * grunden til, at bogen skal foelge med hele vejen ned.
+ *
+ * ── Rækkefoelgen ─────────────────────────────────────────────────────────
+ *
+ * De indkomne noter laegges EFTER dem, der var der i forvejen. `seq` er et
+ * loebenummer pr. bog, saa to boeger har begge 0, 1, 2 - uden en forskydning
+ * ville de to lister blive flettet ind i hinanden, og man ville ikke kunne se
+ * hvad der kom hvorfra.
+ */
+function fletNotesboeger(userId, kildeId, maalId, tilstand) {
+  if (kildeId === maalId) return { fejl: 'same_notebook' };
+  const bog = (id) => db.prepare(`SELECT id, name, icon FROM notebooks
+                                   WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
+    .get(id, userId);
+  const kilde = bog(kildeId);
+  const maal = bog(maalId);
+  if (!kilde || !maal) return { fejl: 'not_found' };
+
+  /*
+   * En UDGIVET kildebog blokerer.
+   *
+   * Bogen forsvinder ved sammenlaegningen, og dens offentlige adresse ville
+   * pege paa ingenting. Et link, kollegaer har i bogmaerkerne, maa ikke doe,
+   * fordi man ryddede op i sin egen sidebar - og at traekke udgivelsen
+   * tilbage BAG ryggen paa brugeren er ikke bedre. Han faar at vide, at den
+   * skal afpubliceres foerst; det er ét klik, og det er hans valg.
+   *
+   * Maalbogen maa gerne vaere udgivet. Den lever videre og faar bare flere
+   * sider - præcis hvad man bad om.
+   */
+  if (db.prepare('SELECT 1 FROM shares WHERE notebook_id = ? AND revoked_at IS NULL').get(kildeId)) {
+    return { fejl: 'source_published' };
+  }
+
+  const noter = db.prepare(`SELECT id, parent_id FROM notes
+                             WHERE notebook_id = ? AND user_id = ? AND deleted_at IS NULL
+                             ORDER BY seq, created_at`).all(kildeId, userId);
+  const toppen = noter.filter((n) => !n.parent_id);
+  const t = now();
+
+  db.exec('BEGIN');
+  try {
+    let sideId = null;
+    if (tilstand === 'side') {
+      // Hovedsiden arver bogens navn OG ikon - den ER bogen, et niveau nede.
+      sideId = opretNote(userId, { title: kilde.name, icon: kilde.icon, notebookId: maalId }).id;
+    }
+
+    // Forskydningen: efter det, der allerede staar i maalbogen.
+    const efter = db.prepare(`SELECT COALESCE(MAX(seq), -1) + 1 AS n FROM notes
+                               WHERE notebook_id = ? AND parent_id IS NULL
+                                 AND user_id = ? AND deleted_at IS NULL`)
+      .get(maalId, userId).n;
+
+    // Hele bogen skifter notesbog - ogsaa undersiderne, saa undertraeet
+    // bliver ét sted.
+    db.prepare(`UPDATE notes SET notebook_id = ?, updated_at = ?
+                 WHERE notebook_id = ? AND user_id = ? AND deleted_at IS NULL`)
+      .run(maalId, t, kildeId, userId);
+
+    toppen.forEach((n, i) => {
+      if (sideId) {
+        db.prepare('UPDATE notes SET parent_id = ?, seq = ?, updated_at = ? WHERE id = ?')
+          .run(sideId, i, t, n.id);
+      } else {
+        db.prepare('UPDATE notes SET seq = ?, updated_at = ? WHERE id = ?')
+          .run(efter + i, t, n.id);
+      }
+    });
+
+    db.prepare('UPDATE notebooks SET deleted_at = ?, updated_at = ? WHERE id = ?')
+      .run(t, t, kildeId);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  audit('notesboeger-flettet', userId, kildeId,
+    `${tilstand} -> ${maalId}, ${noter.length} noter`);
+  return { notes: noter.length, top: toppen.length, mode: tilstand };
+}
+
 /** Duplikerer en note, og valgfrit hele dens undertrae. */
 function duplikerNote(userId, id, medBoern) {
   const kilde = hentNote(userId, id);
@@ -5352,6 +5460,39 @@ const MOENSTRE = [
         notebook: db.prepare(`SELECT id, name, icon, seq, archived_at, created_at, updated_at
                                 FROM notebooks WHERE id = ?`).get(ctx.params[0]),
       });
+    },
+  },
+  {
+    /*
+     * Slaa to notesboeger sammen.
+     *
+     * `write` og ikke `full`: det flytter noter, det sletter dem ikke. Bogen
+     * selv gaar i papirkurven som ved en almindelig sletning, og noterne
+     * ligger et sted, man kan se.
+     */
+    metode: 'POST', re: /^\/api\/v1\/notebooks\/([a-f0-9]{32})\/merge$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'write');
+      if (!auth) return;
+      const body = await readJsonBody(req, auth.viaToken);
+      const maal = str(body.into, 64);
+      const tilstand = body.mode === 'side' ? 'side' : 'noter';
+      if (!/^[a-f0-9]{32}$/.test(maal)) {
+        apiFejl(res, 400, 'bad_target', 'Send the id of the notebook to merge into.');
+        return;
+      }
+      const r = fletNotesboeger(auth.user.id, ctx.params[0], maal, tilstand);
+      if (r.fejl === 'same_notebook') {
+        apiFejl(res, 400, 'same_notebook', 'A notebook cannot be merged into itself.');
+        return;
+      }
+      if (r.fejl === 'source_published') {
+        apiFejl(res, 409, 'source_published',
+          'This notebook is published. Unpublish it first — merging would leave its public address pointing at nothing.');
+        return;
+      }
+      if (r.fejl) { apiFejl(res, 404, 'not_found', 'No such notebook.'); return; }
+      sendJson(res, 200, r);
     },
   },
   {

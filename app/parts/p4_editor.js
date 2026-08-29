@@ -355,6 +355,7 @@ function visBogMenu(anker, id, navn) {
   host.innerHTML = `
     <button class="usermenu-item" data-do="navn">${icon('notes', 16)}<span>Rename…</span></button>
     <button class="usermenu-item" data-do="bog-udgiv">${icon('globe', 16)}<span>Publish this notebook</span></button>
+    <button class="usermenu-item" data-do="flet">${icon('ind', 16)}<span>Merge into another…</span></button>
     <button class="usermenu-item danger" data-do="slet">${icon('trash', 16)}<span>Move to trash</span></button>`;
   raekke.appendChild(host);
 
@@ -371,6 +372,9 @@ function visBogMenu(anker, id, navn) {
           await api('PATCH', `/api/v1/notebooks/${id}`, { name: nyt.trim() });
         } else if (hvad === 'bog-udgiv') {
           visUdgivPanel({ slags: 'bog', id, titel: navn });
+          return;
+        } else if (hvad === 'flet') {
+          visFletRude(id, navn);
           return;
         } else if (hvad === 'slet') {
           /*
@@ -1925,6 +1929,96 @@ function bindNoteSide() {
  * (RUNE-ERFARINGER, tovo v8). Undersiderne foelger med: et undertrae ligger i
  * ÉN notesbog, ellers kan sidebaren ikke tegne det ét sted.
  */
+/**
+ * Ruden: slaa den her notesbog sammen med en anden.
+ *
+ * »Det skal vaere muligt at kunne slaa 2 notebooks sammen« (Andreas,
+ * 2026-08-25), paa to maader.
+ *
+ * ── Hvorfor de to valg staar med en saetning hver ─────────────────────────
+ *
+ * »Move the notes« og »Make it a page« siger ikke, hvad forskellen bliver til
+ * paa skaermen bagefter - og det her er en handling, man ikke kan fortryde
+ * med et klik. Hver mulighed siger derfor, hvad man FAAR: noter side om side,
+ * eller et niveau der husker, hvor de kom fra.
+ *
+ * Antallet staar der ogsaa. »Slaa sammen« lyder som noget, der handler om to
+ * bøger; det handler om alle noterne i dem.
+ */
+function visFletRude(id, navn) {
+  const andre = (state.notebooks || []).filter((b) => b.id !== id);
+  if (!andre.length) {
+    toast('There is no other notebook to merge into.');
+    return;
+  }
+  const antal = (state.tree || []).filter((n) => n.notebookId === id).length;
+
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'fletRude';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Merge “${esc(navn)}”</h2>
+        <button class="iconbtn" id="fletLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">“${esc(navn)}” goes to the trash and its ${antal
+  } note${antal === 1 ? '' : 's'} move to the notebook you pick. Subpages come along.</p>
+        <label class="field"><span>Merge into</span>
+          <select class="input" id="fletMaal">
+            ${andre.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('')}
+          </select></label>
+        <fieldset class="fletvalg">
+          <legend class="meta">How</legend>
+          <label class="fletvalg-en">
+            <input type="radio" name="flettilstand" value="noter" checked>
+            <span><strong>Move the notes in</strong>
+              <span class="meta saetning">They end up side by side with the notes already
+              there, and where they came from is forgotten.</span></span>
+          </label>
+          <label class="fletvalg-en">
+            <input type="radio" name="flettilstand" value="side">
+            <span><strong>Make it a page under the other</strong>
+              <span class="meta saetning">A page called “${esc(navn)}” is created, and the
+              notes become subpages of it. The old grouping is kept as a level.</span></span>
+          </label>
+        </fieldset>
+        <div class="btnrow" style="margin-top:16px">
+          <button class="btn primary" id="fletGem">Merge</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#fletLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  host.querySelector('#fletGem').addEventListener('click', async () => {
+    const maal = host.querySelector('#fletMaal').value;
+    const tilstand = host.querySelector('input[name="flettilstand"]:checked').value;
+    const maalNavn = (andre.find((b) => b.id === maal) || {}).name || 'the notebook';
+    try {
+      const r = await api('POST', `/api/v1/notebooks/${id}/merge`,
+        { into: maal, mode: tilstand });
+      luk();
+      toast(tilstand === 'side'
+        ? `“${navn}” is now a page in “${maalNavn}” with ${r.top} subpage${
+          r.top === 1 ? '' : 's'}.`
+        : `${r.notes} note${r.notes === 1 ? '' : 's'} moved to “${maalNavn}”.`);
+      // Stod man i en note fra bogen, findes noten stadig - men traeet og
+      // brødkrummerne skal tegnes om, saa den staar det rigtige sted.
+      await hentTrae();
+      await hentState();
+      tegnTrae();
+      opdaterNav();
+      if (editor.note) await aabnNote(editor.note.id, true);
+    } catch (ex) { toast(ex.message); }
+  });
+}
+
 function visFlytRude(n) {
   const boeger = state.notebooks || [];
   const host = document.createElement('div');

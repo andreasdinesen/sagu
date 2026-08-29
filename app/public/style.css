@@ -2951,6 +2951,30 @@ body.fokus .topbar { position: static; }
 
 /* Vagtposten: 1 px, usynlig, lige over den klæbende bjælke. Den er kun til
    for at kunne SES forsvinde — se registrerRullevagt(). */
+/* ------------------------------------------- slå to notesbøger sammen
+ *
+ * De to valg er ikke to ord, men to sætninger: handlingen kan ikke fortrydes
+ * med et klik, og »Move the notes« siger ikke, hvad forskellen bliver til på
+ * skærmen bagefter. Derfor er hver mulighed en blok med en overskrift og en
+ * forklaring — og de skal se ud som noget, man vælger imellem, ikke som en
+ * liste. */
+.fletvalg { border: 0; margin: 16px 0 0; padding: 0; }
+.fletvalg > legend { padding: 0; margin-bottom: 8px; }
+.fletvalg-en {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.fletvalg-en + .fletvalg-en { margin-top: 8px; }
+.fletvalg-en:hover { background: var(--card-hover); }
+.fletvalg-en:has(input:checked) { border-color: var(--accent-text); background: var(--accent-soft); }
+.fletvalg-en input { margin-top: 3px; flex: none; }
+.fletvalg-en > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
 /* ------------------------------------------ totrinsbekræftelse (F21) */
 .totp-opsaet {
   display: flex;
