@@ -2212,6 +2212,91 @@ function fletNotesboeger(userId, kildeId, maalId, tilstand) {
   return { notes: noter.length, top: toppen.length, mode: tilstand };
 }
 
+/**
+ * Flytter FLERE noter i ét greb.
+ *
+ * »kan du lave saa man kan markere flere noter i venstre side. saa man fx kan
+ * flytte flere noter paa en gang?« (Andreas, 2026-09-01).
+ *
+ * ── Hvorfor det er ét kald og ikke ét pr. note ────────────────────────────
+ *
+ * En loekke i fladen ville sende 30 kald af sted for 30 noter, og fejlede den
+ * fjerde, stod man med en halv flytning og ingen vej tilbage. Her er det ÉN
+ * transaktion: enten flytter de alle, eller ingen goer.
+ *
+ * ── En note, hvis foraelder ogsaa er markeret, springes over ──────────────
+ *
+ * Det er den vigtigste linje herinde. `flytNote` tager hele undertraeet med,
+ * saa flytter man baade en side og dens underside, ville undersiden foerst
+ * blive flyttet SELVSTAENDIGT - og med `parentId: null` er den saa ikke
+ * laengere en underside. Man ville markere en gren og faa den revet fra
+ * hinanden.
+ *
+ * Derfor: har en note en forfader i markeringen, roeres den ikke. Den kommer
+ * med alligevel, fordi forfaderen tager den med.
+ */
+function flytMangeNoter(userId, ider, maal) {
+  const unikke = [...new Set((ider || []).filter((x) => /^[a-f0-9]{32}$/.test(x)))];
+  if (!unikke.length) return { fejl: 'nothing_to_move' };
+  if (unikke.length > 500) return { fejl: 'too_many' };
+
+  /*
+   * Alle skal findes og vaere mine, FOER noget flyttes.
+   *
+   * Det er DEN her sloejfe, der giver »alt eller intet« - ikke tilbagerulningen
+   * nedenfor. Maalt ved at sabotere: byttede jeg `ROLLBACK` ud med `COMMIT`
+   * inde i flytningen, blev alle proever ved med at vaere groenne, fordi ingen
+   * flytning naar at fejle, naar alt er tjekket paa forhaand. Tilbagerulningen
+   * er et NET, ikke vaernet.
+   *
+   * Ejerskabet staar to steder: her, og i `flytNote`s egen `SKRIVBAR`.
+   * Ogsaa dét er maalt - fjerner jeg `user_id` herfra, holder proeven stadig,
+   * fordi den anden griber. To vaern om det samme er med vilje, naar det
+   * handler om, hvis noter man flytter.
+   */
+  const raekker = new Map();
+  for (const id of unikke) {
+    const n = db.prepare(`SELECT id, parent_id FROM notes
+                           WHERE id = ? AND user_id = ? AND deleted_at IS NULL`).get(id, userId);
+    if (!n) return { fejl: 'not_found' };
+    raekker.set(id, n);
+  }
+
+  const valgt = new Set(unikke);
+  const harValgtForfader = (id) => {
+    let p = raekker.get(id).parent_id;
+    for (let dybde = 0; p && dybde < 64; dybde++) {
+      if (valgt.has(p)) return true;
+      const f = db.prepare('SELECT parent_id FROM notes WHERE id = ?').get(p);
+      p = f ? f.parent_id : null;
+    }
+    return false;
+  };
+  const skalFlyttes = unikke.filter((id) => !harValgtForfader(id));
+
+  db.exec('BEGIN');
+  try {
+    for (const id of skalFlyttes) {
+      /*
+       * `parentId: null` med vilje: en note, der flytter notesbog, kan ikke
+       * blive haengende under en side i den gamle. Det er den samme regel som
+       * »Move to notebook…« paa den enkelte note.
+       */
+      const svar = flytNote(userId, id, { parentId: null, notebookId: maal || null });
+      // Nettet. Naas ikke af de veje, der findes i dag (se sloejfen ovenfor),
+      // men en halv flytning maa aldrig kunne blive committet ved et uheld.
+      if (svar.fejl) { db.exec('ROLLBACK'); return { fejl: svar.fejl }; }
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  audit('noter-flyttet', userId, maal || '-', `${skalFlyttes.length} af ${unikke.length}`);
+  return { moved: skalFlyttes.length, skipped: unikke.length - skalFlyttes.length };
+}
+
 /** Duplikerer en note, og valgfrit hele dens undertrae. */
 function duplikerNote(userId, id, medBoern) {
   const kilde = hentNote(userId, id);
@@ -5264,6 +5349,32 @@ const MOENSTRE = [
       const svar = sletUndertrae(auth.user.id, ctx.params[0]);
       if (svar.fejl) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
       sendJson(res, 200, { ok: true, deleted: svar.antal });
+    },
+  },
+  {
+    /*
+     * Flyt flere noter paa én gang.
+     *
+     * Ligger FOER `/api/v1/notes/:id/move` i tabellen, fordi »move« ellers
+     * kunne laeses som et note-id af den anden rute. Raekkefoelgen i en
+     * moenster-tabel er en regel, ikke et tilfaelde.
+     */
+    metode: 'POST', re: /^\/api\/v1\/notes\/move$/,
+    kald: async (req, res) => {
+      const auth = godkend(req, res, 'write');
+      if (!auth) return;
+      const body = await readJsonBody(req, auth.viaToken);
+      const r = flytMangeNoter(auth.user.id, body.ids, str(body.notebookId, 64) || null);
+      if (r.fejl === 'nothing_to_move') {
+        apiFejl(res, 400, 'nothing_to_move', 'Send the ids of the notes to move.');
+        return;
+      }
+      if (r.fejl === 'too_many') {
+        apiFejl(res, 400, 'too_many', 'Move at most 500 notes at a time.');
+        return;
+      }
+      if (r.fejl) { apiFejl(res, 404, 'not_found', 'One of the notes could not be found.'); return; }
+      sendJson(res, 200, r);
     },
   },
   {

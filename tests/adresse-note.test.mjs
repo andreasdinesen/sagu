@@ -24,9 +24,16 @@ const rens = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const core = rens(readFileSync(new URL('../app/parts/p1_core.js', import.meta.url), 'utf8'));
 const editor = rens(readFileSync(new URL('../app/parts/p4_editor.js', import.meta.url), 'utf8'));
 
+/*
+ * Parentesen SKAL med i soegningen.
+ *
+ * Uden den er `function gaaTil` et praefiks af `function gaaTilbage`, og
+ * `indexOf` finder den forkerte - proeven laeste en helt anden funktions krop
+ * og faldt paa noget, der ikke fejlede. Fanget da tilbage-knappen kom til.
+ */
 const krop = (kilde, navn) => {
-  const i = kilde.indexOf(`function ${navn}`);
-  assert.ok(i > -1, `${navn} findes ikke`);
+  const i = kilde.indexOf(`function ${navn}(`);
+  assert.ok(i > -1, `${navn}() findes ikke`);
   return kilde.slice(i, kilde.indexOf('\n}', i));
 };
 

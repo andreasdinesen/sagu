@@ -3307,7 +3307,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3540,6 +3540,9 @@ const ICONS = {
   moon: '<path d="M20 14.6A8.6 8.6 0 019.4 4 8.6 8.6 0 1020 14.6z"/>',
   key: '<circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H20M17 12v3M20 12v2.5"/>',
   caret: '<path d="M9 6l6 6-6 6"/>',
+  // Tilbage. En venstre-pil med skaft - `ind` er et INDRYKNINGS-ikon og siger
+  // »goer til underside«, ikke »tilbage«.
+  tilbage: '<path d="M10.5 5.5L4 12l6.5 6.5"/><path d="M4 12h15"/>',
   focus: '<path d="M4 9V5.5A1.5 1.5 0 015.5 4H9"/><path d="M15 4h3.5A1.5 1.5 0 0120 5.5V9"/><path d="M20 15v3.5a1.5 1.5 0 01-1.5 1.5H15"/><path d="M9 20H5.5A1.5 1.5 0 014 18.5V15"/>',
   dots: '<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>',
   comment: '<path d="M20 12.5a6.5 6.5 0 01-6.5 6.5H9l-4 2.5v-4A6.5 6.5 0 016.5 6h7A6.5 6.5 0 0120 12.5z"/>',
@@ -3988,10 +3991,104 @@ function bindShell() {
  * sidebaren eller en tilbage-knap gjorde noget (RUNE-ERFARINGER, doda v32).
  * Et filter er noget, man VAELGER - ikke noget, man arver.
  */
+/* ------------------------------------------------------ tilbage (F26)
+ *
+ * »Kan du lave en back knap. hvis man fx klikker paa et link i en note som
+ * goer at man bliver sendt til en anden note, men gerne vil retur igen?«
+ * (Andreas, 2026-09-01).
+ *
+ * ── Hvorfor et EGET spor og ikke browserens historik ──────────────────────
+ *
+ * v42 valgte med vilje `replaceState` frem for `pushState`, saa browserens
+ * tilbage-knap ikke gaar gennem hver eneste note, man har kigget paa - en
+ * note aabnes ad mindst seks veje, og flere af dem taenker man ikke paa som
+ * en navigation.
+ *
+ * Det valg staar ved magt. Men et eget spor kan noget, browserens ikke kan:
+ * det ved, HVAD man gaar tilbage til, og kan skrive det paa knappen. »Back to
+ * Pakke stoerrelser« er et loefte; en pil er et gaet.
+ *
+ * ── Naar der IKKE huskes ─────────────────────────────────────────────────
+ *
+ * Ved en opfriskning af den note, man allerede staar paa (`tving`), og ved en
+ * tilbage-tur selv. Uden det ville sporet vokse ved hver
+ * traek-ned-for-at-opfriske, og tilbage-knappen ville vippe mellem to noter i
+ * stedet for at gaa hjem.
+ */
+const tilbagespor = [];
+const TILBAGE_LOFT = 50;
+let gaarTilbage = false;
+
+/** Navnet paa det, man ville komme tilbage TIL. */
+function sporNavn(post) {
+  if (post.note) return post.titel || 'the note';
+  const v = (typeof VIEWS !== 'undefined' ? VIEWS : []).find((x) => x.id === post.view);
+  return (v && v.label) || 'back';
+}
+
+/**
+ * Laeg det, man staar paa NU, i sporet.
+ *
+ * Kaldes FOER `state` aendres - ellers husker den det sted, man er paa vej
+ * hen, og knappen bliver en genindlaesning.
+ */
+function husk() {
+  if (gaarTilbage || !state.user) return;
+  const post = {
+    view: state.view,
+    note: state.openNote || null,
+    tag: state.filterTag || null,
+    notebook: state.openNotebook || null,
+    titel: (typeof editor === 'object' && editor.note && editor.note.id === state.openNote)
+      ? editor.note.title : '',
+  };
+  const sidste = tilbagespor[tilbagespor.length - 1];
+  // Samme sted to gange i traek er ikke to skridt.
+  if (sidste && sidste.view === post.view && sidste.note === post.note
+      && sidste.tag === post.tag && sidste.notebook === post.notebook) return;
+  tilbagespor.push(post);
+  if (tilbagespor.length > TILBAGE_LOFT) tilbagespor.shift();
+}
+
+function kanGaaTilbage() {
+  return tilbagespor.length > 0;
+}
+
+/**
+ * Ét skridt tilbage.
+ *
+ * `gaarTilbage` er den vagt, der goer det til et SKRIDT og ikke en vippen:
+ * uden den ville turen tilbage selv blive husket, og knappen ville sende én
+ * frem igen.
+ */
+function gaaTilbage() {
+  const post = tilbagespor.pop();
+  if (!post) return;
+  gaarTilbage = true;
+  try {
+    if (post.note) {
+      aabnNote(post.note);
+    } else {
+      gaaTil(post.view, { tag: post.tag, notebook: post.notebook });
+    }
+  } finally {
+    /*
+     * Vagten slaas fra i naeste tur om loekken, ikke med det samme.
+     *
+     * `aabnNote` er asynkron: den saetter `state` med det samme, men naar
+     * foerst frem til optegningen bagefter. Ryddede vi flaget her, ville den
+     * optegning kunne naa at huske det sted, vi lige forlod.
+     */
+    setTimeout(() => { gaarTilbage = false; }, 0);
+  }
+}
+
 function gaaTil(view, opt) {
   // En ventende gemning maa ikke gaa tabt, fordi man klikker i sidebaren.
   if (typeof gemNu === 'function') gemNu();
   const skifter = state.view !== view;
+  // Husk hvor vi stod - FOER `state` aendres.
+  if (skifter || state.openNote) husk();
   const havdeFilter = !!(state.openNote || state.filterTag || state.openNotebook);
   state.view = view;
   state.openNote = null;
@@ -6863,7 +6960,8 @@ function traeHtml() {
     const boern = boernAf(note.id, null);
     const foldet = editor.foldede.has(note.id);
     const aktiv = editor.note && editor.note.id === note.id;
-    return `<div class="tree-row${aktiv ? ' on' : ''}" data-raekke="${esc(note.id)}"
+    const markeret = valgte.has(note.id);
+    return `<div class="tree-row${aktiv ? ' on' : ''}${markeret ? ' valgt' : ''}" data-raekke="${esc(note.id)}"
         style="padding-left:${8 + dybde * 14}px">
         ${boern.length
     ? `<button class="tree-fold${foldet ? '' : ' open'}" data-fold="${esc(note.id)}"
@@ -7039,6 +7137,141 @@ function visBogMenu(anker, id, navn) {
   }, 0);
 }
 
+/* ------------------------------------------- markering af flere noter (F26)
+ *
+ * »kan du lave saa man kan markere flere noter i venstre side. saa man fx kan
+ * flytte flere noter paa en gang?« (Andreas, 2026-09-01).
+ *
+ * ── Hvorfor ⌘/Ctrl-klik og ikke afkrydsningsfelter ────────────────────────
+ *
+ * Et felt pr. raekke ville staa fremme i sidebaren hele tiden - i en liste med
+ * 945 noter er det 945 felter, man ikke bruger. ⌘-klik er den gestus, enhver
+ * filliste bruger, og den koster ingen pixels, foer man tager den i brug.
+ *
+ * Prisen er, at den ikke findes paa touch. Derfor: **det foerste ⌘-klik
+ * taender en markerings-tilstand**, og saa vaelger et almindeligt klik til og
+ * fra, saa laenge der er noget markeret. Paa en telefon kan man ikke starte
+ * den - og dét er en aaben ende, ikke en loesning. Den staar skrevet ned.
+ *
+ * ── Hvorfor markeringen ikke overlever en optegning af traeet ─────────────
+ *
+ * Den goer den. `valgte` er et Set uden for optegningen, og hver raekke faar
+ * sin klasse ved tegningen. Ellers ville en flytning - som netop tegner
+ * traeet om - rydde markeringen midt i, at man arbejdede med den.
+ */
+const valgte = new Set();
+
+/** Er der en markering i gang? */
+function harValgte() { return valgte.size > 0; }
+
+function ryddValgte() {
+  if (!valgte.size) return;
+  valgte.clear();
+  tegnTrae();
+}
+
+/**
+ * Skifter markeringen paa én note.
+ *
+ * `shift` tager spannet fra den sidst markerede - som i enhver anden liste.
+ * Raekkefoelgen er den, TRAEET viser, ikke den, noterne blev lavet i: man
+ * peger paa to raekker paa skaermen og mener alt imellem dem.
+ */
+let sidstValgt = null;
+function skiftValgt(id, medShift) {
+  const raekker = [...document.querySelectorAll('#treeHost [data-note]')]
+    .map((el) => el.dataset.note);
+  if (medShift && sidstValgt && raekker.includes(sidstValgt) && raekker.includes(id)) {
+    const a = raekker.indexOf(sidstValgt);
+    const b = raekker.indexOf(id);
+    for (const n of raekker.slice(Math.min(a, b), Math.max(a, b) + 1)) valgte.add(n);
+  } else if (valgte.has(id)) {
+    valgte.delete(id);
+  } else {
+    valgte.add(id);
+  }
+  sidstValgt = id;
+  tegnTrae();
+}
+
+/**
+ * Baandet over traeet: hvor mange, og hvad man kan goere.
+ *
+ * Det staar OVER listen og ikke som en svaevende bjaelke: sidebaren er smal,
+ * og en bjaelke hen over den ville daekke netop de raekker, man er ved at
+ * vaelge.
+ */
+function valgtBaandHtml() {
+  if (!harValgte()) return '';
+  return `<div class="valgtbaand">
+      <span class="valgtbaand-tal">${valgte.size} selected</span>
+      <button class="btn ghost" id="valgtFlyt">Move…</button>
+      <button class="linkbtn" id="valgtRyd">Clear</button>
+    </div>`;
+}
+
+function bindValgtBaand(host) {
+  const flyt = host.querySelector('#valgtFlyt');
+  if (flyt) flyt.addEventListener('click', () => visFlytMangeRude());
+  const ryd = host.querySelector('#valgtRyd');
+  if (ryd) ryd.addEventListener('click', () => ryddValgte());
+}
+
+/** Ruden: hvor skal de hen? */
+function visFlytMangeRude() {
+  const ider = [...valgte];
+  if (!ider.length) return;
+  const boeger = state.notebooks || [];
+  const host = document.createElement('div');
+  host.className = 'modal';
+  host.id = 'flytMangeRude';
+  host.innerHTML = `<div class="modal-kort">
+      <div class="modal-top">
+        <h2>Move ${ider.length} note${ider.length === 1 ? '' : 's'}</h2>
+        <button class="iconbtn" id="fmLuk" aria-label="Close">${icon('luk', 16)}</button>
+      </div>
+      <div class="modal-krop">
+        <p class="meta saetning">Subpages come along. Is a page and its own subpage both
+        selected, only the page moves — the subpage follows it, so the branch stays whole.</p>
+        <label class="field"><span>Notebook</span>
+          <select class="input" id="fmBog">
+            <option value="">No notebook</option>
+            ${boeger.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('')}
+          </select></label>
+        <div class="btnrow" style="margin-top:16px">
+          <button class="btn primary" id="fmGem">Move</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+
+  const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
+  const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); luk(); } };
+  document.addEventListener('keydown', paaTast);
+  host.querySelector('#fmLuk').addEventListener('click', luk);
+  host.addEventListener('click', (e) => { if (e.target === host) luk(); });
+
+  host.querySelector('#fmGem').addEventListener('click', async () => {
+    const bog = host.querySelector('#fmBog').value || null;
+    const navn = bog ? (boeger.find((b) => b.id === bog) || {}).name : 'no notebook';
+    try {
+      const r = await api('POST', '/api/v1/notes/move', { ids: ider, notebookId: bog });
+      luk();
+      valgte.clear();
+      toast(r.skipped
+        ? `${r.moved} moved to “${navn}” — ${r.skipped} came along as `
+          + `${r.skipped === 1 ? 'a subpage' : 'subpages'}.`
+        : `${r.moved} note${r.moved === 1 ? '' : 's'} moved to “${navn}”.`);
+      await hentTrae();
+      await hentState();
+      tegnTrae();
+      opdaterNav();
+      // Stod man i en af dem, skal broedkrummerne vise den nye bog.
+      if (editor.note && ider.includes(editor.note.id)) await aabnNote(editor.note.id, true);
+    } catch (ex) { toast(ex.message); }
+  });
+}
+
 function bindTrae() {
   const host = document.getElementById('treeHost');
   if (!host) return;
@@ -7072,8 +7305,24 @@ function bindTrae() {
   });
 
   host.querySelectorAll('[data-note]').forEach((el) => {
-    el.addEventListener('click', () => aabnNote(el.dataset.note));
+    el.addEventListener('click', (e) => {
+      /*
+       * ⌘/Ctrl vaelger. Shift tager spannet.
+       *
+       * Og naar der ALLEREDE er en markering i gang, vaelger et almindeligt
+       * klik ogsaa til og fra - ellers ville man skulle holde en tast nede
+       * for hver eneste note, og paa en telefon kunne man aldrig komme videre
+       * end den foerste.
+       */
+      if (e.metaKey || e.ctrlKey || e.shiftKey || harValgte()) {
+        e.preventDefault();
+        skiftValgt(el.dataset.note, e.shiftKey);
+        return;
+      }
+      aabnNote(el.dataset.note);
+    });
   });
+  bindValgtBaand(host);
 
   host.querySelectorAll('[data-sub]').forEach((el) => {
     el.addEventListener('click', async (e) => {
@@ -7390,7 +7639,9 @@ function soeskendeFoer(note) {
 function tegnTrae() {
   const host = document.getElementById('treeHost');
   if (!host) return;
-  host.innerHTML = traeHtml();
+  // Baandet foerst: det siger, hvor mange der er markeret, og staar OVER
+  // listen frem for hen over den.
+  host.innerHTML = valgtBaandHtml() + traeHtml();
   bindTrae();
 }
 
@@ -7454,6 +7705,12 @@ async function aabnNote(id, tving) {
    * trakket (fundet 2026-08-22 ved at sammenligne med doda).
    */
   if (!tving && editor.note && editor.note.id === id && !editor.indlaeser) return;
+  /*
+   * Husk hvor vi stod - FOER `state` aendres, og kun naar vi faktisk gaar et
+   * andet sted hen. En opfriskning af den note, man staar paa, er ikke et
+   * skridt.
+   */
+  if (state.openNote !== id) husk();
   await gemNu();
   editor.indlaeser = id;
   state.view = 'note';
@@ -7503,6 +7760,27 @@ async function aabnNote(id, tving) {
     toast(ex.message);
     gaaTil('notes');
   }
+}
+
+/**
+ * Tilbage-knappen. Kun naar der ER noget at gaa tilbage til.
+ *
+ * »Den kunne evt. blive synlig til venstre for Save« (Andreas, 2026-09-01) -
+ * og dér staar den, forrest i vaerktoejsraekken.
+ *
+ * Den siger HVOR den foerer hen. En pil alene er et gaet, og man skal kunne
+ * vide, om man lander paa den forrige note eller helt tilbage i soegningen,
+ * FOER man trykker.
+ *
+ * Skjult frem for slaaet fra: en knap, der aldrig kan bruges paa den foerste
+ * note, man aabner, er stoej i vaerktoejsraekken.
+ */
+function tilbageKnapHtml() {
+  if (!kanGaaTilbage()) return '';
+  const post = tilbagespor[tilbagespor.length - 1];
+  const navn = sporNavn(post);
+  return `<button class="iconbtn" id="tilbageBtn"
+    title="Back to “${esc(navn)}”" aria-label="Back to ${esc(navn)}">${icon('tilbage', 16)}</button>`;
 }
 
 function notesbogNavn(id) {
@@ -7744,6 +8022,7 @@ function sideNote() {
         placeholder="Untitled" autocomplete="off" spellcheck="false"
         ${maaRette(n) ? '' : 'readonly'}>
       <div class="note-tools">
+        ${tilbageKnapHtml()}
         <span id="gemMaerke">${gemMaerke()}</span>
         <button class="iconbtn" id="kopiNote"
           title="Copy the whole note — with the images">${icon('copy', 15)}</button>
@@ -8504,6 +8783,9 @@ function bindNoteSide() {
    * note indsat i en mail uden sit navn er svaer at forstaa. Det goer
    * `noteSomMarkdown()`, som begge veje deler.
    */
+  const tilbageKnap = document.getElementById('tilbageBtn');
+  if (tilbageKnap) tilbageKnap.addEventListener('click', () => gaaTilbage());
+
   const kopiKnap = document.getElementById('kopiNote');
   if (kopiKnap) {
     /*

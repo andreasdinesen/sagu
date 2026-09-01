@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -238,6 +238,9 @@ const ICONS = {
   moon: '<path d="M20 14.6A8.6 8.6 0 019.4 4 8.6 8.6 0 1020 14.6z"/>',
   key: '<circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H20M17 12v3M20 12v2.5"/>',
   caret: '<path d="M9 6l6 6-6 6"/>',
+  // Tilbage. En venstre-pil med skaft - `ind` er et INDRYKNINGS-ikon og siger
+  // »goer til underside«, ikke »tilbage«.
+  tilbage: '<path d="M10.5 5.5L4 12l6.5 6.5"/><path d="M4 12h15"/>',
   focus: '<path d="M4 9V5.5A1.5 1.5 0 015.5 4H9"/><path d="M15 4h3.5A1.5 1.5 0 0120 5.5V9"/><path d="M20 15v3.5a1.5 1.5 0 01-1.5 1.5H15"/><path d="M9 20H5.5A1.5 1.5 0 014 18.5V15"/>',
   dots: '<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>',
   comment: '<path d="M20 12.5a6.5 6.5 0 01-6.5 6.5H9l-4 2.5v-4A6.5 6.5 0 016.5 6h7A6.5 6.5 0 0120 12.5z"/>',
@@ -686,10 +689,104 @@ function bindShell() {
  * sidebaren eller en tilbage-knap gjorde noget (RUNE-ERFARINGER, doda v32).
  * Et filter er noget, man VAELGER - ikke noget, man arver.
  */
+/* ------------------------------------------------------ tilbage (F26)
+ *
+ * »Kan du lave en back knap. hvis man fx klikker paa et link i en note som
+ * goer at man bliver sendt til en anden note, men gerne vil retur igen?«
+ * (Andreas, 2026-09-01).
+ *
+ * ── Hvorfor et EGET spor og ikke browserens historik ──────────────────────
+ *
+ * v42 valgte med vilje `replaceState` frem for `pushState`, saa browserens
+ * tilbage-knap ikke gaar gennem hver eneste note, man har kigget paa - en
+ * note aabnes ad mindst seks veje, og flere af dem taenker man ikke paa som
+ * en navigation.
+ *
+ * Det valg staar ved magt. Men et eget spor kan noget, browserens ikke kan:
+ * det ved, HVAD man gaar tilbage til, og kan skrive det paa knappen. »Back to
+ * Pakke stoerrelser« er et loefte; en pil er et gaet.
+ *
+ * ── Naar der IKKE huskes ─────────────────────────────────────────────────
+ *
+ * Ved en opfriskning af den note, man allerede staar paa (`tving`), og ved en
+ * tilbage-tur selv. Uden det ville sporet vokse ved hver
+ * traek-ned-for-at-opfriske, og tilbage-knappen ville vippe mellem to noter i
+ * stedet for at gaa hjem.
+ */
+const tilbagespor = [];
+const TILBAGE_LOFT = 50;
+let gaarTilbage = false;
+
+/** Navnet paa det, man ville komme tilbage TIL. */
+function sporNavn(post) {
+  if (post.note) return post.titel || 'the note';
+  const v = (typeof VIEWS !== 'undefined' ? VIEWS : []).find((x) => x.id === post.view);
+  return (v && v.label) || 'back';
+}
+
+/**
+ * Laeg det, man staar paa NU, i sporet.
+ *
+ * Kaldes FOER `state` aendres - ellers husker den det sted, man er paa vej
+ * hen, og knappen bliver en genindlaesning.
+ */
+function husk() {
+  if (gaarTilbage || !state.user) return;
+  const post = {
+    view: state.view,
+    note: state.openNote || null,
+    tag: state.filterTag || null,
+    notebook: state.openNotebook || null,
+    titel: (typeof editor === 'object' && editor.note && editor.note.id === state.openNote)
+      ? editor.note.title : '',
+  };
+  const sidste = tilbagespor[tilbagespor.length - 1];
+  // Samme sted to gange i traek er ikke to skridt.
+  if (sidste && sidste.view === post.view && sidste.note === post.note
+      && sidste.tag === post.tag && sidste.notebook === post.notebook) return;
+  tilbagespor.push(post);
+  if (tilbagespor.length > TILBAGE_LOFT) tilbagespor.shift();
+}
+
+function kanGaaTilbage() {
+  return tilbagespor.length > 0;
+}
+
+/**
+ * Ét skridt tilbage.
+ *
+ * `gaarTilbage` er den vagt, der goer det til et SKRIDT og ikke en vippen:
+ * uden den ville turen tilbage selv blive husket, og knappen ville sende én
+ * frem igen.
+ */
+function gaaTilbage() {
+  const post = tilbagespor.pop();
+  if (!post) return;
+  gaarTilbage = true;
+  try {
+    if (post.note) {
+      aabnNote(post.note);
+    } else {
+      gaaTil(post.view, { tag: post.tag, notebook: post.notebook });
+    }
+  } finally {
+    /*
+     * Vagten slaas fra i naeste tur om loekken, ikke med det samme.
+     *
+     * `aabnNote` er asynkron: den saetter `state` med det samme, men naar
+     * foerst frem til optegningen bagefter. Ryddede vi flaget her, ville den
+     * optegning kunne naa at huske det sted, vi lige forlod.
+     */
+    setTimeout(() => { gaarTilbage = false; }, 0);
+  }
+}
+
 function gaaTil(view, opt) {
   // En ventende gemning maa ikke gaa tabt, fordi man klikker i sidebaren.
   if (typeof gemNu === 'function') gemNu();
   const skifter = state.view !== view;
+  // Husk hvor vi stod - FOER `state` aendres.
+  if (skifter || state.openNote) husk();
   const havdeFilter = !!(state.openNote || state.filterTag || state.openNotebook);
   state.view = view;
   state.openNote = null;

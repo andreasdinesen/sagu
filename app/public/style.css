@@ -667,6 +667,27 @@ table.data td.center, table.data th.center { text-align: center; }
 }
 
 .tree-row:hover { background: var(--card-hover); }
+
+/* En markeret række. Den skal kunne skelnes fra den ÅBNE note — de to kan
+   være den samme, og så skal begge stadig kunne ses. `on` farver teksten,
+   markeringen farver fladen. */
+.tree-row.valgt { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent-text); }
+.tree-row.valgt:hover { background: var(--accent-soft); }
+
+/* Båndet over listen: hvor mange, og hvad man kan gøre ved dem. */
+.valgtbaand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-text);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+}
+.valgtbaand-tal { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--accent-text); }
+.valgtbaand .btn { padding: 3px 9px; font-size: 12px; }
 .tree-row.on { background: var(--accent-soft); }
 .tree-row.on .tree-name { color: var(--accent-text); font-weight: 600; }
 .tree-row.book .tree-name { font-weight: 600; }
