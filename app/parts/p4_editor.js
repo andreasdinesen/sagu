@@ -835,6 +835,14 @@ async function aabnNote(id, tving) {
   editor.indlaeser = id;
   state.view = 'note';
   state.openNote = id;
+  /*
+   * Adressen skrives HER - foer hentningen, ikke efter.
+   *
+   * Skete det foerst, naar noten var hentet, ville en opfriskning midt i
+   * hentningen lande paa forsiden. Og skrivningen er `replaceState`, saa den
+   * ikke selv sender en `hashchange` retur (se `saetAdresse`).
+   */
+  saetAdresse(id);
   editor.aabenBlok = null;
   editor.konflikt = null;
   tegnSide();

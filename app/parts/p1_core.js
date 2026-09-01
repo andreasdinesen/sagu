@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -700,6 +700,14 @@ function gaaTil(view, opt) {
   if (opt && opt.tag !== undefined) state.filterTag = opt.tag;
   if (opt && opt.notebook !== undefined) state.openNotebook = opt.notebook;
   document.body.classList.remove('navopen');
+  /*
+   * Adressen ryddes, naar man forlader noten.
+   *
+   * Ellers ville »gaa til Search og opfrisk« kaste én tilbage til den note,
+   * man lige forlod - altsaa den samme fejl som foer, bare med modsat
+   * fortegn. Adressen skal sige, hvad man ser.
+   */
+  if (typeof saetAdresse === 'function') saetAdresse(null);
   opdaterNav();
   tegnSide();
   // Scroll kun til toppen ved reelt sideskift - ellers kastes brugeren op,
@@ -1294,3 +1302,49 @@ function aabnFraAdressen() {
 }
 
 window.addEventListener('hashchange', aabnFraAdressen);
+
+/**
+ * Skriver adressen, saa den passer til det, man ser.
+ *
+ * »Er det muligt at lave at naar man laver en refresh paa en note at den saa
+ * bliver paa noten i stedet for at hoppe til forsiden?« (Andreas,
+ * 2026-09-01).
+ *
+ * Mekanikken til at LAESE `#note-<id>` har vaeret der siden F13, og
+ * kommentaren ovenfor lovede endda, at »en genindlaesning lander samme sted«.
+ * Den gjorde den bare aldrig: ingen skrev adressen, naar man aabnede en note
+ * ved at KLIKKE. Adressen blev kun sat, hvis man kom udefra med et link.
+ *
+ * ── `replaceState` og ikke `location.hash = …` ────────────────────────────
+ *
+ * At saette `location.hash` fyrer `hashchange`, som kalder
+ * `aabnFraAdressen()`, som kalder `aabnNote()` igen. Vagten mod »samme note«
+ * fanger det som regel - men netop som regel: mens noten stadig HENTES, er
+ * `editor.note` den forrige, og saa slipper kaldet igennem. En adresselinje
+ * maa ikke kunne saette en hentning i gang.
+ *
+ * ── `replaceState` og ikke `pushState` ────────────────────────────────────
+ *
+ * `pushState` ville lade browserens tilbage-knap gaa gennem de noter, man har
+ * kigget paa. Det lyder bedre end det er: en note aabnes ad mindst seks veje,
+ * og flere af dem sker uden at man taenker paa det som en navigation. Her er
+ * kun bedt om, at en OPFRISKNING lander samme sted - og det er `replaceState`
+ * praecis.
+ */
+function saetAdresse(noteId) {
+  const oensket = noteId ? `#note-${noteId}` : '';
+  // Ingen skrivning, hvis den allerede staar rigtigt: en tom `replaceState`
+  // pr. optegning er stoej i browserens historik-log.
+  const nu = String(location.hash || '');
+  if (nu === oensket) return;
+  try {
+    /*
+     * `location.pathname + location.search` skal MED.
+     *
+     * Uden dem kaster Safari paa en `file:`- eller sandkasse-oprindelse, og
+     * en tom streng ville i oevrigt rydde stien. Det er kun fragmentet, der
+     * skal skiftes.
+     */
+    history.replaceState(null, '', `${location.pathname}${location.search}${oensket}`);
+  } catch { /* uden history-api staar adressen bare stille */ }
+}
