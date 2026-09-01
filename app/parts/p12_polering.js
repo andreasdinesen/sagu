@@ -119,6 +119,23 @@ const genvejGaelder = (g) => !g.kunVist && (!g.naar || g.naar());
  */
 document.addEventListener('keydown', (e) => {
   if (!state.user) return;
+  /*
+   * Escape rydder en markering i traeet.
+   *
+   * Vejen UD af en tilstand, man kan komme i ved et uheld. Naar der er noget
+   * markeret, vaelger et almindeligt klik til og fra i stedet for at aabne -
+   * det er oensket (se `bindTrae`), men saa skal der ogsaa vaere en tast, der
+   * slipper én fri uden at lede efter en knap.
+   *
+   * FOER alt andet, og uden at spoerge om skrivefelter: staar man i
+   * soegefeltet med tre noter markeret, er Escape stadig det, man trykker.
+   */
+  if (e.key === 'Escape' && typeof harValgte === 'function' && harValgte()
+      && !document.querySelector('.modal')) {
+    e.preventDefault();
+    ryddValgte();
+    return;
+  }
   const passer = (x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase());
 
   /*

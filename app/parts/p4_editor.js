@@ -587,12 +587,18 @@ function bindTrae() {
   host.querySelectorAll('[data-note]').forEach((el) => {
     el.addEventListener('click', (e) => {
       /*
-       * ⌘/Ctrl vaelger. Shift tager spannet.
+       * ⌘/Ctrl vaelger, shift tager spannet - og naar der ALLEREDE er en
+       * markering i gang, vaelger et almindeligt klik ogsaa til og fra.
        *
-       * Og naar der ALLEREDE er en markering i gang, vaelger et almindeligt
-       * klik ogsaa til og fra - ellers ville man skulle holde en tast nede
-       * for hver eneste note, og paa en telefon kunne man aldrig komme videre
-       * end den foerste.
+       * Den sidste del er udtrykkeligt oensket: »det kraever ikke at jeg
+       * benytter command ... hvilket ogsaa er det jeg oensker« (Andreas,
+       * 2026-09-01). Jeg havde lige fjernet den med den begrundelse, at ét
+       * fejlramt ⌘-klik saa laaser den primaere handling - at aabne en note.
+       * Den indvending var teoretisk; hans brug er det ikke.
+       *
+       * Men laasen SKAL kunne aabnes uden at lede: derfor rydder **Escape**
+       * markeringen, og »Clear« staar i baandet. Uden en vej ud ville et
+       * uheld koste én en rundtur gennem sidebaren for at finde knappen.
        */
       if (e.metaKey || e.ctrlKey || e.shiftKey || harValgte()) {
         e.preventDefault();
@@ -776,25 +782,42 @@ function visLinje(raekke, efter) {
  * 0,1,2,… og ikke et gaet.
  */
 async function slipTraek(noteId, maalId, efter) {
-  const note = traeNote(noteId);
   const maal = traeNote(maalId);
-  if (!note || !maal || note.id === maal.id) return;
+  if (!maal) return;
+  /*
+   * Traekker man en MARKERET note, foelger hele markeringen med - ogsaa her,
+   * og ikke kun ved slip paa en notesbog. To slipsteder med hver sin regel er
+   * to regler at tage fejl af.
+   *
+   * De laegges ind i den raekkefoelge, TRAEET viser dem - man har peget paa
+   * en stribe raekker og mener den stribe, ikke den, de blev lavet i.
+   */
+  const flok = traekkerHeleMarkeringen(noteId)
+    ? valgteITraeorden().filter((id) => id !== maal.id)
+    : [noteId];
+  const noter = flok.map(traeNote).filter(Boolean);
+  if (!noter.length || noter.some((n) => n.id === maal.id)) return;
 
   const nyFar = maal.parentId || null;
   const nyBog = maal.notebookId || null;
+  const flere = noter.length > 1;
   try {
-    if ((note.parentId || null) !== nyFar || (note.notebookId || null) !== nyBog) {
-      await api('POST', `/api/v1/notes/${note.id}/move`,
-        nyFar ? { parentId: nyFar } : { parentId: null, notebookId: nyBog });
+    for (const note of noter) {
+      if ((note.parentId || null) !== nyFar || (note.notebookId || null) !== nyBog) {
+        await api('POST', `/api/v1/notes/${note.id}/move`,
+          nyFar ? { parentId: nyFar } : { parentId: null, notebookId: nyBog });
+      }
     }
+    const flytted = new Set(noter.map((n) => n.id));
     const gruppe = (state.tree || [])
       .filter((n) => (n.parentId || null) === nyFar
         && (nyFar !== null || (n.notebookId || null) === nyBog)
-        && n.id !== note.id);
+        && !flytted.has(n.id));
     let i = gruppe.findIndex((n) => n.id === maal.id);
     if (i < 0) i = gruppe.length - 1;
-    gruppe.splice(efter ? i + 1 : i, 0, note);
+    gruppe.splice(efter ? i + 1 : i, 0, ...noter);
     await api('POST', '/api/v1/reorder', { kind: 'note', ids: gruppe.map((n) => n.id) });
+    if (flere) { valgte.clear(); toast(`${noter.length} notes moved.`); }
     await hentTrae();
     tegnTrae();
     synkAabenNote();
@@ -802,7 +825,63 @@ async function slipTraek(noteId, maalId, efter) {
 }
 
 /** Slip paa en notesbog: ind i den, oeverst i traeet. */
+/**
+ * De markerede noter, i den raekkefoelge TRAEET viser dem - og uden dem, hvis
+ * forfader ogsaa er markeret.
+ *
+ * Den sidste del er den samme regel som paa serveren: `flytNote` tager hele
+ * undertraeet med, saa flytter man baade en side og dens underside hver for
+ * sig, bliver grenen revet fra hinanden. Her SKAL den ogsaa staa, fordi
+ * `slipTraek` ikke gaar gennem bulk-ruten - den bygger sin egen sortering.
+ */
+function valgteITraeorden() {
+  const raekkefoelge = [...document.querySelectorAll('#treeHost [data-note]')]
+    .map((el) => el.dataset.note)
+    .filter((id) => valgte.has(id));
+  const harValgtForfader = (id) => {
+    let n = traeNote(id);
+    for (let dybde = 0; n && n.parentId && dybde < 64; dybde++) {
+      if (valgte.has(n.parentId)) return true;
+      n = traeNote(n.parentId);
+    }
+    return false;
+  };
+  return raekkefoelge.filter((id) => !harValgtForfader(id));
+}
+
+/**
+ * Traekker man en MARKERET note, foelger hele markeringen med.
+ *
+ * Meldt fra brug: »hvis jeg marker flere noter med command og proever at
+ * flytte dem ned i en anden notebook, saa flytter den kun en ad gangen«
+ * (Andreas, 2026-09-01).
+ *
+ * v43 gav markeringen en »Move…«-knap og glemte trækket. Det er den samme
+ * handling set fra brugerens side - han har markeret tre noter og taget fat i
+ * en af dem - saa de to veje skal goere det samme. En markering, der kun
+ * gaelder den ene af to veje, er vaerre end ingen markering: man kan ikke se
+ * paa skaermen, hvilken vej der taeller.
+ */
+function traekkerHeleMarkeringen(noteId) {
+  return valgte.has(noteId) && valgte.size > 1;
+}
+
 async function slipIBog(noteId, bogId) {
+  if (traekkerHeleMarkeringen(noteId)) {
+    const ider = valgteITraeorden();
+    try {
+      const r = await api('POST', '/api/v1/notes/move', { ids: ider, notebookId: bogId });
+      valgte.clear();
+      toast(r.skipped
+        ? `${r.moved} moved — ${r.skipped} came along as `
+          + `${r.skipped === 1 ? 'a subpage' : 'subpages'}.`
+        : `${r.moved} note${r.moved === 1 ? '' : 's'} moved.`);
+      await hentTrae();
+      tegnTrae();
+      synkAabenNote();
+    } catch (ex) { toast(ex.message); }
+    return;
+  }
   const note = traeNote(noteId);
   if (!note || ((note.notebookId || null) === bogId && !note.parentId)) return;
   try {
@@ -812,6 +891,11 @@ async function slipIBog(noteId, bogId) {
     synkAabenNote();
     toast('Moved.');
   } catch (ex) { toast(ex.message); }
+}
+
+/** Alle raekker, der ser trukket ud, faar deres udseende tilbage. */
+function ryddTraekkes() {
+  for (const el of document.querySelectorAll('.tree-row.traekkes')) el.classList.remove('traekkes');
 }
 
 function bindTraeTraek(host) {
@@ -835,7 +919,16 @@ function bindTraeTraek(host) {
       // 5 px, saa et almindeligt klik ikke bliver til et traek.
       if (Math.abs(e.clientX - traek.x) + Math.abs(e.clientY - traek.y) < 5) return;
       traek.aktiv = true;
-      traek.fra.classList.add('traekkes');
+      /*
+       * Traekker man en markeret note, skal ALLE de markerede se traukket ud.
+       * Ellers ligner det, at man flytter én - og saa er man overrasket, naar
+       * tre lander.
+       */
+      if (traekkerHeleMarkeringen(traek.id)) {
+        for (const el of host.querySelectorAll('.tree-row.valgt')) el.classList.add('traekkes');
+      } else {
+        traek.fra.classList.add('traekkes');
+      }
       document.body.classList.add('traekker');
       try { e.target.setPointerCapture(e.pointerId); } catch { /* ligegyldigt */ }
     }
@@ -859,7 +952,7 @@ function bindTraeTraek(host) {
     if (!traek.id) return;
     const varAktiv = traek.aktiv;
     const noteId = traek.id;
-    if (traek.fra) traek.fra.classList.remove('traekkes');
+    ryddTraekkes();
     document.body.classList.remove('traekker');
     traek.id = null;
     traek.fra = null;
@@ -878,7 +971,7 @@ function bindTraeTraek(host) {
 
   host.addEventListener('pointerup', slut);
   host.addEventListener('pointercancel', () => {
-    if (traek.fra) traek.fra.classList.remove('traekkes');
+    ryddTraekkes();
     document.body.classList.remove('traekker');
     traek.id = null; traek.fra = null; traek.aktiv = false;
     ryddLinje();
