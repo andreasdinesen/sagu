@@ -552,6 +552,84 @@ function visFlytMangeRude() {
   });
 }
 
+/* ---------------------------------------- dato- og tidsgenveje (F27)
+ *
+ * »Jeg vil gerne have en shortcut til at kunne skrive dd-mm-yyyy og hh:mm«
+ * (Andreas, 2026-09-02). Han valgte praefiks-formen frem for bare ord.
+ *
+ * ── Hvorfor et praefiks og ikke bare »dmy« ───────────────────────────────
+ *
+ * Fordi `dmy` og `hhmm` ogsaa er noget, man kan komme til at skrive - i en
+ * note om datoformater, i et kodeeksempel, midt i et ord. En erstatning, der
+ * slaar til uden at man bad om det, er vaerre end ingen genvej: man opdager
+ * den foerst, naar teksten er forkert.
+ *
+ * `/` kan ikke rammes ved et uheld midt i et ord, fordi den kun taeller ved
+ * starten af en linje eller efter et mellemrum.
+ *
+ * ── Hvorfor den udloeser med det samme ───────────────────────────────────
+ *
+ * Alternativet var at vente paa mellemrum eller Enter. Men det, Andreas
+ * skriver, er linjer som »01.09.2026, 08.21 : Colestyramin 4g« - dato,
+ * komma, tid. Skulle hver genvej afsluttes med et mellemrum, ville han faa et
+ * mellemrum, han ikke bad om, lige dér hvor kommaet skal staa.
+ *
+ * Prisen er, at man ikke kan skrive `/dmy` bogstaveligt i en note. Det er en
+ * pris, der er vaerd at betale for to tegn faerre pr. linje, og der er en vej
+ * udenom: skriv det i en kodestump.
+ */
+const TEKSTGENVEJE = [
+  {
+    ord: '/dmy',
+    navn: 'Today’s date',
+    eksempel: '02-09-2026',
+    lav: (d) => `${String(d.getDate()).padStart(2, '0')}-${
+      String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`,
+  },
+  {
+    ord: '/hhmm',
+    navn: 'The time now',
+    eksempel: '14:32',
+    lav: (d) => `${String(d.getHours()).padStart(2, '0')}:${
+      String(d.getMinutes()).padStart(2, '0')}`,
+  },
+];
+
+/**
+ * Bytter en genvej ud, hvis markoeren staar lige efter én.
+ *
+ * Returnerer sandt, hvis der blev byttet - saa kalderen ved, at feltet har
+ * aendret sig og skal skrives tilbage.
+ *
+ * Erstatningen sker med `setRangeText`, ikke ved at saette `value`: den
+ * bevarer browserens EGEN fortrydelseshistorik, saa ⌘Z tager genvejen tilbage
+ * i stedet for at rulle hele afsnittet tilbage.
+ */
+function byttedeTekstgenvej(felt) {
+  const pos = felt.selectionStart;
+  if (pos !== felt.selectionEnd) return false;
+  const foer = felt.value.slice(0, pos);
+  for (const g of TEKSTGENVEJE) {
+    if (!foer.endsWith(g.ord)) continue;
+    // Kun ved linjestart eller efter et mellemrum - ellers rammer den midt i
+    // et ord som `og/dmy`.
+    const tegnFoer = foer[foer.length - g.ord.length - 1];
+    if (tegnFoer !== undefined && !/\s/.test(tegnFoer)) continue;
+    const start = pos - g.ord.length;
+    try {
+      felt.setRangeText(g.lav(new Date()), start, pos, 'end');
+    } catch {
+      // Uden setRangeText: bytt i strengen. Fortrydelsen bliver grovere.
+      const ny = felt.value.slice(0, start) + g.lav(new Date()) + felt.value.slice(pos);
+      const nyPos = start + g.lav(new Date()).length;
+      felt.value = ny;
+      felt.setSelectionRange(nyPos, nyPos);
+    }
+    return true;
+  }
+  return false;
+}
+
 function bindTrae() {
   const host = document.getElementById('treeHost');
   if (!host) return;
@@ -1715,6 +1793,7 @@ function tegnMedAabenBlok(host, n) {
   felt.setSelectionRange(pos, pos);
 
   felt.addEventListener('input', () => {
+    byttedeTekstgenvej(felt);
     autoHoejde(felt);
     skrivBlokTilbage(felt.value, b);
     opdaterWikiForslag(felt);
@@ -2774,6 +2853,7 @@ function tegnHeleNoten(host, n) {
   felt.focus();
 
   felt.addEventListener('input', () => {
+    byttedeTekstgenvej(felt);
     autoHoejde(felt);
     n.body = felt.value;
     markerBeskidt();

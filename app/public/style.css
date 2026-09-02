@@ -2972,6 +2972,41 @@ body.fokus .topbar { position: static; }
 
 /* Vagtposten: 1 px, usynlig, lige over den klæbende bjælke. Den er kun til
    for at kunne SES forsvinde — se registrerRullevagt(). */
+/* --------------------------------------- faner i indstillingerne (F27)
+ *
+ * Én række, der ruller vandret på en smal skærm frem for at ombryde: en
+ * fanerække i to linjer flytter indholdet ned og ligner to rækker knapper. */
+.faner {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.faner::-webkit-scrollbar { display: none; }
+.fane-knap {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  /* Understregningen tegnes ALTID — gennemsigtig, når fanen ikke er valgt.
+     Ellers ville rækken hoppe en pixel, hver gang man skiftede fane. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.fane-knap:hover { color: var(--text); }
+.fane-knap.paa { color: var(--accent-text); border-bottom-color: var(--accent-text); font-weight: 600; }
+
+/* Første overskrift i en fane skal ikke have luft over — fanerækken er
+   allerede afstanden. */
+.fane > h2:first-child { margin-top: 0; }
+
 /* ------------------------------------------- slå to notesbøger sammen
  *
  * De to valg er ikke to ord, men to sætninger: handlingen kan ikke fortrydes

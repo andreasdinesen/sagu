@@ -475,6 +475,100 @@ async function tegnFilListe() {
 
 /* ---------------------------------------------------------- settings */
 
+/* ------------------------------------------------ faner i indstillingerne
+ *
+ * »Jeg vil gerne have lavet sub menuer under indstillinger« (Andreas,
+ * 2026-09-02), med verdande som forbillede.
+ *
+ * Siden var vokset til sytten afsnit i én lang stribe: udseende, konto,
+ * passkeys, filer, bogmaerke, udgivelser, om, redigering, versionshistorik,
+ * totrin, noegler, forbundne apps, doda, GitHub og to admin-afsnit. Man
+ * rullede forbi ti ting for at naa den ellevte.
+ *
+ * ── ALT tegnes, ét vises ─────────────────────────────────────────────────
+ *
+ * Fanerne skjuler med `hidden`; de fjerner ikke noget fra dokumentet.
+ * `bindSettings()` binder tredive elementer op paa deres id, og tegnede vi
+ * kun den aabne fane, ville halvdelen af dem ikke findes - hver eneste
+ * binding skulle saa laves om til noget, der koerer igen ved hvert faneskift.
+ * Det er den slags omskrivning, der taber en knap undervejs uden at noget
+ * fejler.
+ *
+ * Prisen er, at de skjulte afsnit stadig hentes og tegnes. De er der i
+ * forvejen i dag, saa det koster ingenting nyt.
+ *
+ * ── Valget huskes ────────────────────────────────────────────────────────
+ *
+ * I `localStorage` og ikke i `state`: det afhaenger af, hvad man sidst var i
+ * gang med paa DENNE maskine, ikke af kontoen - samme begrundelse som temaet
+ * og den skjulte sidemenu.
+ */
+const FANER = [
+  { id: 'konto', navn: 'Account' },
+  { id: 'skrivning', navn: 'Editing' },
+  { id: 'filer', navn: 'Files' },
+  { id: 'broer', navn: 'Connections' },
+  { id: 'noegler', navn: 'Keys' },
+  { id: 'server', navn: 'Server', kunAdmin: true },
+];
+
+function laesFane() {
+  try {
+    const g = localStorage.getItem('sagu_fane');
+    return FANER.some((f) => f.id === g) ? g : 'konto';
+  } catch { return 'konto'; }
+}
+
+function gemFane(id) {
+  try { localStorage.setItem('sagu_fane', id); } catch { /* privat tilstand */ }
+}
+
+/**
+ * Hvilken fane staar aaben?
+ *
+ * Er den gemte fane ikke synlig for den her bruger - »Server« for en, der
+ * ikke er administrator - falder den tilbage til den foerste. Ellers ville
+ * man aabne indstillingerne og se en tom side.
+ */
+function aktivFane() {
+  const g = laesFane();
+  const f = FANER.find((x) => x.id === g);
+  if (f && (!f.kunAdmin || state.user.isAdmin)) return g;
+  return 'konto';
+}
+
+function fanebarHtml() {
+  const nu = aktivFane();
+  const synlige = FANER.filter((f) => !f.kunAdmin || state.user.isAdmin);
+  return `<nav class="faner" role="tablist">${synlige.map((f) => `
+    <button class="fane-knap${f.id === nu ? ' paa' : ''}" data-fane-knap="${f.id}"
+      role="tab" aria-selected="${f.id === nu ? 'true' : 'false'}">${esc(f.navn)}</button>`).join('')}
+  </nav>`;
+}
+
+/** Viser én fane og skjuler resten. */
+function visFane(id) {
+  for (const el of document.querySelectorAll('.fane')) el.hidden = el.dataset.fane !== id;
+  for (const k of document.querySelectorAll('[data-fane-knap]')) {
+    const paa = k.dataset.faneKnap === id;
+    k.classList.toggle('paa', paa);
+    k.setAttribute('aria-selected', paa ? 'true' : 'false');
+  }
+}
+
+function bindFaner() {
+  for (const k of document.querySelectorAll('[data-fane-knap]')) {
+    k.addEventListener('click', () => {
+      gemFane(k.dataset.faneKnap);
+      visFane(k.dataset.faneKnap);
+      // Til toppen: en fane, man skifter til, skal begynde ved sin foerste
+      // overskrift - ikke midt i, fordi den forrige var laengere.
+      tilToppen();
+    });
+  }
+  visFane(aktivFane());
+}
+
 async function sideSettings() {
   const valgt = nuvaerendeTema();
   const knap = (id, tekst) => `<button class="btn${valgt === id ? ' primary' : ''}" data-tema="${id}">${tekst}</button>`;
@@ -616,11 +710,14 @@ async function sideSettings() {
   </div>`;
   } catch { /* vist som tom */ }
 
-  return `
+  return fanebarHtml() + `
+  <section class="fane" data-fane="konto">
+
   <h2>Appearance</h2>
   <div class="card">
     <div class="btnrow">${knap('auto', 'Follow system')}${knap('light', 'Light')}${knap('dark', 'Dark')}</div>
   </div>
+
 
   <h2>Account</h2>
   <div class="card">
@@ -633,6 +730,7 @@ async function sideSettings() {
       <button class="btn" type="submit">Change password</button>
     </form>
   </div>
+
 
   <h2>Passkeys</h2>
   <div class="card">
@@ -651,6 +749,51 @@ async function sideSettings() {
       + '<button class="btn" id="pkTilfoej">Add a passkey</button></div>' : ''}
   </div>
 
+
+  <h2>Two-step verification</h2>
+  <div class="card" id="totpKort">
+    <p class="meta saetning">Loading…</p>
+  </div>
+
+
+  <h2>About</h2>
+  <div class="card">
+    <p class="lead" style="margin-top:6px">Sagu version ${esc(String(APP_VERSION))}${
+  state.config.version && state.config.version > APP_VERSION
+    ? ` — the server has v${esc(String(state.config.version))}` : ''}.</p>
+    <p class="meta saetning">${state.config.secureContext
+    ? 'Secure connection (https), so passkeys work here.'
+    : 'Plain http — passkeys are unavailable on this address. Your password always keeps working.'}
+    ${state.publicUrl ? `Links are written with <code>${esc(state.publicUrl)}</code>.` : ''}</p>
+    ${state.config.version && state.config.version > APP_VERSION
+    ? '<div class="btnrow" style="margin-top:10px"><button class="btn primary" id="omOpdater">Update the app</button></div>'
+    : ''}
+  </div>
+  </section>
+
+  <section class="fane" data-fane="skrivning">
+
+  <h2>Editing</h2>
+  <div class="card">
+    <label class="switch">
+      <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
+      <span>Click a line to edit the whole note as markdown</span></label>
+    <p class="meta saetning">Sagu normally opens just the paragraph you clicked, with the rest of
+    the note still rendered around it — good for changing a sentence. With this on, a click opens
+    the <strong>whole</strong> note as raw markdown instead, with the cursor at the line you
+    clicked. Better for moving things around, fixing a table, or cutting across paragraphs.
+    <strong>Esc</strong> closes either way.</p>
+  </div>
+
+
+  <h2>Version history</h2>
+  <div class="card" id="versionKort">
+    <p class="meta saetning">Loading…</p>
+  </div>
+  </section>
+
+  <section class="fane" data-fane="filer">
+
   <h2>Files</h2>
   <div class="card">
     ${(() => {
@@ -667,6 +810,21 @@ async function sideSettings() {
   })()}
     <div id="filListe"><p class="meta saetning">Loading…</p></div>
   </div>
+
+
+  <h2>Published pages</h2>
+  <div class="card">
+    <p class="meta saetning">Pages your colleagues can read without an account.
+    A published page always shows what it says right now — there is nothing to re-publish.</p>
+    <div id="udgivListe" style="margin-top:12px"><p class="meta saetning">Loading…</p></div>
+  </div>
+  </section>
+
+  <section class="fane" data-fane="broer">
+  ${dodaDel}
+
+  ${ghDel}
+
 
   <h2>Save to Sagu</h2>
   <div class="card">
@@ -692,49 +850,9 @@ async function sideSettings() {
     sits in plain text in your browser and syncs between machines, so it must not be able to pull
     your archive back out. Revoke it under <strong>Access keys</strong> whenever you like.</p>
   </div>
+  </section>
 
-  <h2>Published pages</h2>
-  <div class="card">
-    <p class="meta saetning">Pages your colleagues can read without an account.
-    A published page always shows what it says right now — there is nothing to re-publish.</p>
-    <div id="udgivListe" style="margin-top:12px"><p class="meta saetning">Loading…</p></div>
-  </div>
-
-  <h2>About</h2>
-  <div class="card">
-    <p class="lead" style="margin-top:6px">Sagu version ${esc(String(APP_VERSION))}${
-  state.config.version && state.config.version > APP_VERSION
-    ? ` — the server has v${esc(String(state.config.version))}` : ''}.</p>
-    <p class="meta saetning">${state.config.secureContext
-    ? 'Secure connection (https), so passkeys work here.'
-    : 'Plain http — passkeys are unavailable on this address. Your password always keeps working.'}
-    ${state.publicUrl ? `Links are written with <code>${esc(state.publicUrl)}</code>.` : ''}</p>
-    ${state.config.version && state.config.version > APP_VERSION
-    ? '<div class="btnrow" style="margin-top:10px"><button class="btn primary" id="omOpdater">Update the app</button></div>'
-    : ''}
-  </div>
-
-  <h2>Editing</h2>
-  <div class="card">
-    <label class="switch">
-      <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
-      <span>Click a line to edit the whole note as markdown</span></label>
-    <p class="meta saetning">Sagu normally opens just the paragraph you clicked, with the rest of
-    the note still rendered around it — good for changing a sentence. With this on, a click opens
-    the <strong>whole</strong> note as raw markdown instead, with the cursor at the line you
-    clicked. Better for moving things around, fixing a table, or cutting across paragraphs.
-    <strong>Esc</strong> closes either way.</p>
-  </div>
-
-  <h2>Version history</h2>
-  <div class="card" id="versionKort">
-    <p class="meta saetning">Loading…</p>
-  </div>
-
-  <h2>Two-step verification</h2>
-  <div class="card" id="totpKort">
-    <p class="meta saetning">Loading…</p>
-  </div>
+  <section class="fane" data-fane="noegler">
 
   <h2>Access keys</h2>
   <div class="card">
@@ -765,6 +883,7 @@ async function sideSettings() {
         <td class="meta saetning">${s.hvornaar}</td></tr>`).join('')}</tbody></table></div>
   </div>
 
+
   <h2>Connected apps</h2>
   <div class="card">
     <p class="meta saetning">Claude and other MCP clients you have allowed. They asked
@@ -776,9 +895,11 @@ async function sideSettings() {
     one it could have renewed with. It never had permission to change your password,
     create keys, or revoke connections — those need this browser.</p>
   </div>
-  ${dodaDel}
-  ${ghDel}
-  ${adminDel}`;
+  </section>
+
+  <section class="fane" data-fane="server">
+  ${adminDel}
+  </section>`;
 }
 
 /** Forbundne apps - hentes bagefter, som udgivelseslisten. */
@@ -881,6 +1002,7 @@ function visNoeglePanel(noegle, scope) {
 }
 
 function bindSettings() {
+  bindFaner();
   // Listerne hentes bagefter og erstatter kun deres eget element: en side, der
   // venter paa alle sine kald, foeles langsom, og listen er ikke det, man kom
   // efter (RUNE-ERFARINGER, doda v27).

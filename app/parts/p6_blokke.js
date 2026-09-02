@@ -1367,6 +1367,17 @@ function visSyntaksPanel() {
           <tbody>${saguMarkdown.SYNTAKS.map(raekke).join('')}</tbody>
         </table></div>
 
+        <h3 style="margin-top:22px">Shortcuts while you type</h3>
+        <p class="meta saetning">Type one of these and it turns into the value at once. They only
+        count at the start of a line or after a space, so they cannot fire inside a word.</p>
+        <div class="tablewrap"><table class="data">
+          <tbody>${TEKSTGENVEJE.map((g) => `<tr>
+            <th>${esc(g.navn)}</th>
+            <td><code class="syntaks-kode">${esc(g.ord)}</code></td>
+            <td class="meta">${esc(g.lav(new Date()))}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+
         <h3 style="margin-top:22px">Tags</h3>
         <p class="meta saetning">A <code>#tag</code> in the <strong>title</strong> becomes a real
         tag. Several at once: <code>#drift,net,backup</code> — no space after the comma, or the
