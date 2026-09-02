@@ -150,3 +150,35 @@ test('hver genvej har et navn og et eksempel til hjaelpepanelet', () => {
     assert.ok(typeof g.lav === 'function');
   }
 });
+
+test('/now giver dato og tid i én', () => {
+  const g = TEKSTGENVEJE.find((x) => x.ord === '/now');
+  assert.ok(g, '/now findes ikke');
+  assert.equal(g.lav(d), '02-09-2026, 14:32');
+});
+
+test('/now bygges af de to andre — saa de tre ikke kan drive fra hinanden', () => {
+  /*
+   * Den dag datoformatet aendres, skal alle tre foelge med. Formaterede
+   * `/now` forfra, ville den blive staaende paa det gamle, og ingen ville
+   * opdage det foer i en note.
+   */
+  const dato = TEKSTGENVEJE.find((x) => x.ord === '/dmy');
+  const tid = TEKSTGENVEJE.find((x) => x.ord === '/hhmm');
+  const nu = TEKSTGENVEJE.find((x) => x.ord === '/now');
+  for (const naar of [new Date(2026, 0, 5, 9, 7), new Date(2027, 11, 31, 23, 59)]) {
+    assert.equal(nu.lav(naar), `${dato.lav(naar)}, ${tid.lav(naar)}`);
+  }
+});
+
+test('/now bytter i feltet som de to andre', () => {
+  const f = felt('Taget /now');
+  assert.equal(byt(f), true);
+  assert.match(f.value, /^Taget \d{2}-\d{2}-\d{4}, \d{2}:\d{2}$/);
+});
+
+test('genvejen hedder /now og ikke /nu — interfacet er engelsk', () => {
+  assert.ok(TEKSTGENVEJE.some((x) => x.ord === '/now'));
+  assert.ok(!TEKSTGENVEJE.some((x) => x.ord === '/nu'),
+    'to navne for det samme tvinger folk til at oversaette i hovedet');
+});

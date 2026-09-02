@@ -593,6 +593,25 @@ const TEKSTGENVEJE = [
     lav: (d) => `${String(d.getHours()).padStart(2, '0')}:${
       String(d.getMinutes()).padStart(2, '0')}`,
   },
+  /*
+   * Begge dele paa én gang.
+   *
+   * Formen er den, registreringslinjerne faktisk har: dato, komma, tid -
+   * »02-09-2026, 07:18 : Colestyramin 4g«. To genveje pr. linje bliver til én.
+   *
+   * Den hedder `/now` og ikke `/nu`: interfacet er engelsk (CLAUDE.md), og
+   * `/nu` var mit danske ord i et tilbud, ikke et oenske. `/dmy` og `/hhmm`
+   * er engelske forkortelser, og den tredje skal laeses i samme sprog.
+   *
+   * Den bygges af de TO ovenfor frem for at formatere forfra - saa kan de tre
+   * ikke komme til at vise forskellige datoer, den dag formatet aendres.
+   */
+  {
+    ord: '/now',
+    navn: 'Date and time',
+    eksempel: '02-09-2026, 14:32',
+    lav: (d) => `${TEKSTGENVEJE[0].lav(d)}, ${TEKSTGENVEJE[1].lav(d)}`,
+  },
 ];
 
 /**

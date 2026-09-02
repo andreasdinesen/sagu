@@ -7,7 +7,7 @@ gameskill:
     wiki med valgfrit kodeord og kommentarer. Import fra Notion, API til iOS Shortcuts, MCP-server. Flere brugere med egne
     noter. Egen SQLite-database, ingen eksterne afhaengigheder.
   author: andreas
-  version: 45
+  version: 46
   icon: app
   docker:
     image: '{{NODE_IMAGE}}'
@@ -24,9 +24,9 @@ gameskill:
     hint: Skal vaere et node:-image, fx node:24-alpine. Soegningen kraever FTS5, som findes i Node 22 og nyere.
   install:
     image: '{{NODE_IMAGE}}'
-    script: "set -eu\necho \"Installerer Sagu v45 ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden fra GitHub\
+    script: "set -eu\necho \"Installerer Sagu v46 ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden fra GitHub\
       \ ...\"\nrm -rf /tmp/sagu-hent\nmkdir -p /tmp/sagu-hent\nnode -e 'const https=require(\"https\"),zlib=require(\"zlib\"\
-      );const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v45\";function d(m){console.error(\"[fejl]\
+      );const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v46\";function d(m){console.error(\"[fejl]\
       \ \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen ikke findes OG naar der\
       \ ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function hent(u,n){https.get(u,{headers:{\"\
       user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return d(\"\
@@ -42,9 +42,9 @@ gameskill:
   update:
     image: '{{NODE_IMAGE}}'
     label: Opdater Sagu
-    script: "set -eu\necho \"Opdaterer Sagu til v45 ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden fra\
+    script: "set -eu\necho \"Opdaterer Sagu til v46 ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden fra\
       \ GitHub ...\"\nrm -rf /tmp/sagu-hent\nmkdir -p /tmp/sagu-hent\nnode -e 'const https=require(\"https\"),zlib=require(\"\
-      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v45\";function d(m){console.error(\"\
+      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v46\";function d(m){console.error(\"\
       [fejl] \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen ikke findes OG naar\
       \ der ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function hent(u,n){https.get(u,{headers:{\"\
       user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return d(\"\
