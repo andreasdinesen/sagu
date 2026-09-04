@@ -2984,3 +2984,110 @@ v9999 → 404 → advarsel → `app/` urørt og exit 0, tomt felt og felt slet i
 **Den har endnu ikke overlevet en rigtig genstart i panelet på Hjorten.** Det er
 Andreas' prøve, og indtil den er kørt, er mekanikken bygget og målt — ikke bevist i
 drift.
+
+---
+
+## 36 · Nedbruddet 2026-09-04 — og de tre fælder, der stod i redningsvejen
+
+Sagu var nede i ti timer dagen efter v47. Fejlen lå ikke i `kilde.js`, men i det
+script, panelets **»Opdater Sagu«**-knap kører — den vej, §35 kaldte »redningen« og
+aldrig kiggede efter.
+
+### Hvad panelet faktisk gør
+
+Målt i panelets egen anmodningslog:
+
+```
+12:30:18  POST .../app-update   -> 202
+12:30:26  POST .../app-update   -> 202
+22:26:44  POST .../restart      -> 200
+22:27:00  DELETE .../crashes    -> 200
+```
+
+To ting står klart. **`app-update` svarer 202 og genstarter ikke selv** — genstart er
+et separat endpoint, og den kom ti timer senere, fra Andreas. Indtil da kørte den
+gamle proces oven på nye filer. Og **knappen blev trykket to gange med otte sekunders
+mellemrum.**
+
+### De tre fælder, på tre linjer
+
+Scriptet gjorde:
+
+```sh
+rm -rf /tmp/sagu-hent    # fast sti, delt mellem samtidige kørsler
+...
+rm -rf app               # nu findes app/ slet ikke
+mv "$NY" app             # og mv fra /tmp er en KOPI over to filsystemer
+```
+
+1. **Fast temp-sti.** To samtidige kørsler deler `/tmp/sagu-hent`. Den ene rydder,
+   mens den anden pakker ud.
+2. **`rm -rf app` før `mv`.** Et vindue helt uden `app/` — og dermed uden `kilde.js`
+   til at redde sig selv.
+3. **`mv` fra `/tmp` er en kopi over to filsystemer**, som kan afbrydes på midten.
+
+Det er **nøjagtig** de tre, `kilde.js` blev bygget udenom i §35. Jeg skrev dem ned som
+de bærende valg, byggede hovedvejen efter dem — og lod dem stå i den vej, der bruges,
+når hovedvejen ikke findes endnu. **Den vej, der kun bruges én gang, er den, der bruges
+den dag alt andet er nyt.**
+
+### Hvad der er ændret
+
+`hent_krop()` gør nu det samme som `kilde.js`: pakker ud i `.sagu-ny` **ved siden af**
+`app/` i datamappen, flytter den gamle app til `.sagu-gammel` frem for at slette den, og
+bytter med to `rename`. Aldrig en kopi, og altid en vej tilbage.
+
+At den gamle app flyttes **væk som en helhed** løser også det, `rm -rf app` var der for:
+filer, der er slettet i en ny version, bliver ikke liggende (Beanledger v30). Derfor er
+build'ets regel skiftet ud, ikke slettet — og den er blevet skarpere: der må aldrig
+pakkes ud oven i den levende `app/`, og `/tmp` er nu forbudt i begge scripts.
+
+### Låsen
+
+Hele update-scriptet tager en lås med **`mkdir`**, som er atomisk på alle filsystemer;
+`[ -d ]` efterfulgt af `mkdir` er det ikke — der er et hul imellem dem.
+
+Låsen dækker **begge grene** med vilje. Fra v47 og frem er `kilde.js`-grenen den
+almindelige, og to samtidige `kilde.js` ville kunne bytte `app/` ud under hinanden.
+En lås inde i else-grenen ville have beskyttet netop den vej, der snart aldrig bruges.
+
+En `trap` frigiver låsen, når noget fælder undervejs — en fejlet hentning er den
+**almindelige** fejl, og en lås, der bliver liggende efter den, gør knappen død for
+altid. Bliver containeren dræbt hårdt, når `trap` ikke at køre; den vej ryddes af
+`startup`. Prisen er, at en opdatering, der kører i sin egen container præcis i det
+øjeblik appen starter, mister sin lås — og den pris er mindre end en knap, der aldrig
+virker igen.
+
+### Beskeden
+
+Knappen skifter **filer**. Den kan ikke genstarte serveren, og panelet gør det ikke
+selv. Den eneste vagt, der findes mod det, er en besked — så den står nu sidst,
+i en ramme, og siger hvorfor:
+
+```
+============================================
+  GENSTART SAGU NU.
+  Filerne er skiftet ud, men serveren koerer
+  stadig den gamle kode, indtil den genstartes.
+============================================
+```
+
+En prøve holder den dér: flyttes den op i scriptet, bliver den rød.
+
+### Hvad prøverne måler
+
+`tests/opdatering.test.mjs` kører **panelets eget script** mod en lokal arkivserver.
+Den vigtigste starter to kørsler samtidig mod en forsinket server og kræver, at præcis
+én kommer igennem, den anden fælder med besked, og `app/` bagefter er **hel** — hverken
+den gamle eller en blanding. Dertil: låsen frigives efter en fejlet hentning, `startup`
+rydder en strandet lås, døden mellem de to omdøbninger koster ikke `app/`, og en
+**lykket** udskiftning rulles ikke tilbage af redningen.
+
+Ti sabotager er set fælde dem. To af dem fanges allerede af `build_rune.py`, så de blev
+prøvet igen direkte på den udgivne YAML — ellers ville jeg kun have bevist build'ets
+vagt og ikke prøvens.
+
+**Én sabotage afslørede en fejl i prøven selv:** `indexOf` giver `-1`, når strengen
+ikke findes, og `-1 < x` er altid sandt. Prøven for »låsen tages før begge grene« ville
+altså have bestået netop den dag, låsen var **væk**. Den kræver nu, at begge strenge
+findes, før den sammenligner.

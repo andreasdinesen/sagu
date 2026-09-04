@@ -90,7 +90,7 @@ GITHUB_REPO = 'sagu'
 # behoever ikke vaere den nyeste: foerste opstart henter alligevel det, der
 # staar i KODE_VERSION. Den skal bare vaere en udgave, der KAN starte - og
 # taggen SKAL vaere pushet, ellers kan runen ikke installeres forfra.
-RUNE_VERSION = 47
+RUNE_VERSION = 48
 
 
 def tarball_url(version):
@@ -566,32 +566,60 @@ def budget(filer, payload):
 def hent_krop(version):
     """De linjer, install og update har TILFAELLES, naar koden hentes.
 
-    `rm -rf app` staar begge steder: tar overskriver, men fjerner ikke filer,
-    der er slettet i en ny version, saa de ville blive liggende for evigt
-    (RUNE-ERFARINGER, Beanledger v30). Og der pakkes ALTID ud i en frisk mappe,
-    som byttes ind - det er tools v1's regel, og det er ogsaa det, der goer, at
-    en halv hentning aldrig kan efterlade et halvt app/.
+    ── Hvad der gik galt 2026-09-04 ─────────────────────────────────────────
 
-    Datamappen roeres ikke: alt midlertidigt ligger i /tmp.
+    Den foerste udgave af de her linjer pakkede ud i `/tmp/sagu-hent` og gjorde
+    saa `rm -rf app` efterfulgt af `mv`. Tre fejl paa tre linjer, og de ramte
+    alle sammen samme dag:
+
+      1. **Fast temp-sti.** To tryk paa »Opdater Sagu« otte sekunder fra
+         hinanden delte mappen: den ene kunne rydde den, mens den anden pakkede
+         ud i den.
+      2. **`rm -rf app` foer `mv`.** Et vindue helt uden `app/` - og dermed uden
+         `kilde.js` til at redde sig selv.
+      3. **`mv` fra `/tmp` er en KOPI over to filsystemer**, og en kopi kan
+         afbrydes paa midten. Et `rename` inden for samme filsystem kan ikke.
+
+    Det er praecis de tre, `kilde.js` blev bygget udenom (§35) - og de stod
+    stadig i det script, knappen faktisk koerer. Nu goer begge det samme:
+
+      - der pakkes ud VED SIDEN AF `app/`, i datamappen, ikke i `/tmp`,
+      - den gamle app flyttes til `.sagu-gammel` frem for at blive slettet, saa
+        `startup`s redning kan saette den tilbage, hvis vi doer imellem,
+      - og der byttes med to `rename`, aldrig en kopi.
+
+    At den gamle app flyttes VAEK som en helhed loeser ogsaa det, `rm -rf app`
+    var der for: filer, der er slettet i en ny version, bliver ikke liggende
+    (RUNE-ERFARINGER, Beanledger v30). Der pakkes aldrig ud oven i den levende
+    `app/`.
+
+    Datamappen selv roeres ikke - kun `app/` og de tre `.sagu-*`-arbejdsmapper.
     """
     return (
         'echo "Henter app-koden fra GitHub ..."\n'
-        'rm -rf /tmp/sagu-hent\n'
-        'mkdir -p /tmp/sagu-hent\n'
-        f"node -e '{henter(version)}' > /tmp/sagu-hent/app.tar\n"
-        'tar x -C /tmp/sagu-hent -f /tmp/sagu-hent/app.tar\n'
+        '\n'
+        '# Der pakkes ud VED SIDEN AF app/, ikke i /tmp: et bytte skal kunne\n'
+        '# ske med to rename inden for samme filsystem.\n'
+        'rm -rf .sagu-ny .sagu-gammel\n'
+        'mkdir -p .sagu-ny\n'
+        f"node -e '{henter(version)}' > .sagu-ny/app.tar\n"
+        'tar x -C .sagu-ny -f .sagu-ny/app.tar\n'
+        'rm -f .sagu-ny/app.tar\n'
         '\n'
         '# Mappenavnet i et GitHub-arkiv er <repo>-<ref uden v>, og arkivet\n'
         '# begynder med en pax_global_header-post. Ingen af delene gaettes:\n'
         '# find den app-mappe, der FINDES (RUNE-ERFARINGER, Sagu F5).\n'
-        'NY=$(find /tmp/sagu-hent -maxdepth 2 -type d -name app | head -n 1)\n'
+        'NY=$(find .sagu-ny -maxdepth 2 -type d -name app | head -n 1)\n'
         'if [ -z "$NY" ] || [ ! -f "$NY/server.js" ]; then\n'
         '  echo "[fejl] arkivet fra GitHub indeholder ingen app/server.js"\n'
         '  exit 1\n'
         'fi\n'
-        'rm -rf app\n'
+        '\n'
+        '# To omdoebninger, ingen kopi. Doer vi mellem dem, ligger den gamle\n'
+        '# app under .sagu-gammel, og startup-kommandoen saetter den tilbage.\n'
+        'if [ -d app ]; then mv app .sagu-gammel; fi\n'
         'mv "$NY" app\n'
-        'rm -rf /tmp/sagu-hent\n'
+        'rm -rf .sagu-ny .sagu-gammel\n'
     )
 
 
@@ -644,6 +672,24 @@ def opdater_script(version, payload):
             'echo "Opdaterer Sagu ..."\n'
             'echo "Node: $(node --version)"\n'
             '\n'
+            # Laasen. Andreas trykkede paa knappen to gange med otte sekunders
+            # mellemrum 2026-09-04, og de to koersler traadte i hinandens
+            # arbejdsmapper. `mkdir` er atomisk paa alle filsystemer; `[ -d ]`
+            # efterfulgt af `mkdir` er ikke - der er et hul imellem dem.
+            #
+            # Laasen daekker BEGGE grene med vilje: fra v47 og frem er
+            # kilde.js-grenen den almindelige, og to samtidige kilde.js ville
+            # kunne bytte app/ ud under hinanden.
+            'if ! mkdir .sagu-laas 2>/dev/null; then\n'
+            '  echo "[fejl] en anden opdatering er allerede i gang."\n'
+            '  echo "Vent til den er faerdig, eller genstart Sagu og proev igen."\n'
+            '  exit 1\n'
+            'fi\n'
+            # Laasen skal vaek, ogsaa naar noget faelder undervejs - ellers er
+            # knappen doed for altid. Bliver containeren draebt haardt, naar
+            # trap'en ikke at koere; DEN vej ryddes af startup-kommandoen.
+            "trap 'rm -rf .sagu-laas .sagu-ny' EXIT INT TERM\n"
+            '\n'
             'if [ -f app/kilde.js ]; then\n'
             # Panelet templater {{...}} ind i scriptets TEKST, og variablerne
             # findes OGSAA som env i containeren. Hvilken af de to der gaelder
@@ -662,8 +708,19 @@ def opdater_script(version, payload):
             + textwrap.indent(hent_krop(version), '  ')
             + 'fi\n'
             '\n'
-            'echo "App-filerne er skiftet ud. Databasen i /data er uroert."\n'
-            'echo "Genstart Sagu, saa serveren koerer den nye kode."\n'
+            '\n'
+            # Knappen skifter FILER. Panelets app-update svarer 202 og
+            # genstarter ikke selv - maalt i panelets egen log 2026-09-04:
+            # to app-update kl. 12:30, og foerst en restart ti timer senere.
+            # Indtil da koerte den gamle proces oven paa nye filer. Beskeden
+            # skal derfor vaere det sidste OG det tydeligste, man ser.
+            'echo "Databasen i /data er uroert."\n'
+            'echo ""\n'
+            'echo "============================================"\n'
+            'echo "  GENSTART SAGU NU."\n'
+            'echo "  Filerne er skiftet ud, men serveren koerer"\n'
+            'echo "  stadig den gamle kode, indtil den genstartes."\n'
+            'echo "============================================"\n'
         )
     linjer = textwrap.wrap(payload, 100)
     return (
@@ -760,6 +817,16 @@ def byg_yaml(version, rune_version, payload):
                         '  mv .sagu-gammel app\n'
                         '  echo "[kode] app/ sat tilbage efter en afbrudt udskiftning"\n'
                         'fi\n'
+                        # En laas, der overlever et haardt drab, ville goere
+                        # »Opdater Sagu« doed for altid. En container, der
+                        # STARTER, er den bedste lejlighed til at rydde den:
+                        # prisen er, at en opdatering, der koerer praecis nu i
+                        # sin egen container, mister sin laas - og den pris er
+                        # mindre end en knap, der aldrig virker igen.
+                        'if [ -d .sagu-laas ]; then\n'
+                        '  rm -rf .sagu-laas .sagu-ny\n'
+                        '  echo "[kode] en strandet opdateringslaas er ryddet"\n'
+                        'fi\n'
                         'node app/kilde.js || echo "[kode] advarsel: opdateringen kunne ikke koeres"\n'
                         'if node -e "require(\'node:sqlite\')" >/dev/null 2>&1; then\n'
                         '  exec node app/server.js\n'
@@ -831,15 +898,39 @@ def byg_yaml(version, rune_version, payload):
             if kilde_af(genlaest[navn]['script']) != forventet:
                 fejl(f'{navn}-scriptet henter ikke fra {tarball_url(rune_version)}')
         for navn in ('install', 'update'):
-            if 'rm -rf app' not in genlaest[navn]['script']:
-                fejl(f'{navn}-scriptet mangler `rm -rf app` - slettede filer '
-                     'ville blive liggende')
-            if HEREDOC in genlaest[navn]['script']:
+            # Den gamle regel var »scriptet skal indeholde rm -rf app«: tar
+            # overskriver, men fjerner ikke filer, der er slettet i en ny
+            # version (RUNE-ERFARINGER, Beanledger v30). Fra rune v48 flyttes
+            # den gamle app i stedet VAEK som en helhed, hvilket loeser det
+            # samme og desuden efterlader en vej tilbage. Reglen er derfor
+            # skiftet ud, ikke slettet - og den er blevet skarpere: der maa
+            # ALDRIG pakkes ud oven i den levende app/.
+            skript = genlaest[navn]['script']
+            if 'mv "$NY" app' not in skript:
+                fejl(f'{navn}-scriptet bytter ikke app/ ind med et rename')
+            if 'mv app .sagu-gammel' not in skript:
+                fejl(f'{navn}-scriptet flytter ikke den gamle app vaek - '
+                     'slettede filer ville blive liggende, og der ville ikke '
+                     'vaere nogen vej tilbage')
+            if 'tar x -C app' in skript or '-C app/' in skript:
+                fejl(f'{navn}-scriptet pakker ud OVEN I den levende app/')
+            if '/tmp/' in skript:
+                fejl(f'{navn}-scriptet bruger /tmp - et mv derfra er en kopi '
+                     'over to filsystemer, og en kopi kan afbrydes paa midten')
+            if HEREDOC in skript:
                 fejl(f'{navn}-scriptet baerer stadig en payload')
     elif payload_af(genlaest['install']['script']) != payload_af(genlaest['update']['script']):
         fejl('install og update pakker IKKE den samme payload')
-    if 'rm -rf app' not in genlaest['update']['script']:
-        fejl('update-scriptet mangler `rm -rf app` - slettede filer ville blive liggende')
+    # Laasen om HELE update-scriptet: to tryk paa knappen maa ikke kunne
+    # overlappe. Maalt 2026-09-04: to app-update otte sekunder fra hinanden.
+    if HENT_FRA_GITHUB:
+        u = genlaest['update']['script']
+        if 'mkdir .sagu-laas' not in u:
+            fejl('update-scriptet tager ingen laas - to tryk paa knappen kan overlappe')
+        if u.index('mkdir .sagu-laas') > u.index('if [ -f app/kilde.js ]'):
+            fejl('laasen skal tages FOER begge grene, ikke inde i den ene')
+        if 'trap ' not in u:
+            fejl('update-scriptet frigiver ikke laasen, naar noget faelder')
 
     # Assertér, at update ikke ROERER datamappen. Kun de HANDLENDE linjer
     # tjekkes: en echo-linje maa gerne naevne /data ("Databasen i /data er

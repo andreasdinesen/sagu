@@ -278,6 +278,17 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **GitHub sorterer tags ALFABETISK.** `v9` står efter `v80`. Tager man `liste[0]` fra
   `/repos/:ejer/:repo/tags`, ruller hver server 37 udgaver tilbage ved næste genstart.
   Regn hele listen igennem (`/^v(\d+)$/`, tag max), og bladr til en side ikke er fuld.
+- **Panelets »Opdater app« genstarter IKKE serveren.** `POST /api/servers/<id>/app-update`
+  svarer **202** og er asynkron; `restart` er et separat endpoint. En knap, der skifter
+  filer, efterlader altså den gamle proces kørende oven på ny kode, til nogen genstarter.
+  Målt i panelets egen log 2026-09-04 — det kostede Sagu ti timer.
+- **Pak aldrig ud i `/tmp` og byt med `mv`.** `mv` mellem to filsystemer er en kopi, og en
+  kopi kan afbrydes på midten. Pak ud **ved siden af** `app/` i datamappen, flyt den gamle
+  til `.sagu-gammel`, og byt med to `rename`. Det gælder `kilde.js` **og** runens scripts —
+  den vej, der kun bruges én gang, er den, der bruges den dag alt andet er nyt.
+- **En knap kan trykkes to gange.** Lås med `mkdir` (atomisk); `[ -d ]` + `mkdir` har et
+  hul imellem sig. Læg låsen om **hele** handlingen, ikke inde i én gren, og frigiv den
+  med `trap` — en lås, der overlever en fejl, gør knappen død for altid.
 - **`[fejl]` i en advarsel er en fælde.** Panelets watcher tæller `[fejl]`-linjer og
   sender Andreas en notifikation. `kilde.js` skriver derfor `[kode] advarsel: …`, når
   nettet blinker — det er ikke en serverfejl, og det skal ikke ringe.

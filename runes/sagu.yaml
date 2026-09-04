@@ -7,7 +7,7 @@ gameskill:
     wiki med valgfrit kodeord og kommentarer. Import fra Notion, API til iOS Shortcuts, MCP-server. Flere brugere med egne
     noter. Egen SQLite-database, ingen eksterne afhaengigheder.
   author: andreas
-  version: 47
+  version: 48
   icon: app
   docker:
     image: '{{NODE_IMAGE}}'
@@ -30,45 +30,54 @@ gameskill:
     hint: Tom = hent nyeste udgivelse fra GitHub ved hver genstart. Et tal (fx 46) laaser til praecis den udgave.
   install:
     image: '{{NODE_IMAGE}}'
-    script: "set -eu\necho \"Installerer Sagu (startsnor v47) ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden\
-      \ fra GitHub ...\"\nrm -rf /tmp/sagu-hent\nmkdir -p /tmp/sagu-hent\nnode -e 'const https=require(\"https\"),zlib=require(\"\
-      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v47\";function d(m){console.error(\"\
+    script: "set -eu\necho \"Installerer Sagu (startsnor v48) ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden\
+      \ fra GitHub ...\"\n\n# Der pakkes ud VED SIDEN AF app/, ikke i /tmp: et bytte skal kunne\n# ske med to rename inden\
+      \ for samme filsystem.\nrm -rf .sagu-ny .sagu-gammel\nmkdir -p .sagu-ny\nnode -e 'const https=require(\"https\"),zlib=require(\"\
+      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v48\";function d(m){console.error(\"\
       [fejl] \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen ikke findes OG naar\
       \ der ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function hent(u,n){https.get(u,{headers:{\"\
       user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return d(\"\
       for mange omdirigeringer\");r.resume();return hent(new URL(r.headers.location,u).toString(),n-1);}if(r.statusCode!==200)return\
       \ d(\"GitHub svarede \"+r.statusCode);const g=zlib.createGunzip();g.on(\"error\",(e)=>d(\"arkivet kunne ikke pakkes\
       \ ud: \"+e.message));r.pipe(g).pipe(process.stdout);}).on(\"error\",(e)=>d(\"kunne ikke naa GitHub: \"+e.message));}hent(U,3);'\
-      \ > /tmp/sagu-hent/app.tar\ntar x -C /tmp/sagu-hent -f /tmp/sagu-hent/app.tar\n\n# Mappenavnet i et GitHub-arkiv er\
-      \ <repo>-<ref uden v>, og arkivet\n# begynder med en pax_global_header-post. Ingen af delene gaettes:\n# find den app-mappe,\
-      \ der FINDES (RUNE-ERFARINGER, Sagu F5).\nNY=$(find /tmp/sagu-hent -maxdepth 2 -type d -name app | head -n 1)\nif [\
-      \ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n  echo \"[fejl] arkivet fra GitHub indeholder ingen app/server.js\"\
-      \n  exit 1\nfi\nrm -rf app\nmv \"$NY\" app\nrm -rf /tmp/sagu-hent\n\necho \"Filer udpakket:\"\nls -1 app app/public\n\
-      echo \"Klar. Start serveren i panelet - den henter selv nyeste\"\necho \"udgave (eller den, KODE_VERSION laaser til),\
-      \ foer den starter.\"\n"
+      \ > .sagu-ny/app.tar\ntar x -C .sagu-ny -f .sagu-ny/app.tar\nrm -f .sagu-ny/app.tar\n\n# Mappenavnet i et GitHub-arkiv\
+      \ er <repo>-<ref uden v>, og arkivet\n# begynder med en pax_global_header-post. Ingen af delene gaettes:\n# find den\
+      \ app-mappe, der FINDES (RUNE-ERFARINGER, Sagu F5).\nNY=$(find .sagu-ny -maxdepth 2 -type d -name app | head -n 1)\n\
+      if [ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n  echo \"[fejl] arkivet fra GitHub indeholder ingen app/server.js\"\
+      \n  exit 1\nfi\n\n# To omdoebninger, ingen kopi. Doer vi mellem dem, ligger den gamle\n# app under .sagu-gammel, og\
+      \ startup-kommandoen saetter den tilbage.\nif [ -d app ]; then mv app .sagu-gammel; fi\nmv \"$NY\" app\nrm -rf .sagu-ny\
+      \ .sagu-gammel\n\necho \"Filer udpakket:\"\nls -1 app app/public\necho \"Klar. Start serveren i panelet - den henter\
+      \ selv nyeste\"\necho \"udgave (eller den, KODE_VERSION laaser til), foer den starter.\"\n"
   update:
     image: '{{NODE_IMAGE}}'
     label: Opdater Sagu
-    script: "set -eu\necho \"Opdaterer Sagu ...\"\necho \"Node: $(node --version)\"\n\nif [ -f app/kilde.js ]; then\n  K=\"\
-      {{KODE_VERSION}}\"\n  case \"$K\" in\n    '') : ;;\n    seneste|latest|[0-9]*) : ;;\n    *) K=\"${KODE_VERSION:-}\"\
+    script: "set -eu\necho \"Opdaterer Sagu ...\"\necho \"Node: $(node --version)\"\n\nif ! mkdir .sagu-laas 2>/dev/null;\
+      \ then\n  echo \"[fejl] en anden opdatering er allerede i gang.\"\n  echo \"Vent til den er faerdig, eller genstart\
+      \ Sagu og proev igen.\"\n  exit 1\nfi\ntrap 'rm -rf .sagu-laas .sagu-ny' EXIT INT TERM\n\nif [ -f app/kilde.js ]; then\n\
+      \  K=\"{{KODE_VERSION}}\"\n  case \"$K\" in\n    '') : ;;\n    seneste|latest|[0-9]*) : ;;\n    *) K=\"${KODE_VERSION:-}\"\
       \ ;;\n  esac\n  echo \"Oensket udgave: ${K:-nyeste}\"\n  KODE_VERSION=\"$K\" node app/kilde.js\nelse\n  echo \"Henter\
-      \ app-koden fra GitHub ...\"\n  rm -rf /tmp/sagu-hent\n  mkdir -p /tmp/sagu-hent\n  node -e 'const https=require(\"\
-      https\"),zlib=require(\"zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v47\";function\
+      \ app-koden fra GitHub ...\"\n\n  # Der pakkes ud VED SIDEN AF app/, ikke i /tmp: et bytte skal kunne\n  # ske med to\
+      \ rename inden for samme filsystem.\n  rm -rf .sagu-ny .sagu-gammel\n  mkdir -p .sagu-ny\n  node -e 'const https=require(\"\
+      https\"),zlib=require(\"zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v48\";function\
       \ d(m){console.error(\"[fejl] \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen\
       \ ikke findes OG naar der ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function\
       \ hent(u,n){https.get(u,{headers:{\"user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return\
       \ d(\"for mange omdirigeringer\");r.resume();return hent(new URL(r.headers.location,u).toString(),n-1);}if(r.statusCode!==200)return\
       \ d(\"GitHub svarede \"+r.statusCode);const g=zlib.createGunzip();g.on(\"error\",(e)=>d(\"arkivet kunne ikke pakkes\
       \ ud: \"+e.message));r.pipe(g).pipe(process.stdout);}).on(\"error\",(e)=>d(\"kunne ikke naa GitHub: \"+e.message));}hent(U,3);'\
-      \ > /tmp/sagu-hent/app.tar\n  tar x -C /tmp/sagu-hent -f /tmp/sagu-hent/app.tar\n\n  # Mappenavnet i et GitHub-arkiv\
+      \ > .sagu-ny/app.tar\n  tar x -C .sagu-ny -f .sagu-ny/app.tar\n  rm -f .sagu-ny/app.tar\n\n  # Mappenavnet i et GitHub-arkiv\
       \ er <repo>-<ref uden v>, og arkivet\n  # begynder med en pax_global_header-post. Ingen af delene gaettes:\n  # find\
-      \ den app-mappe, der FINDES (RUNE-ERFARINGER, Sagu F5).\n  NY=$(find /tmp/sagu-hent -maxdepth 2 -type d -name app |\
-      \ head -n 1)\n  if [ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n    echo \"[fejl] arkivet fra GitHub indeholder\
-      \ ingen app/server.js\"\n    exit 1\n  fi\n  rm -rf app\n  mv \"$NY\" app\n  rm -rf /tmp/sagu-hent\nfi\n\necho \"App-filerne\
-      \ er skiftet ud. Databasen i /data er uroert.\"\necho \"Genstart Sagu, saa serveren koerer den nye kode.\"\n"
+      \ den app-mappe, der FINDES (RUNE-ERFARINGER, Sagu F5).\n  NY=$(find .sagu-ny -maxdepth 2 -type d -name app | head -n\
+      \ 1)\n  if [ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n    echo \"[fejl] arkivet fra GitHub indeholder ingen\
+      \ app/server.js\"\n    exit 1\n  fi\n\n  # To omdoebninger, ingen kopi. Doer vi mellem dem, ligger den gamle\n  # app\
+      \ under .sagu-gammel, og startup-kommandoen saetter den tilbage.\n  if [ -d app ]; then mv app .sagu-gammel; fi\n  mv\
+      \ \"$NY\" app\n  rm -rf .sagu-ny .sagu-gammel\nfi\n\n\necho \"Databasen i /data er uroert.\"\necho \"\"\necho \"============================================\"\
+      \necho \"  GENSTART SAGU NU.\"\necho \"  Filerne er skiftet ud, men serveren koerer\"\necho \"  stadig den gamle kode,\
+      \ indtil den genstartes.\"\necho \"============================================\"\n"
   startup:
     command: "if [ ! -f app/server.js ] && [ -f .sagu-gammel/server.js ]; then\n  rm -rf app\n  mv .sagu-gammel app\n  echo\
-      \ \"[kode] app/ sat tilbage efter en afbrudt udskiftning\"\nfi\nnode app/kilde.js || echo \"[kode] advarsel: opdateringen\
+      \ \"[kode] app/ sat tilbage efter en afbrudt udskiftning\"\nfi\nif [ -d .sagu-laas ]; then\n  rm -rf .sagu-laas .sagu-ny\n\
+      \  echo \"[kode] en strandet opdateringslaas er ryddet\"\nfi\nnode app/kilde.js || echo \"[kode] advarsel: opdateringen\
       \ kunne ikke koeres\"\nif node -e \"require('node:sqlite')\" >/dev/null 2>&1; then\n  exec node app/server.js\nelse\n\
       \  exec node --experimental-sqlite app/server.js\nfi\n"
     done_regex: sagu lytter
