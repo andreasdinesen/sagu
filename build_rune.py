@@ -66,6 +66,32 @@ HENT_FRA_GITHUB = True
 GITHUB_EJER = 'andreasdinesen'
 GITHUB_REPO = 'sagu'
 
+# ------------------------------------------------ to tal, ikke ét
+#
+# Indtil v46 var app-koden og runen ét tal. Runen bar ikke koden - den hentede
+# den fra taggen vN - men taggen stod i install-scriptet, saa en ny app-udgave
+# KRAEVEDE en ny rune. Andreas skulle derfor gennem panelets to trin (hent
+# runen igen, saa Opdater) ved hver eneste udgivelse for at flytte ét tal i en
+# YAML.
+#
+# Fra v47 henter `app/kilde.js` koden ved hver opstart, og **en genstart ER
+# opdateringen**. Runen er blevet en STARTSNOR: den skal kun udgives, naar
+# selve runen aendrer sig (variabler, startup, porte, watchers, wipe).
+#
+# Derfor to tal:
+#   APP_VERSION (i app/parts/p1_core.js) - koden. Bumpes ved hver udgivelse.
+#   RUNE_VERSION (her)                   - runen. Bumpes KUN naar YAML'en
+#                                          herunder aendrer sig.
+#
+# Bumpes RUNE_VERSION alligevel ved hver udgivelse, er vi tilbage ved to trin i
+# panelet, og hele pointen er tabt.
+#
+# RUNE_VERSION er ogsaa den tag, install-scriptet henter FOERSTE gang. Den
+# behoever ikke vaere den nyeste: foerste opstart henter alligevel det, der
+# staar i KODE_VERSION. Den skal bare vaere en udgave, der KAN starte - og
+# taggen SKAL vaere pushet, ellers kan runen ikke installeres forfra.
+RUNE_VERSION = 47
+
 
 def tarball_url(version):
     """Runens version N hoerer sammen med taggen vN - ikke med en gren.
@@ -573,14 +599,15 @@ def install_script(version, payload):
     if HENT_FRA_GITHUB:
         return (
             'set -eu\n'
-            f'echo "Installerer Sagu v{version} ..."\n'
+            f'echo "Installerer Sagu (startsnor v{version}) ..."\n'
             'echo "Node: $(node --version)"\n'
             '\n'
             + hent_krop(version)
             + '\n'
             'echo "Filer udpakket:"\n'
             'ls -1 app app/public\n'
-            'echo "Klar. Start serveren i panelet."\n'
+            'echo "Klar. Start serveren i panelet - den henter selv nyeste"\n'
+            'echo "udgave (eller den, KODE_VERSION laaser til), foer den starter."\n'
         )
     linjer = textwrap.wrap(payload, 100)
     return (
@@ -607,15 +634,36 @@ def opdater_script(version, payload):
     ligger uden for app/ og roeres ikke - det er hele pointen med knappen.
     """
     if HENT_FRA_GITHUB:
+        # Knappen maa ALDRIG hente startsnorens tag, naar appen allerede er
+        # laengere fremme: v47 oven i v60 er en NEDGRADERING, som ingen bad om.
+        # Findes app/kilde.js, er den facit - den kender KODE_VERSION og henter
+        # praecis den udgave, serveren ville hente ved en genstart. Startsnoren
+        # er kun redningen, hvis app/ er vaek eller er fra foer v47.
         return (
             'set -eu\n'
-            f'echo "Opdaterer Sagu til v{version} ..."\n'
+            'echo "Opdaterer Sagu ..."\n'
             'echo "Node: $(node --version)"\n'
             '\n'
-            + hent_krop(version)
-            + '\n'
+            'if [ -f app/kilde.js ]; then\n'
+            # Panelet templater {{...}} ind i scriptets TEKST, og variablerne
+            # findes OGSAA som env i containeren. Hvilken af de to der gaelder
+            # her, er UBEVIST - saa vi proever skabelonen og falder tilbage til
+            # env, hvis den staar utemplateret. Ellers kunne en laasning gaa
+            # tabt paa en antagelse.
+            '  K="{{KODE_VERSION}}"\n'
+            '  case "$K" in\n'
+            "    '') : ;;\n"
+            '    seneste|latest|[0-9]*) : ;;\n'
+            '    *) K="${KODE_VERSION:-}" ;;\n'
+            '  esac\n'
+            '  echo "Oensket udgave: ${K:-nyeste}"\n'
+            '  KODE_VERSION="$K" node app/kilde.js\n'
+            'else\n'
+            + textwrap.indent(hent_krop(version), '  ')
+            + 'fi\n'
+            '\n'
             'echo "App-filerne er skiftet ud. Databasen i /data er uroert."\n'
-            'echo "Skemaet opdateres automatisk, naar serveren starter."\n'
+            'echo "Genstart Sagu, saa serveren koerer den nye kode."\n'
         )
     linjer = textwrap.wrap(payload, 100)
     return (
@@ -632,7 +680,7 @@ def opdater_script(version, payload):
     )
 
 
-def byg_yaml(version, payload):
+def byg_yaml(version, rune_version, payload):
     rune = {'gameskill': {
         'id': 'sagu',
         'name': 'Sagu',
@@ -646,7 +694,7 @@ def byg_yaml(version, payload):
             'Egen SQLite-database, ingen eksterne afhaengigheder.'
         ),
         'author': 'andreas',
-        'version': version,
+        'version': rune_version,
         'icon': 'app',
 
         # Node-versionen er et FELT i panelet, ikke en konstant i koden: findes
@@ -661,14 +709,59 @@ def byg_yaml(version, payload):
              'pattern': r'^node:[0-9][A-Za-z0-9._-]*$',
              'hint': 'Skal vaere et node:-image, fx node:24-alpine. Soegningen kraever '
                      'FTS5, som findes i Node 22 og nyere.'},
-        ],
 
-        'install': {'image': '{{NODE_IMAGE}}', 'script': install_script(version, payload)},
+            # Laasen. Det er den, der goer runen overfloedig i hverdagen - og
+            # samtidig hele vejen tilbage: saet 46, genstart, og serveren
+            # koerer v46 igen.
+            #
+            # TOM = nyeste. Standarden for »goer det normale« skal vaere
+            # INGENTING: et felt, der SKAL udfyldes for at opfoere sig
+            # almindeligt, laeser man som en indstilling, nogen har taget - og
+            # saa spekulerer man paa, hvad »seneste« mon daekker over. Ordene
+            # godtages stadig, saa en server, der har dem staaende, ikke
+            # pludselig faar en advarsel.
+            #
+            # `?` i moensteret er noedvendigt: uden det kan den tomme standard
+            # ikke gemmes i panelet. Og moensteret afviser »v47« og »47.1«
+            # allerede dér, frem for at lade kilde.js tolke noget, brugeren
+            # ikke skrev.
+            {'key': 'KODE_VERSION', 'name': 'Kodeversion', 'type': 'string',
+             'default': '',
+             'pattern': r'^([0-9]+|seneste|latest)?$',
+             'hint': 'Tom = hent nyeste udgivelse fra GitHub ved hver genstart. '
+                     'Et tal (fx 46) laaser til praecis den udgave.'},
+        ],
+        # Der staar ikke et GITHUB_TOKEN her. Repoet er offentligt, saa
+        # hentningen kraever ingen godkendelse - og et felt, der ikke goer
+        # noget, er et sted at lede efter en fejl, der ikke er der.
+
+        # Begge scripts henter STARTSNOREN, ikke den nyeste app-udgave: runen
+        # kender kun sin egen version. Resten klarer kilde.js.
+        'install': {'image': '{{NODE_IMAGE}}',
+                    'script': install_script(rune_version, payload)},
         'update': {'image': '{{NODE_IMAGE}}', 'label': 'Opdater Sagu',
-                   'script': opdater_script(version, payload)},
+                   'script': opdater_script(rune_version, payload)},
 
         'startup': {
-            'command': ('if node -e "require(\'node:sqlite\')" >/dev/null 2>&1; then\n'
+            # Opstarten ER opdateringen (F28). Tre trin, i den raekkefoelge:
+            #
+            #  1. Redningen. kilde.js bytter app/ ud med to omdoebninger, og
+            #     doer containeren imellem dem, ligger den gamle app under
+            #     .sagu-gammel. Uden det her trin ville et daarligt sekund
+            #     efterlade en container helt uden app/ - og saa er der heller
+            #     ingen kilde.js til at hente en ny. Det er den eneste rigtigt
+            #     farlige brik; alt andet herinde maa fejle.
+            #  2. Hentningen. Fejler den, siger den det og gaar videre - den
+            #     kode, der ligger, er stadig en koerende Sagu. Derfor `|| echo`
+            #     og ikke `set -e`.
+            #  3. Serveren, som foer.
+            'command': ('if [ ! -f app/server.js ] && [ -f .sagu-gammel/server.js ]; then\n'
+                        '  rm -rf app\n'
+                        '  mv .sagu-gammel app\n'
+                        '  echo "[kode] app/ sat tilbage efter en afbrudt udskiftning"\n'
+                        'fi\n'
+                        'node app/kilde.js || echo "[kode] advarsel: opdateringen kunne ikke koeres"\n'
+                        'if node -e "require(\'node:sqlite\')" >/dev/null 2>&1; then\n'
                         '  exec node app/server.js\n'
                         'else\n'
                         '  exec node --experimental-sqlite app/server.js\n'
@@ -733,10 +826,10 @@ def byg_yaml(version, payload):
         return fund[0]
 
     if HENT_FRA_GITHUB:
-        forventet = tarball_url(version) + '"'
+        forventet = tarball_url(rune_version) + '"'
         for navn in ('install', 'update'):
             if kilde_af(genlaest[navn]['script']) != forventet:
-                fejl(f'{navn}-scriptet henter ikke fra {tarball_url(version)}')
+                fejl(f'{navn}-scriptet henter ikke fra {tarball_url(rune_version)}')
         for navn in ('install', 'update'):
             if 'rm -rf app' not in genlaest[navn]['script']:
                 fejl(f'{navn}-scriptet mangler `rm -rf app` - slettede filer '
@@ -782,8 +875,8 @@ def main():
     payload = b85(komprimeret)
     verificer(payload, raw)
 
-    install = install_script(version, payload)
-    tekst = byg_yaml(version, payload)
+    install = install_script(RUNE_VERSION, payload)
+    tekst = byg_yaml(version, RUNE_VERSION, payload)
     if len(tekst.encode('utf8')) > MAX_YAML:
         fejl(f'YAML er {len(tekst.encode("utf8")):,} b - panelets loft er {MAX_YAML:,}')
 
@@ -798,10 +891,24 @@ def main():
         # betyde noget: det er maalet paa, hvor stor appen er blevet, og det er
         # det tal, §8's vane handler om. Rapportér det, ogsaa naar det ikke
         # laengere kan faelde build'et.
-        print(f'  app-koden hentes fra: {tarball_url(version)}')
+        print(f'  startsnoren henter fra: {tarball_url(RUNE_VERSION)}')
         print(f'  (indlejret ville payloaden vaere {len(payload):,} tegn '
               f'= {len(payload) * 100 / MAX_INSTALL:.1f} % af loftet)')
-    print(f'\nOK  runes/sagu.yaml  (v{version}, {len(tekst.encode("utf8")):,} b)')
+    print(f'\nOK  runes/sagu.yaml  (rune v{RUNE_VERSION}, '
+          f'{len(tekst.encode("utf8")):,} b)')
+    print(f'    App-koden er v{version} - serveren henter den selv ved opstart.')
+
+    # Hvilket af de to tal, der skal videre, er ikke en detalje. Sig det.
+    if RUNE_VERSION == version:
+        print('    Runen er AENDRET og skal udgives i panelet.')
+    elif RUNE_VERSION < version:
+        print('    Runen er UAENDRET og behoever ikke udgives: commit + '
+              f'`git tag v{version}` + `git push --tags` er nok.')
+    else:
+        print(f'    OBS: runen peger paa v{RUNE_VERSION}, og app-koden staar paa '
+              f'v{version}.')
+        print('    Startsnorens tag findes altsaa ikke endnu - bump APP_VERSION til '
+              f'{RUNE_VERSION} ved udgivelsen, ellers kan runen ikke installeres forfra.')
 
     if vil_budget:
         budget(filer, payload)

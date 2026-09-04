@@ -244,6 +244,14 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 
 - **Bump aldrig `APP_VERSION` undervejs.** Kun ved udgivelse, efter Andreas har sagt ja.
 - **Commit og push kræver et udtrykkeligt ja.** Et push er en udgivelse.
+- **To versionstal, ikke ét** (F28). `APP_VERSION` i `app/parts/p1_core.js` er *koden*
+  og bumpes ved hver udgivelse. `RUNE_VERSION` i `build_rune.py` er *runen* og bumpes
+  **kun**, når YAML'en selv ændrer sig — variabler, `startup`, porte, watchers, wipe.
+  Bumper man den alligevel hver gang, er Andreas tilbage ved panelets to trin, og hele
+  pointen med at serveren henter sin egen kode er tabt.
+- **En udgivelse er stadig tre trin:** commit → `git tag v<N>` → `git push --tags`.
+  Taggen er det, `kilde.js` leder efter; uden den sker der ingenting ved en genstart.
+  Runen skal kun *også* udgives i panelet, når `RUNE_VERSION` er flyttet.
 - Efter hver ændring: byg, test, opsummer — og vent.
 - **Rapportér den målte payload-størrelse efter hver `build_rune.py`.** Den er ikke
   længere et loft — install-scriptet henter koden og er 1.640 tegn — men tallet er
@@ -267,6 +275,12 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   server HTML `no-store`. Cloudflare edge-cacher `.js` i timer og ignorerer `no-cache`.
 - Serveren logger `server.address().port`, ikke `BIND_PORT`.
 - **Læg aldrig billeder i de items, listen henter** (Kokkeri: 247 MB login-svar).
+- **GitHub sorterer tags ALFABETISK.** `v9` står efter `v80`. Tager man `liste[0]` fra
+  `/repos/:ejer/:repo/tags`, ruller hver server 37 udgaver tilbage ved næste genstart.
+  Regn hele listen igennem (`/^v(\d+)$/`, tag max), og bladr til en side ikke er fuld.
+- **`[fejl]` i en advarsel er en fælde.** Panelets watcher tæller `[fejl]`-linjer og
+  sender Andreas en notifikation. `kilde.js` skriver derfor `[kode] advarsel: …`, når
+  nettet blinker — det er ikke en serverfejl, og det skal ikke ringe.
 
 ## Lokal kørsel
 

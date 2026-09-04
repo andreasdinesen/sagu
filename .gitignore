@@ -4,3 +4,8 @@ node_modules/
 *.db-wal
 *.db-shm
 /data/
+
+# Skrives af app/kilde.js i containeren - aldrig i repoet.
+app/.kode-version
+.sagu-ny/
+.sagu-gammel/

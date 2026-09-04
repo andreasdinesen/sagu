@@ -88,6 +88,25 @@ Rækkefølgen, når du begynder:
 
 ## 3 · Det, der venter på Andreas
 
+> **Tilføjet 2026-09-03 (F28).** Punkterne 1–4 nedenfor er fra 2026-08-21 og for
+> længst overhalet — Sagu står på `APP_VERSION 46`, og alt til og med v46 er
+> udgivet og tagget. Det, der venter lige nu, er dette:
+>
+> - **F28 har ikke overlevet en rigtig genstart i panelet.** Mekanikken er
+>   bygget, prøvet med fjorten sabotager og kørt end-to-end mod det rigtige
+>   GitHub fra en midlertidig mappe — men først en genstart på Hjorten viser,
+>   om panelets `startup` og variabler opfører sig som antaget. Indtil da er
+>   den *målt*, ikke *bevist i drift*.
+> - **Runen skal udgives denne ene gang.** `RUNE_VERSION` er flyttet til 47, så
+>   `startup`, `update` og den nye variabel `KODE_VERSION` skal ind i panelet.
+>   Derefter skal runen kun udgives, når YAML'en selv ændrer sig.
+> - **`APP_VERSION` skal bumpes til 47 ved udgivelsen.** Startsnoren peger på
+>   `refs/tags/v47`; findes den tag ikke, kan runen ikke installeres forfra.
+>   `build_rune.py` siger det højt, så længe de to tal ikke passer.
+> - **Denne fil er i øvrigt et forældet øjebliksbillede.** Tallene i afsnit 1
+>   (372 prøver, `APP_VERSION 1`, m1–m14) er fra F13. Suiten er nu **617 grønne
+>   og 1 sprunget over**, og migrationerne går til m17.
+
 Ingen af dem må afgøres uden ham.
 
 1. **Sagu v2 (F8–F13) er ikke udgivet.** Alt står ucommitteret i

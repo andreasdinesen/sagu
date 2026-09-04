@@ -48,9 +48,45 @@ stedet app-mappen fra dette repos tag:
 https://codeload.github.com/<ejer>/sagu/tar.gz/refs/tags/v<N>
 ```
 
-Det gør scriptet **1.642 tegn — konstant, uanset hvor stor appen bliver**.
+Det gør scriptet **1.748 tegn — konstant, uanset hvor stor appen bliver**.
 Prisen er, at en installation kræver netadgang, og at hver udgivelse skal
 tagges. Regnestykket står i [`DESIGN.md`](DESIGN.md) måling 1.
+
+## Sådan holder du den opdateret
+
+**En genstart *er* opdateringen.** `app/kilde.js` kører fra runens
+`startup`-kommando, før serveren starter: den spørger GitHub om repoets tags,
+finder det højeste `v<tal>`, og henter det, hvis der ligger noget andet.
+
+Runen er dermed blevet en **startsnor**. Den skal kun udgives i panelet, når
+runen selv ændrer sig — variabler, `startup`, porte, watchers, wipe — og ikke
+ved hver ny udgave af appen. Derfor to tal:
+
+| Tal | Hvor | Bumpes |
+|---|---|---|
+| `APP_VERSION` | `app/parts/p1_core.js` | ved hver udgivelse |
+| `RUNE_VERSION` | `build_rune.py` | kun når `runes/sagu.yaml` ændrer sig |
+
+Panelvariablen **`KODE_VERSION`** styrer, hvad der hentes:
+
+- **tom** (standard) — hent nyeste udgivelse ved hver genstart
+- **et tal**, fx `46` — lås til præcis den udgave
+
+Vejen tilbage fra en dårlig udgivelse er altså: skriv tallet, genstart. Frem
+igen: tøm feltet, genstart.
+
+Tre ting er værd at vide:
+
+- **En fejl kan aldrig forhindre serveren i at starte.** Kan GitHub ikke nås,
+  siger `kilde.js` det og går videre på den kode, der ligger.
+- **Der byttes aldrig halvt.** Den nye kode pakkes ud *ved siden af* `app/` og
+  tjekkes — hele træet, og at det udpakkede `index.html` bærer netop den
+  version, taggen lover — før de to mapper skifter navn. Dør containeren
+  imellem de to omdøbninger, ligger den gamle app under `.sagu-gammel`, og
+  `startup` sætter den tilbage.
+- **Panelets »Opdater Sagu« bruger `kilde.js`, når den findes.** Ellers ville
+  knappen hente startsnorens tag oven på en nyere app — en nedgradering,
+  ingen bad om.
 
 ## Kør den lokalt
 
@@ -138,6 +174,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **47** | **En genstart er opdateringen.** `app/kilde.js` kører fra runens `startup`, før serveren: den spørger GitHub om repoets tags, tager det højeste `v<tal>` og henter det, hvis der ligger noget andet. Runen er dermed blevet en **startsnor** og skal kun udgives, når YAML'en selv ændrer sig — derfor to tal, `APP_VERSION` for koden og `RUNE_VERSION` for runen; bumpes runen alligevel hver gang, er man tilbage ved panelets to trin, og hele pointen er tabt. Panelvariablen **`KODE_VERSION`** er **tom** som standard (= nyeste), for et felt der *skal* udfyldes for at opføre sig almindeligt læses som en indstilling, nogen har taget; et tal låser, og det er vejen tilbage fra en dårlig udgivelse. Fem fælder bærer resten: **GitHub sorterer tags alfabetisk** — `v9` står efter `v80`, så `liste[0]` ville rulle hver server 37 udgaver tilbage; der pakkes ud **ved siden af** `app/` og ikke i `/tmp`, fordi `mv` mellem to filsystemer er en kopi der kan afbrydes, mens to `rename` ikke kan — dør containeren imellem dem, ligger den gamle app under `.sagu-gammel`, og `startup` sætter den tilbage; **alt ender med `exit 0`**, så en netværksfejl udsætter en opdatering i stedet for at slukke for arkivet; træet tjekkes før byttet, **`shared/` med i listen** fordi en server uden den starter og først fejler når nogen søger; og advarslerne skriver ikke `[fejl]`, som panelets watcher tæller. Endnu ikke prøvet af en rigtig genstart i panelet. |
 | **46** | **`/now` giver dato og tid i én** — `02-09-2026, 07:56`, netop den form registreringslinjerne har, så to genveje pr. linje bliver til én. Den **bygges af `/dmy` og `/hhmm`** frem for at formatere forfra: ellers kunne de tre komme til at vise forskellige datoer, den dag formatet ændres. Den hedder `/now` og ikke `/nu` — interfacet er engelsk, og de to andre er engelske forkortelser; to sprog i samme genvejstabel tvinger folk til at oversætte i hovedet. |
 | **45** | **Faner under Settings**, og **`/dmy` / `/hhmm`** i noten. Indstillingerne var vokset til seksten afsnit i én stribe — man rullede forbi ti ting for at nå den ellevte; nu seks faner med verdande som forbillede. Valget der bærer det: **alt tegnes, ét vises.** Fanerne skjuler med `hidden`, for `bindSettings()` binder tredive elementer op på deres id, og tegnede vi kun den åbne fane, skulle hver binding laves om til noget der kører igen ved hvert faneskift — den slags omskrivning taber en knap uden at noget fejler. Har man gemt »Server« og ikke er administrator, falder den tilbage frem for at vise en tom side. **Genvejene** virker kun i notens skrivefelt, ikke i søgefeltet hvor `/` allerede betyder noget, og kun ved linjestart eller efter et mellemrum — `format/dmy` bliver stående. De står i »How to write«, tegnet af samme tabel som koden bruger. |
 | **44** | **Trækket kendte ikke markeringen** — meldt fra brug: »hvis jeg marker flere noter med command og prøver at flytte dem ned i en anden notebook, så flytter den kun en ad gangen«. v43 gav markeringen en »Move…«-knap og glemte trækket, men set fra brugerens side er det den samme handling: man har markeret tre noter og taget fat i en af dem. **Begge** slipsteder er rettet — både slip på en notesbog og slip mellem to noter; to slipsteder med hver sin regel er to regler at tage fejl af. Alle markerede rækker ser nu trukket ud, ellers ligner det at man flytter én. Dertil **Escape rydder markeringen**: at et almindeligt klik vælger, når der først er noget markeret, er udtrykkeligt ønsket — men så skal der være en vej ud, man ikke skal lede efter. |

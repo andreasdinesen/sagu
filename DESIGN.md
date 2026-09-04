@@ -2861,3 +2861,126 @@ hvem der kiggede.
 To visninger tegner en kommentar (tråden og moderationskøen). `komKilde()` bruges begge
 steder, så de ikke kan drive fra hinanden — samme grund som `opretKommentar()` er ét sted
 for begge veje ind.
+
+---
+
+## 35 · F28 · Serveren henter sin egen kode
+
+Indtil v46 fulgtes app-koden og runen ad. Runen **bar** ikke koden — den hentede den fra
+taggen `vN` (måling 1) — men taggen stod i install-scriptet, så en ny app-udgave
+**krævede** en ny rune. Andreas skulle derfor gennem panelets to trin, hent runen igen og
+tryk Opdater, ved hver eneste udgivelse. For at flytte ét tal i en YAML.
+
+Nu gør serveren det selv. `app/kilde.js` kører fra `startup`, før serveren starter:
+**en genstart er opdateringen.**
+
+### Runen bliver en startsnor
+
+Det bærende valg er at skille de to tal ad. `APP_VERSION` er koden og bumpes ved hver
+udgivelse; `RUNE_VERSION` er runen og bumpes **kun**, når YAML'en selv ændrer sig.
+
+Gør man ikke det, bumper build'et runen ved hver udgivelse, og så er Andreas tilbage ved
+panelets to trin — hele pointen tabt. Det er ikke en teoretisk risiko: det ville ske af
+sig selv, hvis de to tal blev ved med at være ét.
+
+`RUNE_VERSION` er også den tag, install-scriptet henter **første** gang. Den behøver ikke
+være den nyeste — første opstart henter alligevel det, `KODE_VERSION` peger på — men den
+skal være en udgave, der **indeholder `kilde.js`**. Peger startsnoren længere tilbage,
+henter en frisk installation kode uden `kilde.js`, og så opdaterer en genstart aldrig
+mere. Serveren ville køre; den ville bare stå stille for altid. Derfor er
+`FOERSTE_SELVHENTENDE = 47` en konstant i koden og en prøve i suiten, ikke en note.
+
+### `KODE_VERSION` er tom som standard
+
+**Tom = nyeste.** Ordene `seneste` og `latest` godtages stadig, men standarden for »gør
+det normale« skal være **ingenting**: et felt, der *skal* udfyldes for at opføre sig
+almindeligt, læser man som en indstilling, nogen har taget — og så spekulerer man på,
+hvad »seneste« mon dækker over.
+
+Mønsteret er `^([0-9]+|seneste|latest)?$`. Spørgsmålstegnet er ikke pynt: uden det kan
+den tomme standard ikke gemmes i panelet. Og mønsteret afviser `v47` og `47.1` allerede
+i feltet frem for at lade `kilde.js` tolke noget, brugeren ikke skrev.
+
+Vejen tilbage fra en dårlig udgivelse bliver dermed: skriv tallet, genstart. Frem igen:
+tøm feltet, genstart.
+
+### De fem fælder, mekanikken er bygget udenom
+
+**1 · GitHub sorterer tags alfabetisk.** `v9` står efter `v80`. Tager man `liste[0]` fra
+`/repos/:ejer/:repo/tags`, ruller hver server tilbage til `v9` ved næste genstart. Hele
+listen regnes igennem (`/^v(\d+)$/`, tag max), og der bladres med `per_page=100&page=N`,
+til en side ikke er fuld. Sagu er på v46 og passerer punktet, hvor fejlen bider, ved
+næste udgivelse.
+
+**2 · Der pakkes ud *ved siden af* `app/`, ikke i `/tmp`.** `mv` mellem to filsystemer er
+en kopi, og en kopi kan afbrydes på midten; to `rename` inden for samme filsystem kan
+ikke. Den gamle app ligger under `.sagu-gammel` mellem de to omdøbninger, og
+`startup`-kommandoen sætter den tilbage, hvis containeren dør præcis dér. Uden det trin
+ville et dårligt sekund efterlade en container **uden `app/`** — og uden `app/` er der
+heller ingen `kilde.js` til at hente en ny. Det er den eneste rigtigt farlige brik i
+hele mekanikken; alt andet må fejle.
+
+**3 · Alt ender med `exit 0`.** Kan GitHub ikke nås, starter serveren på den kode, der
+ligger. En netværksfejl må udsætte en opdatering — aldrig slukke for arkivet, som andre
+end Andreas læser gennem wikien. Derfor `node app/kilde.js || echo …` i `startup` og
+ikke `set -e`.
+
+**4 · Træet tjekkes, før der byttes.** Både at det *er* en hel Sagu (`server.js`,
+`public/index.html`, `public/app.js` og **`shared/`**) og at det udpakkede `index.html`
+bærer præcis det versionsstempel, taggen lover. `shared/` står med i listen med vilje:
+uden den **starter** serveren, og fejler først, når nogen søger eller gemmer — en server,
+der starter forkert, ligner en server, der virker. Og er en tag flyttet oven på en anden
+commit, byttes der ikke: hellere køre videre på det kendte end at starte noget, ingen kan
+navngive.
+
+**5 · `[fejl]` i en advarsel er en fælde.** Panelets watcher tæller `[fejl]`-linjer og
+sender en notifikation. Advarslerne herfra skriver derfor `[kode] advarsel: …` — »GitHub
+svarede ikke« er ikke en serverfejl, og det skal ikke ringe hver gang nettet blinker.
+
+### Mærkefilen — og hvorfor den har et fallback
+
+`app/.kode-version` (JSON: version, ønsket, hentet, kilde) skrives ved hvert bytte.
+Findes den ikke — og det gør den ikke på nogen server, der er installeret **før** denne
+ændring — læses tallet ud af `index.html`s `?v=`. Uden det fallback ville hver eneste
+eksisterende server hente koden igen ved første genstart, også når den allerede var den
+rigtige.
+
+`installeret()` giver `null`, ikke `0`, når ingen af de to veje virker. `null` betyder
+»jeg ved det ikke« og fører til en hentning; et mærke med version `0` ville se ud som en
+kendsgerning.
+
+### »Opdater Sagu« bruger `kilde.js`, når den findes
+
+Knappen må aldrig hente startsnorens tag, når appen allerede er længere fremme: v47 oven
+i v60 er en **nedgradering, ingen bad om**. Findes `app/kilde.js`, er den facit — den
+kender `KODE_VERSION` og henter præcis den udgave, en genstart ville hente. Startsnoren
+er kun redningen, hvis `app/` er væk eller er fra før v47.
+
+Om panelet templater `{{KODE_VERSION}}` ind i `update`-scriptets **tekst**, er
+**ubevist**. At variablerne når frem som env til `startup`, er derimod bevist, fordi
+`APP_NAME` allerede virker den vej. Scriptet prøver derfor skabelonen og falder tilbage
+til env, hvis den står utemplateret — så kan en låsning ikke tabes på en antagelse.
+
+### Invarianten »N steder, samme tal« er skiftet ud, ikke slettet
+
+Den gjaldt, så længe runen og appen fulgtes ad. Det gør de ikke længere, men de tre nye
+måder at komme galt af sted på rammer alle sammen **en, der installerer forfra** — og
+ikke nogen, der allerede kører. Derfor står de som prøver:
+
+- appens egne steder (`APP_VERSION`, `index.html`, `sw.js`) følges stadig ad
+- **alle** `refs/tags/vN` i runen peger på runens **egen** version
+- startsnoren er `>= FOERSTE_SELVHENTENDE`
+- `startup` redder `app/` **før** den henter, og henter **før** den starter serveren
+
+### Hvad der er prøvet, og hvad der ikke er
+
+Hentningen selv kræver GitHub og er derfor ikke i `tests/kilde.test.mjs`; alt det, der
+kan prøves uden net, er skilt ud i rene funktioner, og fjorten sabotager er set fælde
+dem. Selve turen er kørt end-to-end mod det rigtige GitHub fra en midlertidig mappe:
+v46 → låst til v45 (rigtig hentning, tjek og bytte, mærke skrevet, ingen rester),
+v9999 → 404 → advarsel → `app/` urørt og exit 0, tomt felt og felt slet ikke sat, og
+`v47` som vrøvl. Redningen er prøvet ved at fjerne `app/` og lade `.sagu-gammel` stå.
+
+**Den har endnu ikke overlevet en rigtig genstart i panelet på Hjorten.** Det er
+Andreas' prøve, og indtil den er kørt, er mekanikken bygget og målt — ikke bevist i
+drift.
