@@ -3453,6 +3453,54 @@ DOM-struktur dér — samme slags artefakt som den kendte med programmatisk ruln
 måtte findes ved at prøve oversættelsen mod de former, en *rigtig* browser laver. Alle tre
 er nu prøver, for vi ved ikke, hvilken browser der bliver brugt i morgen.
 
+## 39 · F31 · Tre huller, meldt fra brugen
+
+Fladen fra §38 virkede — men den havde arvet mindre, end jeg troede.
+
+### »Hvordan tilføjer jeg en ny blok?«
+
+Reglen »et tryk i noten begynder at skrive« har været der siden F13, men den åbner den
+**sidste** blok. Sluttede noten med en kodeblok eller en tabel, blev man afleveret i rå
+markdown, og der var ingen vej til en ny linje efter den. **Man kunne åbne det, der var —
+ikke tilføje noget.**
+
+Nu står der et felt under noten: *Add a block*. Det er dæmpet, til man nærmer sig — en
+knap, der lyser under hver eneste note, tager plads i hovedet på noget, der ikke er en
+handling — men det **kan ses**, og det er pointen: en regel, man ikke kan se, findes ikke
+for den, der leder efter en måde at skrive videre på.
+
+Det krævede én generalisering: **en tom linje, man har bedt om at åbne, er en tom blok.**
+`blokke()` springer tomme linjer over, så den nye linje fandtes ikke i listen, og feltet
+lukkede med det samme. Undtagelsen for den tomme note fandtes allerede; den gælder nu
+enhver tom linje.
+
+### `/dmy`, `/hhmm` og `/now` — og `[[note-titel]]`
+
+Begge havde virket siden F27 og F3. Begge var bundet på det **rå** felts `input`, og den
+rige blok fik dem aldrig. Fejlen var tavs: der skete bare ingenting.
+
+Genvejene er nu en regel ved markøren, som live-formateringen — **samme bord**
+(`TEKSTGENVEJE`), så to lister ikke kan drive fra hinanden. Andreas bad samtidig om dem
+som knapper, og de er der nu: *Date*, *Time*, *Now*, tegnet af det samme bord, så en knap
+aldrig kan indsætte noget andet end genvejen.
+
+`[[…]]`-forslagene fik i stedet en **adapter**. Panelet, søgningen og tasterne findes
+allerede i `p6_blokke` — de er bare skrevet til et `<textarea>`. En kopi ville være to
+steder at rette; adapteren ser ud som et felt, men arbejder på tekstknuden ved markøren.
+Så gælder en rettelse begge editorer.
+
+### To ting, målingen fangede
+
+**Knappen krævede en tekstknude.** `markoerTekst()` læser baglæns efter en genvej og
+skal derfor have tekst. En *knap* skal ikke: står markøren på en elementgrænse — lige
+efter et fedt ord — gjorde den ingenting, og stod den på selve feltet, lavede den et nyt
+afsnit. Den bruger nu `indsaetVedMarkoer()`, som virker uanset hvad markøren står i.
+
+**En sabotage ramte den forkerte forekomst.** `if (wikiTast(e)) return;` står to steder —
+i det rå felt og i den rige blok — og en `replace(…, 1)` fjernede det første. Sabotagen
+ændrede filen og gav alligevel grønt. *En sabotage skal ramme dét sted, prøven handler
+om;* i en fil med to editorer er »den første forekomst« ikke godt nok.
+
 ### Hvad der venter
 
 Ingenting bestemt. Fladen dækker det, den skal.

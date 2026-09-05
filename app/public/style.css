@@ -1218,6 +1218,8 @@ kbd {
   cursor: pointer;
 }
 .vt-knap:hover { background: var(--accent-soft); color: var(--text); }
+.vt-skel { width: 1px; margin: 3px 4px; background: var(--border); }
+.vt-tekst { font-family: inherit; font-size: 12.5px; letter-spacing: .02em; }
 .vt-knap b, .vt-knap i, .vt-knap u { font-style: normal; font-weight: 700; }
 .vt-knap i { font-style: italic; font-weight: 500; }
 .vt-knap u { font-weight: 500; }
@@ -1300,6 +1302,34 @@ body.solo #pageHost { max-width: 760px; }
  * vinduet en blindgyde, saa snart man klikker paa et maerke og lander paa en
  * liste. Hintene er en huskeseddel, ikke en vej.
  */
+/* ------------------------------------------------ tilfoej en blok (F31) --
+ *
+ * Feltet under noten. Det er DAEMPET, til man naermer sig: en note er til at
+ * laese, og en knap, der lyser under hver eneste note, ville tage plads i
+ * hovedet paa noget, der ikke er en handling. Men det skal kunne SES - en
+ * regel, man ikke kan se, findes ikke.
+ */
+.ny-blok {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: text;
+  opacity: .35;
+  transition: opacity .12s, background .12s;
+}
+.ny-blok:hover, .ny-blok:focus-visible { opacity: 1; background: var(--card-hover); }
+.ny-blok svg { flex: none; }
+
 body.solo .omni-legend { display: none; }
 body.solo .topbar { margin-bottom: 12px; }
 /* Vaerktoejerne bliver - man skal kunne komme UD igen. En udvej skal virke

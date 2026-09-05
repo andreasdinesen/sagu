@@ -99,6 +99,26 @@ test('tabeller aabner RAAT - og det er et valg, ikke et hul', () => {
   assert.ok(!RIGE_BLOKKE.has('tabel'));
 });
 
+test('der er en vej til at TILFOEJE en blok - ikke kun til at aabne én', () => {
+  /*
+   * »Hvordan tilfoejer jeg en ny block, naar jeg kun kan klikke ind i en
+   * allerede eksisterende tekstblok?« (Andreas, 2026-09-05).
+   *
+   * Reglen »et tryk i noten begynder at skrive« aabnede den SIDSTE blok - og
+   * sluttede noten med en kodeblok eller en tabel, blev man afleveret i raa
+   * markdown uden vej til en ny linje efter den. Feltet skal desuden kunne
+   * SES: en regel, man ikke kan se, findes ikke for den, der leder.
+   */
+  assert.match(p4, /function nyBlokTilSidst/);
+  assert.match(p4, /class="ny-blok"/, 'feltet tegnes ikke');
+  assert.match(p4, /Add a block/, 'feltet siger ikke, hvad det goer');
+  // ... og en TOM blok, man har bedt om at aabne, skal kunne aabnes.
+  assert.match(p4, /!String\(linjer\[editor\.aabenBlok\] \|\| ''\)\.trim\(\)/,
+    'en tom linje regnes ikke som en blok - »tilfoej« ville lukke med det samme');
+  // Ingen knap paa en note, man kun maa laese.
+  assert.match(p4, /maaRette\(n\) \? nyBlokFeltHtml\(\) : ''/);
+});
+
 test('hele-noten-kontakten siger, hvad man giver AFKALD paa', () => {
   /*
    * »Mine noter bliver stadigvaek lavet om til markdown naar jeg proever at
@@ -119,6 +139,57 @@ test('hele-noten-kontakten siger, hvad man giver AFKALD paa', () => {
     'teksten siger ikke, at afsnittet er renderet');
   assert.match(tekst, /give\s*\n?\s*up|giver du afkald/i,
     'teksten siger ikke, hvad man giver afkald paa');
+});
+
+/* ============================ det raa felts hjaelpere, i den rige blok === */
+
+test('genvejene og wikilinks er BUNDET i den rige blok', () => {
+  /*
+   * »Nu hvor min /now m.m. ikke virker« og »min [[link til anden]] virker
+   * heller ikke mere« (Andreas, 2026-09-05). Samme aarsag: begge hjaelpere
+   * var bundet paa det RAA felts `input`, og den rige blok fik dem aldrig.
+   * En proeve paa selve bindingen, for fejlen var tavs - der skete bare
+   * ingenting.
+   */
+  const i = p4.indexOf('function bindRigBlok');
+  const stykke = p4.slice(i, p4.indexOf('\n}\n', i));
+  assert.match(stykke, /rigTekstgenvej\(vaert\)/, 'genvejene er ikke bundet');
+  assert.match(stykke, /opdaterWikiForslag\(a\)/, 'wikilink-forslagene er ikke bundet');
+  assert.match(stykke, /if \(wikiTast\(e\)\) return;/,
+    'forslagslisten faar ikke tasterne foerst - Escape ville lukke hele blokken');
+});
+
+test('genvejene bruger SAMME bord som det raa felt', () => {
+  /*
+   * To lister ville drive fra hinanden: den dag nogen tilfoejer en genvej,
+   * skal den virke begge steder uden at nogen husker det.
+   */
+  assert.match(p4, /for \(const g of TEKSTGENVEJE\)[\s\S]{0,400}byttVedMarkoer/,
+    'rigTekstgenvej loeber ikke TEKSTGENVEJE igennem');
+  const knapper = p4.slice(p4.indexOf('const DATOKNAPPER'), p4.indexOf('const DATOKNAPPER') + 300);
+  for (const ord of ['/dmy', '/hhmm', '/now']) assert.ok(knapper.includes(ord), ord);
+  assert.match(p4, /TEKSTGENVEJE\.find\(\(x\) => x\.ord === o\.ord\)/,
+    'knapperne tegnes ikke af TEKSTGENVEJE - de kunne indsaette noget andet end genvejen');
+});
+
+test('genvejen kraever et mellemrum foran - ellers rammer den midt i et ord', () => {
+  // `og/dmy` maa ikke blive til en dato. Samme regel som i det raa felt.
+  assert.match(p4, /if \(tegnFoer !== undefined && !\/\\s\/\.test\(tegnFoer\)\) continue;/);
+});
+
+test('dato-knappen virker, ogsaa naar markoeren staar paa selve feltet', () => {
+  /*
+   * Foerste udgave brugte `markoerTekst()`, som kraever en TEKSTKNUDE. Staar
+   * markoeren paa en elementgraense - fx lige efter et fedt ord - gjorde
+   * knappen ingenting. Og stod den paa selve feltet, lavede den et nyt
+   * afsnit i stedet for at skrive datoen, hvor man stod.
+   */
+  assert.match(p4, /function indsaetVedMarkoer/);
+  assert.match(p4, /if \(r\.startContainer === vaert\)/,
+    'markoeren paa selve feltet flyttes ikke ind i afsnittet');
+  const i = p4.indexOf("linje.querySelectorAll('[data-genvej]')");
+  const stykke = p4.slice(i, i + 500);
+  assert.match(stykke, /indsaetVedMarkoer/, 'knappen bruger stadig den, der kraever en tekstknude');
 });
 
 test('tjeklister med to mellemrum bestaar porten', () => {

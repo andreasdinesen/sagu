@@ -3790,7 +3790,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 55;
+const APP_VERSION = 56;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -8923,6 +8923,27 @@ function konfliktHtml() {
  * note aabnes - den forrige blev bare staaende. Derfor guarden og faldet
  * tilbage til raa tekst (Verdandes spec, punkt 8 i deres faeldeliste).
  */
+/*
+ * Feltet under noten, hvor man tilfoejer en blok (F31).
+ *
+ * Det skal KUNNE SES. Reglen »et tryk i noten begynder at skrive« har vaeret
+ * der siden F13, men den aabner den SIDSTE blok - og en regel, man ikke kan
+ * se, findes ikke for den, der leder efter en maade at skrive videre paa.
+ * Feltet siger derfor, hvad det goer, naar man er i naerheden af det.
+ *
+ * Det staar ikke, naar en blok er aaben: saa er man allerede ved at skrive,
+ * og Enter laver den naeste blok.
+ */
+function nyBlokFeltHtml() {
+  return `<button type="button" class="ny-blok" id="nyBlok" tabindex="-1"
+    aria-label="Add a block at the end">${icon('plus', 15)}<span>Add a block</span></button>`;
+}
+
+function bindNyBlokFelt(host) {
+  const k = host.querySelector('#nyBlok');
+  if (k) k.addEventListener('click', (e) => { e.stopPropagation(); nyBlokTilSidst(); });
+}
+
 function tegnKrop() {
   const host = document.getElementById('noteBody');
   const n = editor.note;
@@ -8937,7 +8958,9 @@ function tegnKrop() {
 
   try {
     const { html } = saguMarkdown.render(n.body, renderValg());
-    host.innerHTML = html || '<p class="tom-note meta saetning">Click here to start writing.</p>';
+    host.innerHTML = (html || '<p class="tom-note meta saetning">Click here to start writing.</p>')
+      + (maaRette(n) ? nyBlokFeltHtml() : '');
+    bindNyBlokFelt(host);
     pyntKodeblokke(host);
     pyntInlineKode(host);
     bindTjek(host);
@@ -9115,8 +9138,19 @@ function tegnMedAabenBlok(host, n) {
    *
    * En tom foerste blok er derfor et gyldigt maal, ikke et fravaer.
    */
+  /*
+   * En TOM linje, man har bedt om at aabne, er en tom blok.
+   *
+   * Her stod kun undtagelsen for en tom note (`aabenBlok === 0`). Men fra
+   * F31 kan man ogsaa tilfoeje en blok til SIDST, og den nye linje er
+   * netop tom - `blokke()` springer tomme linjer over, saa den findes ikke
+   * i listen. Uden den her gren lukkede feltet med det samme, og »tilfoej en
+   * blok« gjorde ingenting.
+   */
   const b = blokke.find((x) => x.fra === editor.aabenBlok)
-    || (!blokke.length && editor.aabenBlok === 0 ? { fra: 0, til: 0 } : null);
+    || (editor.aabenBlok !== null && editor.aabenBlok < linjer.length
+      && !String(linjer[editor.aabenBlok] || '').trim()
+      ? { fra: editor.aabenBlok, til: editor.aabenBlok, slags: 'afsnit' } : null);
   if (!b) { editor.aabenBlok = null; tegnKrop(); return; }
 
   const foer = linjer.slice(0, b.fra).join('\n');
@@ -9195,7 +9229,9 @@ function tegnMedAabenBlok(host, n) {
   if (rigt) {
     const vaert = document.getElementById('blokRigt');
     if (!vaert) return;
-    vaert.innerHTML = del(raa);
+    // En TOM blok skal have et afsnit at skrive i - et helt tomt
+    // `contenteditable` giver markoeren ingen plads at staa.
+    vaert.innerHTML = del(raa) || '<p></p>';
     vaert.setAttribute('contenteditable', 'true');
     vaert.setAttribute('spellcheck', 'true');
     bindRigBlok(vaert, b);
@@ -9376,11 +9412,32 @@ const VAERKTOEJER = [
   { goer: 'code', navn: 'Code', tast: '', vis: '&lt;/&gt;' },
 ];
 
+/*
+ * Dato og tid som KNAPPER (Andreas bad om det 2026-09-05).
+ *
+ * De samme tre, som `/dmy`, `/hhmm` og `/now` skriver - og de tegnes af
+ * SAMME bord, saa en knap aldrig kan indsaette noget andet end genvejen.
+ * Genvejene virker stadig; knapperne er for dem, der ikke husker ordene.
+ */
+const DATOKNAPPER = [
+  { ord: '/dmy', vis: 'Date' },
+  { ord: '/hhmm', vis: 'Time' },
+  { ord: '/now', vis: 'Now' },
+];
+
 function vaerktoejslinjeHtml() {
+  const genvej = (o) => {
+    const g = TEKSTGENVEJE.find((x) => x.ord === o.ord);
+    return g ? `<button type="button" class="vt-knap vt-tekst" data-genvej="${g.ord}"
+      tabindex="-1" title="${esc(g.navn)} (${esc(g.ord)}) — ${esc(g.eksempel)}"
+      aria-label="${esc(g.navn)}">${o.vis}</button>` : '';
+  };
   return `<div class="blok-vaerktoej" id="blokVaerktoej">${VAERKTOEJER.map((v) => `
     <button type="button" class="vt-knap" data-goer="${v.goer}" tabindex="-1"
       title="${esc(v.navn)}${v.tast ? ` (${v.tast})` : ''}"
-      aria-label="${esc(v.navn)}">${v.vis}</button>`).join('')}</div>`;
+      aria-label="${esc(v.navn)}">${v.vis}</button>`).join('')}
+    <span class="vt-skel" aria-hidden="true"></span>
+    ${DATOKNAPPER.map(genvej).join('')}</div>`;
 }
 
 /**
@@ -9473,6 +9530,127 @@ const LIVE = [
   { re: /_([^_\n]+)_$/, tag: 'em', foran: '_', md: '_' },
   { re: /`([^`\n]+)`$/, tag: 'code', foran: '`' },
 ];
+
+/** Erstat teksten lige foer markoeren med noget andet. Markoeren ender efter. */
+function byttVedMarkoer(knude, start, slut, tekst) {
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(knude, start);
+  r.setEnd(knude, slut);
+  r.deleteContents();
+  const t = document.createTextNode(tekst);
+  r.insertNode(t);
+  const efter = document.createRange();
+  efter.setStartAfter(t);
+  efter.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(efter);
+  return t;
+}
+
+/*
+ * Skriv tekst ind, hvor markoeren staar - uanset HVAD den staar i.
+ *
+ * `markoerTekst()` nedenfor kraever en tekstknude, fordi den skal laese
+ * BAGLAENS efter en genvej. En knap skal ikke: den skal virke, ogsaa naar
+ * markoeren staar paa en elementgraense - fx lige efter et fedt ord, hvor
+ * `anchorNode` er `<p>`'et og ikke tekst. Foerste udgave brugte
+ * `markoerTekst()` til begge, og saa gjorde dato-knapperne ingenting dér.
+ */
+function indsaetVedMarkoer(vaert, tekst) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !vaert.contains(sel.anchorNode)) return false;
+  const r = sel.getRangeAt(0);
+  /*
+   * Staar markoeren paa SELVE feltet - altsaa uden for afsnittet - ville et
+   * indsat tekstnode blive en blok for sig, og knappen lavede et nyt afsnit
+   * i stedet for at skrive datoen dér, hvor man stod. Flyt ind i det sidste
+   * element i stedet.
+   */
+  if (r.startContainer === vaert) {
+    const sidste = vaert.lastElementChild;
+    if (sidste) {
+      r.selectNodeContents(sidste);
+      r.collapse(false);
+    }
+  }
+  r.deleteContents();
+  const t = document.createTextNode(tekst);
+  r.insertNode(t);
+  const efter = document.createRange();
+  efter.setStartAfter(t);
+  efter.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(efter);
+  return true;
+}
+
+/** Tekstknuden og forskydningen ved markoeren - eller null. */
+function markoerTekst(vaert) {
+  const sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.rangeCount) return null;
+  const knude = sel.anchorNode;
+  if (!knude || knude.nodeType !== 3 || !vaert.contains(knude)) return null;
+  return { knude, pos: sel.anchorOffset };
+}
+
+/*
+ * `/dmy`, `/hhmm` og `/now` i den RIGE blok (F31).
+ *
+ * De har virket i det raa felt siden F27, men `byttedeTekstgenvej()` er
+ * skrevet til et `<textarea>` (`setRangeText`), og den rige blok fik den
+ * aldrig. »Nu hvor min /now m.m. ikke virker« - Andreas, 2026-09-05. Samme
+ * bord, samme regler; kun udskiftningen er en anden.
+ */
+function rigTekstgenvej(vaert) {
+  const m = markoerTekst(vaert);
+  if (!m) return false;
+  const foer = m.knude.data.slice(0, m.pos);
+  for (const g of TEKSTGENVEJE) {
+    if (!foer.endsWith(g.ord)) continue;
+    // Kun ved linjestart eller efter et mellemrum - ellers rammer den midt i
+    // et ord som `og/dmy`. Samme regel som i det raa felt.
+    const tegnFoer = foer[foer.length - g.ord.length - 1];
+    if (tegnFoer !== undefined && !/\s/.test(tegnFoer)) continue;
+    byttVedMarkoer(m.knude, m.pos - g.ord.length, m.pos, g.lav(new Date()));
+    return true;
+  }
+  return false;
+}
+
+/*
+ * `[[note-titel]]`-forslagene i den rige blok (F31).
+ *
+ * Panelet, soegningen og tasterne findes allerede (p6_blokke) - de er bare
+ * skrevet til et `<textarea>`. I stedet for en kopi faar de en ADAPTER, der
+ * ser ud som et felt, men arbejder paa tekstknuden ved markoeren. Saa er der
+ * ét sted, der bestemmer, hvordan forslagene opfoerer sig - og den dag nogen
+ * retter dem, gaelder rettelsen begge editorer.
+ */
+function wikiAdapter(vaert, b) {
+  const m = markoerTekst(vaert);
+  if (!m) return null;
+  const knude = m.knude;
+  return {
+    get value() { return knude.data; },
+    set value(v) { knude.data = v; },
+    selectionStart: m.pos,
+    setSelectionRange(pos) {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.setStart(knude, Math.min(pos, knude.data.length));
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    },
+    // Panelet indsaettes ved SIDEN AF feltet - ikke inde i det. Ellers ville
+    // forslagene blive en del af den tekst, man er ved at skrive.
+    get parentNode() { return vaert.parentNode; },
+    get nextSibling() { return vaert.nextSibling; },
+    dispatchEvent() { gemRigBlok(vaert, b); },
+    focus() { vaert.focus(); },
+  };
+}
 
 function liveFormatering(vaert) {
   const sel = window.getSelection();
@@ -9592,13 +9770,21 @@ function bindRigBlok(vaert, b) {
   sel.addRange(r);
 
   vaert.addEventListener('input', () => {
+    // Genvejene FOERST: `/now` skal blive til en dato, foer live-reglerne
+    // kigger paa den, ellers kunne et `*` i formatet blive til kursiv.
+    rigTekstgenvej(vaert);
     liveFormatering(vaert);
     gemRigBlok(vaert, b);
+    const a = wikiAdapter(vaert, b);
+    if (a) opdaterWikiForslag(a); else lukWikiForslag();
   });
 
   vaert.addEventListener('paste', (e) => indsaetRent(e, vaert, b));
 
   vaert.addEventListener('keydown', (e) => {
+    // Forslagslisten faar tasterne FOERST, naar den er aaben - ellers lukker
+    // Escape hele blokken i stedet for kun listen.
+    if (wikiTast(e)) return;
     if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault(); e.stopPropagation(); lukBlok(); return;
@@ -9617,12 +9803,22 @@ function bindRigBlok(vaert, b) {
     setTimeout(() => {
       const aktiv = document.activeElement;
       if (aktiv && (aktiv.id === 'blokRigt' || aktiv.closest('#blokVaerktoej'))) return;
+      lukWikiForslag();
       lukBlok();
     }, 0);
   });
 
   const linje = document.getElementById('blokVaerktoej');
   if (linje) {
+    linje.querySelectorAll('[data-genvej]').forEach((k) => {
+      k.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const g = TEKSTGENVEJE.find((x) => x.ord === k.dataset.genvej);
+        if (!g) return;
+        if (indsaetVedMarkoer(vaert, g.lav(new Date()))) gemRigBlok(vaert, b);
+      });
+    });
     linje.querySelectorAll('[data-goer]').forEach((k) => {
       // `mousedown` + preventDefault, ikke `click`: et klik ville tage fokus
       // fra teksten, og `blur` lukker blokken - saa var markeringen vaek,
@@ -9664,6 +9860,37 @@ function aabnSidste() {
     return;
   }
   aabnBlok(b[b.length - 1].fra);
+}
+
+/*
+ * Tilfoej en blok til sidst i noten (F31).
+ *
+ * »Hvordan tilfoejer jeg en ny block, naar jeg kun kan klikke ind i en
+ * allerede eksisterende tekstblok?« (Andreas, 2026-09-05).
+ *
+ * Det var et rigtigt hul. Man kunne aabne det, der VAR, og trykke Enter inde
+ * i det - men sluttede noten med en kodeblok eller en tabel, blev man
+ * afleveret i raa markdown i stedet, og der var ingen vej til en ny linje
+ * efter den.
+ *
+ * Er den sidste blok allerede tom, aabnes DEN frem for at stable tomme
+ * afsnit oven paa hinanden: to tryk maa ikke give to tomme afsnit.
+ */
+function nyBlokTilSidst() {
+  if (!maaRette(editor.note)) return;
+  const krop = String(editor.note.body || '');
+  const linjer = krop.replace(/\s+$/, '').split('\n');
+  const tom = linjer.length === 1 && !linjer[0].trim();
+  if (tom) {
+    editor.note.body = '\n';
+    editor.aabenBlok = 0;
+    tegnKrop();
+    return;
+  }
+  editor.note.body = `${linjer.join('\n')}\n\n`;
+  editor.aabenBlok = linjer.length + 1;
+  markerBeskidt();
+  tegnKrop();
 }
 
 /**
