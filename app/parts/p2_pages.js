@@ -781,11 +781,12 @@ async function sideSettings() {
     <label class="switch">
       <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
       <span>Click a line to edit the whole note as markdown</span></label>
-    <p class="meta saetning">Sagu normally opens just the paragraph you clicked, with the rest of
-    the note still rendered around it — good for changing a sentence. With this on, a click opens
-    the <strong>whole</strong> note as raw markdown instead, with the cursor at the line you
-    clicked. Better for moving things around, fixing a table, or cutting across paragraphs.
-    <strong>Esc</strong> closes either way.</p>
+    <p class="meta saetning">Normally a click opens just the paragraph you clicked, and it stays
+    <strong>rendered while you write in it</strong> — images, bold text and links keep looking
+    like themselves, with a small toolbar above. With this on, a click opens the
+    <strong>whole</strong> note as raw markdown instead, with the cursor at the line you clicked.
+    Better for moving things around, fixing a table, or cutting across paragraphs — but you give
+    up the rendered editor while it is on. <strong>Esc</strong> closes either way.</p>
   </div>
 
 

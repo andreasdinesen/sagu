@@ -3755,7 +3755,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -6027,11 +6027,12 @@ async function sideSettings() {
     <label class="switch">
       <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
       <span>Click a line to edit the whole note as markdown</span></label>
-    <p class="meta saetning">Sagu normally opens just the paragraph you clicked, with the rest of
-    the note still rendered around it — good for changing a sentence. With this on, a click opens
-    the <strong>whole</strong> note as raw markdown instead, with the cursor at the line you
-    clicked. Better for moving things around, fixing a table, or cutting across paragraphs.
-    <strong>Esc</strong> closes either way.</p>
+    <p class="meta saetning">Normally a click opens just the paragraph you clicked, and it stays
+    <strong>rendered while you write in it</strong> — images, bold text and links keep looking
+    like themselves, with a small toolbar above. With this on, a click opens the
+    <strong>whole</strong> note as raw markdown instead, with the cursor at the line you clicked.
+    Better for moving things around, fixing a table, or cutting across paragraphs — but you give
+    up the rendered editor while it is on. <strong>Esc</strong> closes either way.</p>
   </div>
 
 

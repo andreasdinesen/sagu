@@ -99,6 +99,28 @@ test('tabeller aabner RAAT - og det er et valg, ikke et hul', () => {
   assert.ok(!RIGE_BLOKKE.has('tabel'));
 });
 
+test('hele-noten-kontakten siger, hvad man giver AFKALD paa', () => {
+  /*
+   * »Mine noter bliver stadigvaek lavet om til markdown naar jeg proever at
+   * skrive i en« (Andreas, 2026-09-05). Der var intet i stykker: kontakten
+   * »Click a line to edit the whole note as markdown« var slaaet til, og den
+   * gaar UDEN OM blok-editoren.
+   *
+   * Teksten ved siden af sagde bare, at Sagu »normally opens just the
+   * paragraph you clicked« - den naevnte ikke, at afsnittet nu er RENDERET.
+   * Man kunne altsaa slaa den rendererede editor fra uden at vide, at det var
+   * dét, man gjorde. En kontakt skal sige, hvad den koster.
+   */
+  const p2 = readFileSync(new URL('../app/parts/p2_pages.js', import.meta.url), 'utf8');
+  const i = p2.indexOf('Click a line to edit the whole note as markdown');
+  assert.ok(i > -1, 'kontakten findes ikke laengere');
+  const tekst = p2.slice(i, i + 900);
+  assert.match(tekst, /rendered while you write in it/i,
+    'teksten siger ikke, at afsnittet er renderet');
+  assert.match(tekst, /give\s*\n?\s*up|giver du afkald/i,
+    'teksten siger ikke, hvad man giver afkald paa');
+});
+
 test('tjeklister med to mellemrum bestaar porten', () => {
   // Syv af ni af Andreas' tjeklister ser saadan ud.
   const kilde = '- [x]  Kaffe\n- [ ]  Filtre';
