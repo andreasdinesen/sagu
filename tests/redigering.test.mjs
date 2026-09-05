@@ -58,6 +58,21 @@ const KORPUS = [
   'stjerne uden makker * og understreg _ alene',
   'https://x.com/v3/__https://y.dk/a__hale',
   'blandet **fed** `kode` [link](https://a.dk) og https://b.dk til sidst',
+
+  /* --- blok-niveau (F30, anden etape) --- */
+  '- et punkt\n- et til',
+  '* stjerne som punkttegn\n* og en til',
+  '- a\n  - b\n    - c\n- d',
+  '\t\t- med tabulatorer\n\t\t- og to',
+  '    * dybt indrykket med stjerne',
+  '1. foerste\n2. anden',
+  '1. et\n2. to\n   - en usorteret under en sorteret',
+  '- [ ] en opgave\n- [x] en klaret',
+  '- [X] stort X betyder det samme, men stod der',
+  '- [ ] med **fed** og et [link](https://a.dk)',
+  '> et citat\n> paa to linjer',
+  '> [!NOTE]\n> en callout',
+  '> [!WARNING]\n> pas paa\n> paa to linjer',
 ];
 
 test('rundturen er EKSAKT for hver konstruktion, appen kan rendere', () => {
@@ -174,4 +189,36 @@ test('billedets data-md vinder over src - ellers taber noten sin vedhaeftning', 
 
 test('<br> bliver til et linjeskift, ikke til ingenting', () => {
   assert.equal(R.tilMarkdown('<p>et<br>to</p>'), 'et\nto');
+});
+
+/* ============================================ blok-niveau ============== */
+
+test('listens punkter er FLADE - hvert punkt baerer sit eget praefiks', () => {
+  /*
+   * Rendereren bygger dybden med `<ul><ul><li>` - uden et `<li>` imellem -
+   * og foerste udgave af oversaettelsen kiggede kun paa `<li>`-boern. En liste
+   * med indrykning gav derfor en TOM streng: punkterne laa et niveau
+   * laengere nede, end der blev kigget.
+   */
+  assert.equal(
+    R.tilMarkdown('<div class="liste"><ul><ul><li data-md="\t\t- ">tab</li></ul></ul></div>'),
+    '\t\t- tab');
+});
+
+test('en klasse slaas op som et HELT ord', () => {
+  /*
+   * `\bcallout\b` matchede ogsaa midt i `callout-krop`, saa kroppen blev
+   * laest som endnu en callout: `> [!NOTE]\n> > [!CALLOUT-KROP]`. Klasser er
+   * en liste af ord og skal slaas op som ord.
+   */
+  const html = md.render('> [!NOTE]\n> en callout').html.trim();
+  assert.match(html, /callout-krop/, 'forudsaetningen holder ikke - ret proeven');
+  assert.equal(R.tilMarkdown(html), '> [!NOTE]\n> en callout');
+});
+
+test('fluebenets tilstand laeses af aria-checked, ikke af tegnet indeni', () => {
+  // Det UAFKRYDSEDE flueben er en TOM knap - der er ikke noget tegn at laese.
+  const html = md.render('- [ ] aaben\n- [x] lukket').html.trim();
+  assert.equal(R.tilMarkdown(html), '- [ ] aaben\n- [x] lukket');
+  assert.match(html, /aria-checked="false"/);
 });

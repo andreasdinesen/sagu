@@ -182,8 +182,13 @@ test('de blokke, F1 lover, virker', () => {
   assert.match(html, /<em>kursiv<\/em>/);
   assert.match(html, /<del>streget<\/del>/);
   assert.match(html, /<code>kode<\/code>/);
-  assert.match(html, /<ul><li>punkt et<\/li><li>punkt to<ul><li>indrykket/);
-  assert.match(html, /<ol><li>foerste<\/li><li>anden<\/li><\/ol>/);
+  // `<li>` baerer sit raa praefiks i `data-md` fra F30 - punkttegnet og
+  // indrykningen, som de STOD, saa en liste kan redigeres renderet og skrives
+  // tilbage uaendret. Proeven maaler strukturen, ikke attributterne.
+  assert.match(html, /<ul><li[^>]*>punkt et<\/li><li[^>]*>punkt to<ul><li[^>]*>indrykket/);
+  assert.match(html, /<ol><li[^>]*>foerste<\/li><li[^>]*>anden<\/li><\/ol>/);
+  assert.match(html, /<li data-md="- ">punkt et/, 'praefikset skal med');
+  assert.match(html, /<li data-md="  - ">indrykket/, 'indrykningen skal med');
   assert.match(html, /<blockquote[^>]*>et citat<\/blockquote>/);
   assert.match(html, /<hr[^>]*>/);
   assert.match(html, /<pre[^>]*><code class="language-js">const x = 1;<\/code><\/pre>/);

@@ -1763,10 +1763,22 @@ function tegnMedAabenBlok(host, n) {
    * Den er `tabindex="-1"`: Tab fra skrivefeltet skal foere videre i teksten,
    * ikke ind i en hjaelpeknap.
    */
+  /*
+   * Rig eller raa? (F30)
+   *
+   * `kanRedigereRigt()` er porten: kun en blok, der kan skrives tilbage til
+   * NOEJAGTIG den markdown, den kom af, redigeres renderet. Alt andet - kode,
+   * tabeller, en blok med raa HTML - aabner raat som altid. Saa kan en fejl i
+   * oversaettelsen aldrig omskrive tekst i tavshed.
+   */
+  const rigt = kanRedigereRigt(raa, b);
   host.innerHTML = `${del(foer)}
-    <div class="blok-redigering">
-      <textarea class="blok-felt" id="blokFelt" spellcheck="false"
-        rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>
+    <div class="blok-redigering${rigt ? ' rig' : ''}">
+      ${rigt ? vaerktoejslinjeHtml() : ''}
+      ${rigt
+    ? '<div class="blok-felt rig-felt" id="blokRigt"></div>'
+    : `<textarea class="blok-felt" id="blokFelt" spellcheck="false"
+        rows="${Math.max(1, raa.split('\n').length)}">${esc(raa)}</textarea>`}
       <button class="blok-hjaelp" id="blokHjaelp" type="button" tabindex="-1"
         aria-label="How to write this" title="How to write this">?</button>
     </div>
@@ -1793,6 +1805,25 @@ function tegnMedAabenBlok(host, n) {
     hj.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); });
     hj.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); visSyntaksPanel(); },
       { passive: false });
+  }
+
+  /*
+   * Den rige blok fyldes FOERST HER - efter `pynt*` og `bind*` ovenfor.
+   *
+   * De pynter alt, hvad de finder i `host`: kopiknapper paa kodestumper,
+   * greb i margenen, tjekbokse. Inde i noget, man REDIGERER, hoerer de ikke
+   * til - en kopiknap ville staa i teksten og blive skrevet med tilbage som
+   * ord. At fylde feltet bagefter er billigere end en undtagelse i fem
+   * funktioner, og det kan ikke glemmes i den ene.
+   */
+  if (rigt) {
+    const vaert = document.getElementById('blokRigt');
+    if (!vaert) return;
+    vaert.innerHTML = del(raa);
+    vaert.setAttribute('contenteditable', 'true');
+    vaert.setAttribute('spellcheck', 'true');
+    bindRigBlok(vaert, b);
+    return;
   }
 
   const felt = document.getElementById('blokFelt');
@@ -1903,6 +1934,331 @@ function tegnMedAabenBlok(host, n) {
 function autoHoejde(felt) {
   felt.style.height = 'auto';
   felt.style.height = `${felt.scrollHeight}px`;
+}
+
+/* ==================================================================== F30
+ * Rig redigering: noten ser ud, som naar man laeser den - ogsaa mens man
+ * skriver i den.
+ *
+ * »Jeg vil gerne have et interface som viser det paa samme maade som naar man
+ * bare kigger paa vores noter. bare ogsaa naar man skriver i den. Det goer at
+ * billeder m.m. forbliver synlige« (Andreas, 2026-09-05).
+ *
+ * ── Porten ───────────────────────────────────────────────────────────────
+ *
+ * En blok redigeres kun renderet, hvis den kan skrives TILBAGE til noejagtig
+ * den markdown, den kom af. Ellers aabner den raat, som altid. Maalt mod
+ * Andreas' 9.233 rigtige afsnit og overskrifter: 99,99 % bestaar
+ * (DESIGN.md §38). Sikkerhedsnettet er billigere end tilliden.
+ *
+ * ── Pr. BLOK, ikke pr. note ──────────────────────────────────────────────
+ *
+ * Hele noten som ét `contenteditable` ville betyde, at hvert tastetryk
+ * oversatte HELE noten tilbage - og en fejl dér omskriver tekst, man ikke har
+ * roert. Her kan en fejl kun ramme den blok, man staar i; resten beholder sin
+ * markdown byte for byte.
+ */
+
+/*
+ * De slags, hvor rundturen er MAALT mod Andreas' rigtige arkiv (DESIGN.md
+ * §38). Tallene er pr. bloktype, ikke et gennemsnit:
+ *
+ *   afsnit 100,0 %   overskrift 99,9 %   callout 100,0 %
+ *   liste   92,8 %   citat      98,4 %   tjekliste 100 % (lokalt)
+ *
+ * Kode staar med VILJE udenfor: kode SKAL vaere raa, ellers formaterer en
+ * kodeblok sit eget indhold, mens man skriver i den. Tabeller og `hr` er
+ * ikke lavet endnu - de aabner raat, og porten sikrer, at det ogsaa er dét,
+ * der sker, hvis en af de andre alligevel ikke kan skrives tilbage.
+ */
+const RIGE_BLOKKE = new Set(['afsnit', 'overskrift', 'liste', 'tjekliste', 'citat', 'callout']);
+
+function kanRedigereRigt(raa, b) {
+  if (!b || !RIGE_BLOKKE.has(b.slags)) return false;
+  if (typeof saguRedigering === 'undefined') return false;
+  try {
+    const html = saguMarkdown.render(raa, renderValg()).html.trim();
+    return saguRedigering.tilMarkdown(html) === raa;
+  } catch { return false; }
+}
+
+/*
+ * Vaerktoejslinjen staar ved BLOKKEN, ikke i notens vaerktoejsraekke.
+ *
+ * Samme begrundelse som hjaelpeknappen ved siden af: raekken i toppen er
+ * rullet vaek paa en telefon, netop naar man skriver. En knap skal vaere dér,
+ * hvor handlingen er.
+ *
+ * Ingen gennemstregning: Andreas bad udtrykkeligt om at lade den ud
+ * (2026-09-05), og en knap, ingen har bedt om, er en knap, der skal
+ * vedligeholdes.
+ */
+const VAERKTOEJER = [
+  { goer: 'strong', navn: 'Bold', tast: '⌘B', vis: '<b>B</b>' },
+  { goer: 'em', navn: 'Italic', tast: '⌘I', vis: '<i>I</i>' },
+  { goer: 'u', navn: 'Underline', tast: '⌘U', vis: '<u>U</u>' },
+  { goer: 'code', navn: 'Code', tast: '', vis: '&lt;/&gt;' },
+];
+
+function vaerktoejslinjeHtml() {
+  return `<div class="blok-vaerktoej" id="blokVaerktoej">${VAERKTOEJER.map((v) => `
+    <button type="button" class="vt-knap" data-goer="${v.goer}" tabindex="-1"
+      title="${esc(v.navn)}${v.tast ? ` (${v.tast})` : ''}"
+      aria-label="${esc(v.navn)}">${v.vis}</button>`).join('')}</div>`;
+}
+
+/**
+ * Er markoeren allerede inde i `tag` - og hvor?
+ *
+ * Bruges baade til at slaa fra igen og til at vise knappen som trykket ned.
+ */
+/**
+ * Er HELE markeringen inde i `tag`?
+ *
+ * `commonAncestorContainer` og ikke `startContainer`: med `startContainer`
+ * spurgte vi kun, om markeringen BEGYNDTE inde i tag'et. En markering fra
+ * »alfa« ind i et fedt »beta« svarede derfor nej og blev pakket ind én gang
+ * til - resultatet var `**alfa **beta******** gamma`, som hverken kunne
+ * laeses eller fortrydes (meldt af Andreas 2026-09-05).
+ */
+function omsluttendeTag(vaert, tag) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let n = sel.getRangeAt(0).commonAncestorContainer;
+  while (n && n !== vaert) {
+    if (n.nodeType === 1 && n.tagName.toLowerCase() === tag) return n;
+    n = n.parentNode;
+  }
+  return null;
+}
+
+/** Elementet vaek, indholdet bliver staaende paa dets plads. */
+function pakUd(el) {
+  const foraeldre = el.parentNode;
+  if (!foraeldre) return;
+  while (el.firstChild) foraeldre.insertBefore(el.firstChild, el);
+  foraeldre.removeChild(el);
+}
+
+/** Pak markeringen ind i `tag` - eller pak den ud igen, hvis den allerede er det. */
+function omslut(vaert, tag) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const alt = omsluttendeTag(vaert, tag);
+  if (alt) { pakUd(alt); return; }
+
+  const r = sel.getRangeAt(0);
+  const el = document.createElement(tag);
+  /*
+   * Intet markeret: knappen gaelder det, man skriver HEREFTER.
+   *
+   * Foer gjorde den ingenting, og saa kunne man vaelge fed, skrive - og faa
+   * almindelig tekst (meldt af Andreas 2026-09-05). Men det er netop den vej,
+   * man bruger en vaerktoejslinje: vaelg fed, skriv ordet. Et tomt element med
+   * markoeren indeni giver praecis det. Tomme rester ryddes i `gemRigBlok()`.
+   */
+  if (r.collapsed) {
+    r.insertNode(el);
+    const inde = document.createRange();
+    inde.setStart(el, 0);
+    inde.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(inde);
+    return;
+  }
+
+  el.appendChild(r.extractContents());
+  // Det SAMME tag inde i det nye ville give `**alfa **beta****`. Markeringen
+  // kan sagtens have taget et fedt stykke med; det skal bare vaere ÉT lag.
+  el.querySelectorAll(tag).forEach(pakUd);
+  r.insertNode(el);
+  // Markeringen skal blive staaende paa det, man lige formaterede.
+  const ny = document.createRange();
+  ny.selectNodeContents(el);
+  sel.removeAllRanges();
+  sel.addRange(ny);
+}
+
+/*
+ * Live-formatering: taster man det tegn, der LUKKER en konstruktion, bliver
+ * den til formatering med det samme.
+ *
+ * Det sker som en maalrettet erstatning ved markoeren - ikke som en
+ * gentegning af blokken. En gentegning ville flytte markoeren, og saa kunne
+ * man ikke skrive videre.
+ *
+ * `md`-feltet er det tegn, kilden brugte: `_kursiv_` skal komme tilbage som
+ * `_kursiv_`, ikke som `*kursiv*` (§38).
+ */
+const LIVE = [
+  { re: /\*\*([^*\n]+)\*\*$/, tag: 'strong', foran: '*' },
+  { re: /__([^_\n]+)__$/, tag: 'strong', foran: '_', md: '_' },
+  { re: /\*([^*\n]+)\*$/, tag: 'em', foran: '*' },
+  { re: /_([^_\n]+)_$/, tag: 'em', foran: '_', md: '_' },
+  { re: /`([^`\n]+)`$/, tag: 'code', foran: '`' },
+];
+
+function liveFormatering(vaert) {
+  const sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.rangeCount) return false;
+  const knude = sel.anchorNode;
+  // Kun i ren tekst. Staar markoeren i et element, er der ikke en tekst at
+  // laese baglaens i - og saa er der heller ikke tastet et lukketegn.
+  if (!knude || knude.nodeType !== 3 || !vaert.contains(knude)) return false;
+  const foer = knude.data.slice(0, sel.anchorOffset);
+
+  for (const m of LIVE) {
+    const t = m.re.exec(foer);
+    if (!t || !t[1].trim()) continue;
+    const start = sel.anchorOffset - t[0].length;
+    /*
+     * Tegnet FOER maa ikke vaere det samme.
+     *
+     * Ellers spiser den enkelte stjerne den dobbelte: `**fed**` ville blive
+     * fanget af `*...*`-reglen med `*fed*` som indhold. Det er samme regel,
+     * rendereren har (»** foer *«), bare set fra den anden side.
+     */
+    if (start > 0 && knude.data[start - 1] === m.foran) continue;
+
+    const r = document.createRange();
+    r.setStart(knude, start);
+    r.setEnd(knude, sel.anchorOffset);
+    r.deleteContents();
+    const el = document.createElement(m.tag);
+    if (m.md) el.setAttribute('data-md', m.md);
+    el.textContent = t[1];
+    r.insertNode(el);
+
+    // Markoeren UD paa den anden side af det nye element - man er faerdig med
+    // at skrive fed, naar man har tastet den sidste stjerne.
+    const efter = document.createRange();
+    efter.setStartAfter(el);
+    efter.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(efter);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Indsaet: fremmed HTML renses gennem den SAMME vej tilbage til markdown.
+ *
+ * Andreas bad om rensning (2026-09-05). Den behoever ingen egen sanitizer:
+ * `tilMarkdown()` kender de tags, Sagu selv udsender, og folder alt andet ud
+ * som ren tekst - saa et Word-indsaet bliver til markdown i stedet for
+ * `<span style>`-suppe. Én mekanisme, to formaal; to ville kunne drive fra
+ * hinanden.
+ */
+function indsaetRent(e, vaert, b) {
+  const dt = e.clipboardData;
+  if (!dt) return;
+  e.preventDefault();
+  const html = dt.getData('text/html');
+  const ren = html ? saguRedigering.tilMarkdown(html) : dt.getData('text/plain');
+  // Markdown indsaettes som TEKST og formateres af live-reglerne bagefter -
+  // saa er der kun ét sted, der laver formatering.
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const t = document.createTextNode(String(ren || '').replace(/\r\n?/g, '\n'));
+  r.insertNode(t);
+  const efter = document.createRange();
+  efter.setStartAfter(t);
+  efter.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(efter);
+  gemRigBlok(vaert, b);
+}
+
+/*
+ * Tomme formaterings-elementer ryddes, FOER blokken skrives tilbage.
+ *
+ * `omslut()` laegger et tomt `<strong>` ved markoeren, naar man vaelger fed
+ * uden at have markeret noget. Skriver man, fyldes det. Klikker man i stedet
+ * et andet sted hen, ville resten blive til `****` i noten - fire stjerner,
+ * ingen har skrevet. Browseren efterlader desuden selv tomme elementer, naar
+ * man sletter hen over dem.
+ *
+ * Elementet med MARKOEREN i fredes: det er ikke en rest, det er dér, man er
+ * ved at skrive.
+ */
+const TOMME_RYDDES = 'strong, em, u, code, del';
+
+function rydTomme(vaert) {
+  const sel = window.getSelection();
+  const hvor = sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+  vaert.querySelectorAll(TOMME_RYDDES).forEach((el) => {
+    if (el.textContent !== '' || el.querySelector('img')) return;
+    if (hvor && (el === hvor || el.contains(hvor))) return;
+    el.remove();
+  });
+}
+
+/** Blokkens HTML tilbage til markdown og ind i noten. */
+function gemRigBlok(vaert, b) {
+  rydTomme(vaert);
+  const md = saguRedigering.tilMarkdown(vaert.innerHTML);
+  skrivBlokTilbage(md, b);
+}
+
+function bindRigBlok(vaert, b) {
+  vaert.focus();
+  // Markoeren i slutningen - eller i begyndelsen, hvis man kom hertil med
+  // pil ned. Samme regel som det raa felt.
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.selectNodeContents(vaert);
+  r.collapse(editor.markoerTil !== 'start' ? false : true);
+  editor.markoerTil = null;
+  sel.removeAllRanges();
+  sel.addRange(r);
+
+  vaert.addEventListener('input', () => {
+    liveFormatering(vaert);
+    gemRigBlok(vaert, b);
+  });
+
+  vaert.addEventListener('paste', (e) => indsaetRent(e, vaert, b));
+
+  vaert.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault(); e.stopPropagation(); lukBlok(); return;
+    }
+    if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+      const t = { b: 'strong', i: 'em', u: 'u' }[e.key.toLowerCase()];
+      if (t) {
+        e.preventDefault();
+        omslut(vaert, t);
+        gemRigBlok(vaert, b);
+      }
+    }
+  });
+
+  vaert.addEventListener('blur', () => {
+    setTimeout(() => {
+      const aktiv = document.activeElement;
+      if (aktiv && (aktiv.id === 'blokRigt' || aktiv.closest('#blokVaerktoej'))) return;
+      lukBlok();
+    }, 0);
+  });
+
+  const linje = document.getElementById('blokVaerktoej');
+  if (linje) {
+    linje.querySelectorAll('[data-goer]').forEach((k) => {
+      // `mousedown` + preventDefault, ikke `click`: et klik ville tage fokus
+      // fra teksten, og `blur` lukker blokken - saa var markeringen vaek,
+      // foer knappen naaede at virke. Samme greb som hjaelpeknappen.
+      k.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        omslut(vaert, k.dataset.goer);
+        gemRigBlok(vaert, b);
+      });
+    });
+  }
 }
 
 function aabnBlok(fra) {

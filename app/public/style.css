@@ -1178,6 +1178,56 @@ kbd {
 
 .blok-felt:focus { outline: none; }
 
+/* ------------------------------------------------- rig redigering (F30) --
+ *
+ * Den RIGE blok skal se ud som den renderede tekst omkring den - det er hele
+ * pointen. Derfor arver den notens skrift og stoerrelse i stedet for
+ * `--mono`, og markeringen af »her skriver du« er kantstregen alene.
+ */
+.blok-felt.rig-felt {
+  padding: 2px 8px;
+  background: var(--card-hover);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: normal;
+}
+/* Foerste og sidste element inde i feltet maa ikke give dobbelt luft -
+   afsnittet har sin egen margen, og den staar allerede uden om feltet. */
+.rig-felt > :first-child { margin-top: 0; }
+.rig-felt > :last-child { margin-bottom: 0; }
+
+.blok-vaerktoej {
+  display: flex;
+  gap: 2px;
+  margin: 0 -6px 4px;
+  padding: 3px 4px;
+  border-left: 2px solid var(--accent);
+  background: var(--card-hover);
+}
+.vt-knap {
+  min-width: 30px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.vt-knap:hover { background: var(--accent-soft); color: var(--text); }
+.vt-knap b, .vt-knap i, .vt-knap u { font-style: normal; font-weight: 700; }
+.vt-knap i { font-style: italic; font-weight: 500; }
+.vt-knap u { font-weight: 500; }
+
+/* Paa en telefon staar linjen tættere - der er ikke plads til luft. */
+@media (max-width: 900px) {
+  .blok-vaerktoej { gap: 0; padding: 2px; }
+  .vt-knap { min-width: 34px; padding: 5px 6px; }
+}
+
 .render-fejl pre { white-space: pre-wrap; }
 
 .backlinks { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--border); }

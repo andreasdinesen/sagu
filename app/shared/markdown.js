@@ -395,7 +395,20 @@
           punkter.push({
             dybde: Math.min(Math.floor(m[1].replace(/\t/g, '  ').length / 2), 6),
             tjekket: m[2].toLowerCase() === 'x',
+            // Det RAA tegn: `[X]` og `[x]` betyder det samme, men kun det
+            // ene stod der. Uden det ville et klik i listen rette dem alle.
+            maerke: m[2],
             tekst: m[3],
+            /*
+             * Det RAA praefiks - indrykning og punkttegn, som det stod.
+             *
+             * `dybde` normaliserer til trin af to mellemrum, og `- ` og `* `
+             * bliver til det samme. Skal en liste kunne redigeres renderet og
+             * skrives tilbage UAENDRET, maa den viden ikke smides vaek: en
+             * note med tabulatorer eller `*` ville ellers faa hele sin liste
+             * skrevet om, fordi man klikkede i den (F30).
+             */
+            praefiks: m[0].slice(0, m[0].indexOf('[')),   // uden [ ] - boksen skrives af serialiseringen
             linje: i,
           });
           i++;
@@ -420,6 +433,16 @@
             dybde: Math.min(Math.floor(m[1].replace(/\t/g, '  ').length / 2), 6),
             nummer: !!n,
             tekst: m[3],
+            /*
+             * Det RAA praefiks - indrykning og punkttegn, som det stod.
+             *
+             * `dybde` normaliserer til trin af to mellemrum, og `- ` og `* `
+             * bliver til det samme. Skal en liste kunne redigeres renderet og
+             * skrives tilbage UAENDRET, maa den viden ikke smides vaek: en
+             * note med tabulatorer eller `*` ville ellers faa hele sin liste
+             * skrevet om, fordi man klikkede i den (F30).
+             */
+            praefiks: m[0].slice(0, m[0].length - m[3].length),
           });
           i++;
         }
@@ -456,7 +479,7 @@
         ud += `<${tag}>`;
         stak.push(tag);
       }
-      ud += `<li>${inline(p.tekst, opt)}`;
+      ud += `<li${p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''}>${inline(p.tekst, opt)}`;
     }
     while (stak.length) ud += `</li></${stak.pop()}>`;
     return ud;
@@ -516,9 +539,11 @@
         // blokken raat. Feltet er `disabled` og styres af en handler paa
         // raekken - et rigtigt checkbox ville sende en formular ingen steder.
         html += `<div class="tjekliste"${mrk}>${b.punkter.map((p) => `
-          <div class="tjek${p.tjekket ? ' er-tjekket' : ''}" style="margin-left:${p.dybde * 22}px">
+          <div class="tjek${p.tjekket ? ' er-tjekket' : ''}"${
+  p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''} style="margin-left:${p.dybde * 22}px">
             <button class="tjek-boks" data-tjek="${p.linje}" role="checkbox"
-              aria-checked="${p.tjekket ? 'true' : 'false'}">${p.tjekket ? '✓' : ''}</button>
+              aria-checked="${p.tjekket ? 'true' : 'false'}"${
+  p.tjekket && p.maerke !== 'x' ? ` data-x="${attr(p.maerke)}"` : ''}>${p.tjekket ? '✓' : ''}</button>
             <span class="tjek-tekst">${inline(p.tekst, o)}</span>
           </div>`).join('')}</div>`;
       } else if (b.slags === 'callout') {

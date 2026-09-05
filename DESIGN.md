@@ -3296,8 +3296,114 @@ Andreas bad om rensning ved indsæt. Det er den samme funktion: indsat HTML kør
 Word-indsæt til ren markdown i stedet for `<span style>`-suppe. **Én mekanisme, to
 formål** — ikke en sanitizer ved siden af en serialisering, som kunne drive fra hinanden.
 
+### Fladen
+
+Den åbne blok er nu **renderet og redigerbar** i stedet for et råt `<textarea>` — for
+afsnit og overskrifter, som er 87 % af alle blokke og hvor alle billeder ligger. Resten
+åbner råt som før.
+
+**Pr. blok, ikke pr. note.** Hele noten som ét `contenteditable` ville betyde, at hvert
+tastetryk oversatte hele noten tilbage, og en fejl dér omskriver tekst, man ikke har rørt.
+Her kan en fejl kun ramme den blok, man står i.
+
+**Porten kører ved hvert klik.** `kanRedigereRigt()` renderer blokken, oversætter tilbage
+og sammenligner med kilden. Er de ikke ens, åbnes den råt. Reglen er ikke en liste over
+»svære« bloktyper — det er en **måling pr. blok**. Derfor kan HTML skrevet i en note godt
+redigeres rigt: rendereren escaper den til tekst, og teksten kommer eksakt tilbage. Min
+første antagelse var, at den måtte åbne råt; porten sagde fra, og porten havde ret.
+
+**Feltet fyldes efter pyntningen.** `pyntInlineKode`, `tegnGreb` og de andre pynter alt,
+hvad de finder i `host` — og inde i noget, man redigerer, ville en kopiknap stå i teksten
+og blive skrevet med tilbage som **ord**. Feltet er derfor tomt, mens de kører, og fyldes
+bagefter. Det er billigere end en undtagelse i fem funktioner, og det kan ikke glemmes i
+den ene.
+
+### Live-formatering
+
+Taster man det tegn, der **lukker** en konstruktion, bliver den til formatering med det
+samme. Det sker som en målrettet erstatning ved markøren — ikke som en gentegning. En
+gentegning ville flytte markøren, og så kunne man ikke skrive videre.
+
+To detaljer bærer den. Tegnet **før** kontrolleres, ellers spiser den enkelte stjerne den
+dobbelte: `**fed**` ville blive fanget af `*…*`-reglen med `*fed*` som indhold — samme
+regel, rendereren har, set fra den anden side. Og `_kursiv_` får sit `data-md="_"` med ind,
+så det kommer tilbage som `_kursiv_` og ikke `*kursiv*`.
+
+### Værktøjslinjen står ved blokken
+
+Ikke i notens værktøjsrække. Samme begrundelse som hjælpeknappen ved siden af: rækken i
+toppen er rullet væk på en telefon, netop når man skriver.
+
+Knapperne lytter på **`mousedown` med `preventDefault`**, ikke `click`. Et klik ville tage
+fokus fra teksten først, og `blur` lukker blokken — så var markeringen væk, før knappen
+nåede at virke, og knappen ville se ud til ikke at gøre noget. `blur`-vagten kender
+derfor også værktøjslinjen.
+
+Ingen gennemstregning: Andreas bad udtrykkeligt om at lade den ud.
+
+### Indsæt: to huller, målt med et rigtigt Word-indsæt
+
+Rensningen er `tilMarkdown()` selv. Et rigtigt indsæt fra Word fandt to fejl, som en
+opdigtet prøve ikke ville have fundet:
+
+- **`<o:p>` har et kolon i navnet.** Læserens tagnavn-mønster tillod det ikke, så `<o:p>`
+  var slet ikke et tag — og `</o:p>` slap igennem som **synlig tekst** i noten. Word
+  skriver `<o:p>`, `<w:sdt>`, `<m:oMath>` overalt.
+- **`<style>` foldede sit indhold ud som ord.** Reglen »et ukendt tag koster sin
+  formatering, aldrig sine ord« er rigtig for tekst, men CSS er ikke ord. `style`,
+  `script`, `head`, `meta`, `title`, `link` og `noscript` sluger nu deres indhold.
+
+Et Word-indsæt giver nu `roedt og **fedt** og [et link](https://x.dk)`.
+
+### Anden etape: lister, tjeklister, citater og callouts
+
+Målt pr. bloktype mod det rigtige arkiv — ikke som ét gennemsnit, for et gennemsnit
+skjuler netop den type, der ikke virker:
+
+| Bloktype | Andel af arkivet | Består rundturen |
+|---|---|---|
+| Afsnit | 74,4 % | **100,0 %** |
+| Overskrift | 13,0 % | **99,9 %** |
+| Liste | 8,6 % | **92,8 %** |
+| Citat | 1,2 % | **98,4 %** |
+| Callout | 0,4 % | **100,0 %** |
+| Tjekliste | 0,1 % | **100 %** |
+| Kode | 1,6 % | *åbner råt med vilje* |
+| Tabel, `hr` | 0,8 % | *ikke lavet* |
+
+**96,9 % af alle blokke åbner nu renderet.**
+
+Lister kom fra **56,6 %**. Årsagen var den samme som altid: parseren normaliserer
+`\t\t- `, `    * ` og `- ` til én `dybde`, og oversættelsen skrev dem tilbage i *vores*
+stil. En note med tabulatorer ville få hele sin liste skrevet om, fordi man klikkede i
+den. Nu bærer hvert `<li>` sit **rå præfiks** i `data-md`.
+
+Det gjorde samtidig serialiseringen **enklere**: når hvert punkt kender sin egen
+indrykning, er en liste bare en række linjer, og der er ingen dybde at regne ud. Det var
+nødvendigt af en anden grund også — rendereren bygger nestede lister som `<ul><ul><li>`
+uden et `<li>` imellem, og første udgave, der kiggede efter `<li>`-børn, gav en **tom
+streng** for enhver indrykket liste.
+
+Tjeklister bærer også det rå tegn: `[X]` og `[x]` betyder det samme, men kun det ene stod
+der.
+
+### To fejl, meldt fra brugen
+
+Andreas: »Hvis jeg har valgt fed i menuen, så kan det ikke blive normal skrift igen«. Det
+var to fejl, og den anden var værre end den, han så:
+
+- **Markøren uden markering:** knappen gjorde ingenting. Man kunne vælge fed, skrive — og
+  få almindelig tekst. Men det er netop sådan, man bruger en værktøjslinje. Nu lægges et
+  tomt element ved markøren, og man skriver ind i det. Tomme rester ryddes, før blokken
+  skrives tilbage — ellers ville `****` stå i noten.
+- **En markering, der begyndte uden for fed tekst**, blev pakket ind én gang til:
+  `**alfa **beta******** gamma`. `omsluttendeTag()` spurgte kun om `startContainer`,
+  altså hvor markeringen *begyndte*. Den spørger nu om `commonAncestorContainer` — hele
+  markeringen — og samme tag inde i det nye pakkes ud, så der kun bliver ét lag.
+
+Undervejs fandt jeg et **blødt bindestreg-tegn** (U+00AD) i min egen kildekode, som fik to
+søgninger til at fejle uden grund. Det er fjernet; et usynligt tegn i kode er en fælde.
+
 ### Hvad der venter
 
-Fladen: værktøjslinje, live-formatering (målrettet erstatning ved markøren, ikke en
-gentegning — ellers flytter markøren sig), og `contenteditable` pr. blok frem for pr.
-note, så en fejl kun kan ramme den blok, man står i.
+Tabeller. Kode bliver ved med at åbne råt — kode *skal* være råt.
