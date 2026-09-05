@@ -3545,6 +3545,35 @@ De to slags linjeskift laves med browserens egne kommandoer (`insertLineBreak` o
 **egen fortrydelseshistorik**; en håndlavet udgave skulle vedligeholde den selv. Reserven
 under dem dækker kun det bløde linjeskift: et halvt delt afsnit er værre end ingenting.
 
+### `:only-child` tæller ikke tekst
+
+»Nogen gange så dukker *write here* op, når jeg er ved at skrive i et afsnit, selvom der
+står tekst der« (Andreas, 2026-09-05).
+
+Pladsholderen hang på to selektorer, og den anden var forkert:
+
+```css
+.rig-felt > p:has(> br:only-child)::before   /* forkert */
+```
+
+**`:only-child` tæller kun *element*-søskende.** Tekstknuder er ikke elementer og tæller
+ikke med — så `<p>tekst<br>mere</p>` opfylder »har et `br`, som er eneste barn«. Reglen
+ramte altså hvert eneste afsnit, hvor man havde trykket Enter én gang. Målt:
+
+| Afsnit | `:has(> br:only-child)` |
+|---|---|
+| `<p>tekst<br>mere</p>` | **sand** |
+| `<p><br></p>` | sand |
+| `<p>kun tekst</p>` | falsk |
+
+**CSS kan ikke spørge, om et element indeholder tekst.** Klassen sættes derfor af koden ud
+fra `textContent`, som hverken ser `<br>` eller tomme elementer som indhold — og en klasse
+er stadig ikke indhold: oversættelsen tilbage til markdown ser ikke på attributter.
+
+Fejlen kom af at ville dække et hjørnetilfælde (`<p><br></p>`) med et værktøj, der ikke
+kan stille spørgsmålet. **Er selektoren ikke i stand til at spørge om det, du mener, så
+spørg et andet sted.**
+
 ### Pop-ud flyttet op
 
 »…op i menuen ved saved, så det er let at trykke på.« Den står nu i værktøjsrækken ved

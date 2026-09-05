@@ -133,11 +133,36 @@ test('en TOM blok kan ses - og pladsholderen naar aldrig noten', () => {
   const css = readFileSync(new URL('../app/public/style.css', import.meta.url), 'utf8');
   assert.match(css, /\.blok-felt\.rig-felt \{[^}]*min-height:/,
     'feltet har ingen hoejde, foer der staar noget i det');
-  assert.match(css, /\.rig-felt > p:empty::before[\s\S]{0,120}content:/,
+  assert.match(css, /\.rig-felt\.tom > p::before[\s\S]{0,120}content:/,
     'pladsholderen tegnes ikke med CSS');
   // ... og den maa IKKE staa i koden som tekst, der kan havne i noten.
   assert.ok(!/Write here/.test(p4),
     'pladsholderen staar i JS - saa kan den skrives med ind i noten');
+});
+
+test('pladsholderen haenger paa en KLASSE, ikke paa en selektor', () => {
+  /*
+   * »Nogen gange saa dukker write here op naar jeg er ved at skrive i et
+   * afsnit, selvom der staar tekst der« (Andreas, 2026-09-05).
+   *
+   * Foerste udgave brugte `p:has(> br:only-child)` for at daekke det tomme
+   * `<p><br></p>`. Den var forkert: **`:only-child` taeller kun
+   * ELEMENT-soeskende.** Tekstknuder er ikke elementer, saa
+   * `<p>tekst<br>mere</p>` opfylder »har et br, som er eneste barn« - og
+   * pladsholderen kom frem, saa snart man havde trykket Enter én gang.
+   *
+   * CSS kan ikke spoerge, om et element indeholder tekst. Klassen saettes
+   * derfor af koden ud fra `textContent`, som hverken ser `<br>` eller tomme
+   * elementer som indhold.
+   */
+  const css = readFileSync(new URL('../app/public/style.css', import.meta.url), 'utf8');
+  assert.ok(!/only-child\)::before/.test(css),
+    ':only-child er tilbage - den rammer ogsaa afsnit MED tekst');
+  assert.match(p4, /classList\.toggle\('tom', !vaert\.textContent\.trim\(\)\)/,
+    'klassen saettes ikke ud fra textContent');
+  // Den skal saettes baade naar feltet bygges OG naar der tastes.
+  assert.ok((p4.match(/maerkTomt\(vaert\)/g) || []).length >= 3,
+    'klassen opdateres ikke alle de steder, indholdet kan aendre sig');
 });
 
 test('Enter bliver i afsnittet - ⌘/Ctrl+Enter laver et nyt', () => {

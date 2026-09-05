@@ -1211,13 +1211,20 @@ kbd {
  * sin note, fordi man klikkede. `::before` findes ikke i `innerHTML` og kan
  * derfor ikke naa databasen.
  *
- * To selektorer, fordi browserne er uenige om en tom blok: nogle efterlader
- * `<p></p>`, andre `<p><br></p>` (naar man har slettet det hele igen).
- * Kan browseren ikke `:has()`, mister vi kun teksten i det andet tilfaelde -
- * `min-height` ovenfor holder feltet synligt uanset hvad.
+ * ── Hvorfor en KLASSE og ikke en selektor ────────────────────────────────
+ *
+ * Foerste udgave brugte `p:empty` og `p:has(> br:only-child)`. Den anden var
+ * forkert: **`:only-child` taeller kun ELEMENT-soeskende** - tekstknuder er
+ * ikke elementer og taeller ikke med. `<p>tekst<br>mere</p>` opfylder derfor
+ * »har et br, som er eneste barn«, og pladsholderen dukkede op midt i et
+ * afsnit, man var ved at skrive i, saa snart man havde trykket Enter én gang
+ * (meldt af Andreas 2026-09-05).
+ *
+ * CSS kan ikke spoerge »er der tekst i det her element«. Klassen saettes
+ * derfor i koden ud fra `textContent` - og en klasse er stadig ikke indhold:
+ * oversaettelsen tilbage til markdown ser ikke paa attributter.
  */
-.rig-felt > p:empty::before,
-.rig-felt > p:has(> br:only-child)::before {
+.rig-felt.tom > p::before {
   content: 'Write here…';
   color: var(--muted);
   pointer-events: none;

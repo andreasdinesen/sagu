@@ -3790,7 +3790,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 58;
+const APP_VERSION = 59;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -9236,6 +9236,7 @@ function tegnMedAabenBlok(host, n) {
     vaert.innerHTML = del(raa) || '<p></p>';
     vaert.setAttribute('contenteditable', 'true');
     vaert.setAttribute('spellcheck', 'true');
+    maerkTomt(vaert);
     bindRigBlok(vaert, b);
     return;
   }
@@ -9794,9 +9795,21 @@ function nytLinjeskift(vaert, nytAfsnit) {
   return true;
 }
 
+/*
+ * Er feltet tomt? Klassen styrer pladsholderen.
+ *
+ * CSS kan ikke spoerge, om et element har tekst i sig - se `.rig-felt.tom` i
+ * style.css for hele historien. `textContent` kan, og den ser hverken `<br>`
+ * eller tomme elementer som indhold.
+ */
+function maerkTomt(vaert) {
+  vaert.classList.toggle('tom', !vaert.textContent.trim());
+}
+
 /** Blokkens HTML tilbage til markdown og ind i noten. */
 function gemRigBlok(vaert, b) {
   rydTomme(vaert);
+  maerkTomt(vaert);
   const md = saguRedigering.tilMarkdown(vaert.innerHTML);
   skrivBlokTilbage(md, b);
 }
@@ -9841,6 +9854,7 @@ function bindRigBlok(vaert, b) {
       e.preventDefault();
       e.stopPropagation();
       if (nytLinjeskift(vaert, e.metaKey || e.ctrlKey)) gemRigBlok(vaert, b);
+      maerkTomt(vaert);
       return;
     }
     if ((e.metaKey || e.ctrlKey) && !e.altKey) {
