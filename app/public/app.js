@@ -1776,9 +1776,44 @@
     return [`> [!${art}]`, ...linjer.map((l) => (l ? `> ${l}` : '>'))].join('\n');
   }
 
+  /*
+   * Elementer, der er en LINJE for sig - ikke noget midt i en linje.
+   *
+   * Trykker man Enter i et `contenteditable`, laver browseren et nyt
+   * blok-element: Chrome deler `<p>`'et i to, Safari laegger et `<div>` efter.
+   * Uden en adskillelse her blev `<p>a</p><p>b</p>` til »ab«, og to linjer,
+   * man lige havde skrevet, stod samlet paa én, saa snart man forlod feltet
+   * (meldt af Andreas 2026-09-05).
+   *
+   * `<br>` - altsaa Shift+Enter - er noget andet: ét linjeskift inde i samme
+   * afsnit. Det er derfor ikke med her.
+   */
+  const BLOK_TAGS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'blockquote', 'ul', 'ol', 'table', 'pre', 'section', 'article', 'figure']);
+
   function ud(knude, opt) {
     if (knude.tekst !== undefined) return knude.tekst;
-    const boern = () => knude.boern.map((b) => ud(b, opt)).join('');
+    /*
+     * To blok-soeskende skilles af en TOM linje - det er dét, markdown
+     * bruger mellem afsnit. Naar blokken skrives tilbage og noten laeses
+     * igen, bliver de to afsnit, praecis som man mente med sit Enter.
+     *
+     * Et tomt blok-element (`<p><br></p>` fra to tryk paa Enter) bidrager
+     * ingenting: den tomme linje ligger allerede i adskillelsen.
+     */
+    const boern = () => {
+      const dele = [];
+      let sidsteVarBlok = false;
+      for (const k of knude.boern) {
+        const erBlok = !!k.tag && BLOK_TAGS.has(k.tag);
+        const t = ud(k, opt);
+        if (erBlok && !t.trim()) { sidsteVarBlok = true; continue; }
+        if (dele.length && (erBlok || sidsteVarBlok)) dele.push('\n\n');
+        dele.push(t);
+        sidsteVarBlok = erBlok;
+      }
+      return dele.join('');
+    };
     const a = knude.attr || {};
 
     if (SLUGES.has(knude.tag)) return '';
@@ -3755,7 +3790,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 54;
+const APP_VERSION = 55;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er

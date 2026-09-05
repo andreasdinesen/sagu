@@ -196,6 +196,42 @@ test('<br> bliver til et linjeskift, ikke til ingenting', () => {
   assert.equal(R.tilMarkdown('<p>et<br>to</p>'), 'et\nto');
 });
 
+test('Enter i feltet bliver til to afsnit - ikke til én lang linje', () => {
+  /*
+   * »Hvis jeg proever at skrive noget paa 2 linjer, saa naar jeg gaar ud af
+   * editmode, saa bliver det samlet paa en linje« (Andreas, 2026-09-05).
+   *
+   * Browserne er ikke enige om, hvad Enter laver i et `contenteditable`:
+   * Chrome deler `<p>`'et i to, Safari laegger et `<div>` efter. Ingen af
+   * formerne blev adskilt - resultatet var »foersteanden«. Alle tre proeves
+   * her, for vi ved ikke, hvilken browser der bliver brugt i morgen.
+   */
+  for (const html of [
+    '<p>foerste</p><p>anden</p>',
+    '<p>foerste</p><div>anden</div>',
+    '<div>foerste</div><div>anden</div>',
+  ]) {
+    assert.equal(R.tilMarkdown(html), 'foerste\n\nanden', html);
+  }
+});
+
+test('Shift+Enter er noget ANDET - ét linjeskift i samme afsnit', () => {
+  // `<br>` maa ikke blive til en tom linje; saa ville et blødt linjeskift
+  // sprede sig til to afsnit, hver gang man forlod feltet.
+  assert.equal(R.tilMarkdown('<p>foerste<br>anden</p>'), 'foerste\nanden');
+});
+
+test('to tryk paa Enter giver ÉN tom linje, ikke tre', () => {
+  // Det tomme `<p><br></p>` bidrager ingenting - den tomme linje ligger
+  // allerede i adskillelsen mellem de to afsnit.
+  assert.equal(R.tilMarkdown('<p>a</p><p><br></p><p>b</p>'), 'a\n\nb');
+});
+
+test('ét enkelt afsnit faar ingen adskillelse - det er det ALMINDELIGE', () => {
+  assert.equal(R.tilMarkdown('<p>kun én</p>'), 'kun én');
+  assert.equal(R.tilMarkdown('<div class="liste"><ul><li data-md="- ">a</li></ul></div>'), '- a');
+});
+
 /* ============================================ blok-niveau ============== */
 
 test('listens punkter er FLADE - hvert punkt baerer sit eget praefiks', () => {

@@ -3434,6 +3434,25 @@ Endestillingen:
 | Kode | råt — kode *skal* være råt |
 | Tabeller | råt — den rå form er den gode skriveflade |
 
+### Enter var ikke et linjeskift — det var ingenting
+
+»Hvis jeg prøver at skrive noget på 2 linjer, så når jeg går ud af editmode, så bliver
+det samlet på en linje« (Andreas, 2026-09-05).
+
+Browserne er ikke enige om, hvad Enter laver i et `contenteditable`: Chrome deler `<p>`'et
+i to, Safari lægger et `<div>` efter. **Ingen af formerne blev adskilt** — oversættelsen
+løb børnene igennem og satte dem sammen med `''`, så `<p>a</p><p>b</p>` blev til `ab`.
+
+Blok-søskende skilles nu af en **tom linje**, som markdown gør mellem afsnit. Når blokken
+skrives tilbage og noten læses igen, bliver de to afsnit — præcis dét, man mente med sit
+Enter. `<br>` (Shift+Enter) er stadig ét linjeskift i samme afsnit; det er en anden ting
+og står derfor uden for listen af blok-tags.
+
+**Fejlen kunne ikke reproduceres i browser-ruden:** et programmatisk `Return` laver ingen
+DOM-struktur dér — samme slags artefakt som den kendte med programmatisk rulning. Den
+måtte findes ved at prøve oversættelsen mod de former, en *rigtig* browser laver. Alle tre
+er nu prøver, for vi ved ikke, hvilken browser der bliver brugt i morgen.
+
 ### Hvad der venter
 
 Ingenting bestemt. Fladen dækker det, den skal.
