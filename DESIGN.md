@@ -3119,3 +3119,101 @@ successer og fejl, ville derfor bestå uden låsen. Prøven kræver nu det deter
 **taberen skal falde på LÅSEN og aldrig nå at røre en fil** (`doesNotMatch(/mv:|tar:|No
 such file/)`). Samme slags fejl som `indexOf`-fangsten, et lag højere — *påstanden om,
 hvad en sabotage beviser, skal selv efterprøves.*
+
+---
+
+## 37 · F29 · En note i sit eget vindue
+
+»Kan du lave en knap så man kan poppe en note ud i sit eget vindue, så den er til at
+have ved siden af?« (Andreas, 2026-09-05).
+
+`…` → **Open in its own window**. Vinduet er den samme app på den samme oprindelse —
+ikke en særlig visning — så sessionen, redigeringen, søgningen og offline-tilstanden
+virker præcis som i hovedvinduet.
+
+### Flaget står i `?solo=1`, ikke i fragmentet
+
+Fragmentet er **notens** adresse (`#note-<id>`). De to ting hører ikke sammen: vinduet
+bliver ved med at være et sidevindue, også når man følger et link til en anden note.
+
+Og `saetAdresse()` skriver i forvejen `pathname + search + hash`, så en query overlever
+hver eneste adresseskrivning **uden en linje ekstra**. Det er hele grunden til, at
+valget er gratis.
+
+Service workeren gemmer skallen under `./`, når `pathname` er `/` — og det er den også
+her, for flaget ligger i `search`. Sidevinduet virker derfor uden net på nøjagtig samme
+vilkår som appen selv.
+
+### `body.solo` står på samme linjer som `body.fokus`
+
+Et sidevindue skal af med præcis den ramme, fokus-tilstanden allerede tager af:
+sidebaren, menuknappen, krummerne og baglinkene. To lister ville drive fra hinanden den
+dag, nogen skjuler ét element mere i fokus — og sidevinduet ville få det med måneder
+senere, hvis nogen huskede det.
+
+De to klasser er stadig **hver sin ting**: `fokus` slås til og fra med `F` og ryddes af
+`gaaTil()`, mens `solo` er en egenskab ved vinduet og bliver stående. Derfor to klasser
+og ét regelsæt — ikke én klasse.
+
+### Topbaren bliver — søgefeltet er ikke pynt
+
+Det var fristende at tage de 60 px. Men klikker man på et mærke i et sidevindue, lander
+man på en liste, og uden sidebar **og** uden søgefelt er der ingen vej videre derfra.
+**Et vindue uden en udvej er en fælde**, og de 60 px er billigere end den.
+
+Tastaturhintene under feltet går derimod med: målt til **61 px**, og de er en
+huskeseddel, ikke en vej. Det er den ene halvdel af topbaren, der kan undværes.
+
+### Vinduet bærer notens navn
+
+`document.title` blev kun sat til appens navn ved opstart. Det duer ikke her: har man
+tre noter poppet ud, står de i operativsystemets vinduesliste med hver sin titel — og
+hedder de alle sammen »Sagu«, kan man ikke vælge imellem dem. **En funktion, hvis formål
+er at have noter ved siden af hinanden, skal kunne navngive dem.**
+
+Titlen sættes i `tegnSide()`, som allerede er *ét sted* for sideoversigten, af samme
+grund: den kan ellers glemmes i en af de mange grene, der åbner en note.
+
+### Vinduets navn er notens id
+
+`window.open`s andet argument er vinduets navn. Med `sagu-note-<id>` henter browseren
+det vindue frem, der allerede står, når man popper **den samme** note ud igen — i stedet
+for at lave nummer to. To vinduer på én note ville være to editorer på én tekst.
+
+Punktet er derfor også skjult i et vindue, der allerede er poppet ud: en knap, der åbner
+det vindue, man står i, er ikke en knap.
+
+### `gemNu()` først — og uden `await`
+
+Det nye vindue henter noten fra **serveren**. Ligger en rettelse stadig i editorens
+debounce, ville sidevinduet vise en tekst, der er ældre end den, man lige har skrevet —
+i det vindue, man åbnede for at se den. Derfor sendes `PATCH`en af sted først.
+
+Uden `await`, med vilje: `window.open` skal køre i **samme hop som klikket**, ellers er
+brugerhandlingen brugt op, og browseren blokerer vinduet. Ét `await` foran ville være
+nok, og fejlen ville vise sig som »der sker ingenting« — kun hos den, der har en langsom
+forbindelse. En prøve holder `popud`-grenen foran det første `await` i menuens handler.
+
+Når den sidste rettelse i sjældne tilfælde ikke når med, er det ikke et tab: serverens
+`ifUpdatedAt`-vagt afviser den, der skriver ovenpå, så det bliver en **konflikt, man kan
+se** — ikke en tekst, der forsvinder.
+
+### Hvad der ikke er gjort
+
+**Hovedvinduet bliver stående på noten.** Man kan altså have den åben to steder. Det er
+et valg: at flytte hovedvinduet væk bag brugerens ryg er mere overraskende end det
+løser, og konfliktvagten gør det til noget, man kan se, ikke noget, man taber. Skal det
+laves om, er det én linje.
+
+### Hvad prøverne måler
+
+`tests/sidevindue.test.mjs` henter `soloVindue`, `vinduestitel` og `popUdNote` **ud af
+kilden** og kører dem med attrapper for `location`, `window` og `document` — samme
+metode som `rullevagt`. Dertil fire formregler på kilden: at `body.solo` står på samme
+CSS-regel som `body.fokus`, at topbaren og søgefeltet **ikke** er skjult i solo, at
+`popud` står foran det første `await`, og at punktet er skjult i et sidevindue.
+
+Fjorten sabotager er set fælde dem. Selve vinduet er ikke prøvet automatisk — browser-
+ruden laver ingen selvstændige vinduer, den navigerede sin egen fane — men tilstanden er
+set i ruden: sidebaren væk, titlen sat til notens navn, og `?solo=1` bevaret gennem en
+navigation til en anden note.

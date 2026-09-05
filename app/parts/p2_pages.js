@@ -11,6 +11,9 @@
 async function tegnSide() {
   await tegnSideIndhold();
   byggToc();
+  // Titlen hoerer til her af samme grund som sideoversigten: ét sted, saa den
+  // ikke kan glemmes i en af de mange grene, der aabner en note (F29).
+  vinduestitel();
 }
 
 /*

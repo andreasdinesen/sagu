@@ -3324,7 +3324,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -3583,6 +3583,10 @@ const ICONS = {
   fold: '<path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/>',
   udfold: '<path d="M8 5l4 4 4-4"/><path d="M8 19l4-4 4 4"/>',
   globe: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4a12 12 0 010 16 12 12 0 010-16z"/>',
+  // Et vindue med en pil, der forlader det - ikke `out`, som allerede
+  // betyder »flyt ud« i den samme menu. To punkter med samme ikon i én
+  // menu er to punkter, man skal laese for at skelne.
+  vindue: '<path d="M13 4.5H6A1.5 1.5 0 004.5 6v12A1.5 1.5 0 006 19.5h12a1.5 1.5 0 001.5-1.5v-7"/><path d="M13.5 10.5l6-6"/><path d="M15 4.5h4.5V9"/>',
 };
 
 function icon(name, size = 18) {
@@ -4667,6 +4671,12 @@ function fortsaetTilConnector() {
 }
 
 (async function start() {
+  /*
+   * FOER alt andet, og synkront: scriptet ligger sidst i `<body>`, saa
+   * klassen naar at staa der, foer der tegnes noget. Saettes den foerst efter
+   * `await api(...)`, naar sidebaren at blive vist og forsvinde igen.
+   */
+  if (soloVindue()) document.body.classList.add('solo');
   anvendTema(nuvaerendeTema());
   registrerOffline();
   try {
@@ -4718,6 +4728,43 @@ function aabnFraAdressen() {
 }
 
 window.addEventListener('hashchange', aabnFraAdressen);
+
+/**
+ * Er DET HER vindue en note, der er poppet ud i sit eget vindue? (F29)
+ *
+ * »Kan du lave en knap saa man kan poppe en note ud i sit eget vindue, saa
+ * den er til at have ved siden af?« (Andreas, 2026-09-05).
+ *
+ * Flaget staar i `?solo=1` og ikke i fragmentet, af to grunde. Fragmentet er
+ * NOTENS adresse (`#note-<id>`), og de to ting hoerer ikke sammen: vinduet
+ * bliver ved med at vaere et sidevindue, ogsaa naar man foelger et link til
+ * en anden note. Og `saetAdresse()` skriver `pathname + search + hash`, saa
+ * en query overlever hver eneste adresseskrivning uden en linje ekstra.
+ *
+ * Service workeren gemmer skallen under './', naar `pathname` er '/' - og
+ * det er den ogsaa her, for `?solo=1` ligger i `search`. Sidevinduet virker
+ * derfor uden net paa noejagtig samme vilkaar som appen selv.
+ */
+function soloVindue() {
+  try { return new URLSearchParams(location.search).get('solo') === '1'; }
+  catch { return false; }
+}
+
+/**
+ * Vinduets titel.
+ *
+ * I et almindeligt vindue er den appens navn. I et sidevindue er den NOTENS
+ * navn - og det er ikke pynt: har man tre noter poppet ud, staar de i
+ * operativsystemets vinduesliste og paa proceslinjen med hver sin titel, og
+ * hedder de alle sammen »Sagu«, kan man ikke vaelge imellem dem. En funktion,
+ * hvis formaal er at have noter ved siden af hinanden, skal kunne navngive
+ * dem.
+ */
+function vinduestitel() {
+  const app = state.config.appName || 'Sagu';
+  const n = (typeof editor === 'object' && editor.note) ? String(editor.note.title || '').trim() : '';
+  document.title = (soloVindue() && n) ? `${n} - ${app}` : app;
+}
 
 /**
  * Skriver adressen, saa den passer til det, man ser.
@@ -4779,6 +4826,9 @@ function saetAdresse(noteId) {
 async function tegnSide() {
   await tegnSideIndhold();
   byggToc();
+  // Titlen hoerer til her af samme grund som sideoversigten: ét sted, saa den
+  // ikke kan glemmes i en af de mange grene, der aabner en note (F29).
+  vinduestitel();
 }
 
 /*
@@ -9312,6 +9362,44 @@ function visFlytRude(n) {
   });
 }
 
+/**
+ * Aabn noten i sit eget vindue (F29).
+ *
+ * »Kan du lave en knap saa man kan poppe en note ud i sit eget vindue, saa
+ * den er til at have ved siden af?« (Andreas, 2026-09-05).
+ *
+ * ── Vinduet faar NOTENS navn ──────────────────────────────────────────────
+ *
+ * `window.open`s andet argument er vinduets navn, og det er ikke pynt her:
+ * aabner man den SAMME note ud igen, henter browseren det vindue frem, der
+ * allerede staar - i stedet for at lave nummer to af den samme note. To
+ * vinduer paa én note ville vaere to editorer paa én tekst.
+ *
+ * ── `gemNu()` FOER, og uden await ─────────────────────────────────────────
+ *
+ * Har man skrevet i noten, ligger rettelsen i en debounce, og det nye vindue
+ * henter noten fra serveren. Derfor sendes PATCH'en af sted foerst.
+ *
+ * Uden `await`, med vilje: `window.open` skal koere i SAMME hop som klikket,
+ * ellers er brugerhandlingen brugt op, og browseren blokerer vinduet. Vi
+ * sender altsaa gemningen af sted og aabner straks efter. Naar den sidste
+ * rettelse i sjaeldne tilfaelde ikke naar med, er det ikke et tab: serverens
+ * `ifUpdatedAt`-vagt afviser den, der skriver ovenpaa, saa det bliver en
+ * konflikt man kan se - ikke en tekst, der forsvinder.
+ */
+function popUdNote(n) {
+  if (typeof gemNu === 'function') gemNu();
+  /*
+   * `location.pathname`, ikke `offentligBase()`. Linket i menuen skal pege
+   * paa den adresse, man DELER; det her vindue skal aabne paa den samme
+   * oprindelse, man allerede sidder paa - ellers foelger sessionen ikke med.
+   */
+  const adr = `${location.pathname}?solo=1#note-${n.id}`;
+  const v = window.open(adr, `sagu-note-${n.id}`, 'popup,width=560,height=800');
+  if (!v) { toast('The browser blocked the window. Allow pop-ups for Sagu.'); return; }
+  try { v.focus(); } catch { /* et vindue, der ikke vil frem, er stadig aabent */ }
+}
+
 function visNoteMenu() {
   const gammel = document.getElementById('noteMenu');
   if (gammel) { gammel.remove(); return; }
@@ -9354,6 +9442,7 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="ned">${icon('udfold', 16)}<span>Move down</span></button>
     <button class="usermenu-item" data-do="flyt">${icon('book', 16)}<span>Move to notebook…</span></button>
     ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}` : ''}
+    ${soloVindue() ? '' : `<button class="usermenu-item" data-do="popud">${icon('vindue', 16)}<span>Open in its own window</span></button>`}
     <button class="usermenu-item" data-do="fs">${icon('focus', 16)}<span>Browser fullscreen</span></button>
     ${mit ? `<button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>` : ''}`;
   vaert.appendChild(host);
@@ -9363,6 +9452,12 @@ function visNoteMenu() {
       const hvad = el.dataset.do;
       host.remove();
       try {
+        /*
+         * Foerst i listen, og synkront: `window.open` skal naa at koere,
+         * mens klikket stadig taeller som en brugerhandling. Ét `await`
+         * foran ville vaere nok til, at browseren blokerede vinduet.
+         */
+        if (hvad === 'popud') { popUdNote(n); return; }
         if (hvad === 'fil') { vaelgFiler(); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         if (hvad === 'pdf') { gemSomPdf(n); return; }

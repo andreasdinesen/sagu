@@ -275,6 +275,10 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
   server HTML `no-store`. Cloudflare edge-cacher `.js` i timer og ignorerer `no-cache`.
 - Serveren logger `server.address().port`, ikke `BIND_PORT`.
 - **Læg aldrig billeder i de items, listen henter** (Kokkeri: 247 MB login-svar).
+- **`window.open` skal køre i SAMME hop som klikket.** Ét `await` foran, og
+  brugerhandlingen er brugt op — browseren blokerer vinduet, og fejlen viser sig som
+  »der sker ingenting«, kun hos den med en langsom forbindelse. Skal der gemmes
+  først, så send kaldet af sted **uden** `await` (F29).
 - **GitHub sorterer tags ALFABETISK.** `v9` står efter `v80`. Tager man `liste[0]` fra
   `/repos/:ejer/:repo/tags`, ruller hver server 37 udgaver tilbage ved næste genstart.
   Regn hele listen igennem (`/^v(\d+)$/`, tag max), og bladr til en side ikke er fuld.

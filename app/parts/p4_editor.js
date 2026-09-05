@@ -2453,6 +2453,44 @@ function visFlytRude(n) {
   });
 }
 
+/**
+ * Aabn noten i sit eget vindue (F29).
+ *
+ * »Kan du lave en knap saa man kan poppe en note ud i sit eget vindue, saa
+ * den er til at have ved siden af?« (Andreas, 2026-09-05).
+ *
+ * ── Vinduet faar NOTENS navn ──────────────────────────────────────────────
+ *
+ * `window.open`s andet argument er vinduets navn, og det er ikke pynt her:
+ * aabner man den SAMME note ud igen, henter browseren det vindue frem, der
+ * allerede staar - i stedet for at lave nummer to af den samme note. To
+ * vinduer paa én note ville vaere to editorer paa én tekst.
+ *
+ * ── `gemNu()` FOER, og uden await ─────────────────────────────────────────
+ *
+ * Har man skrevet i noten, ligger rettelsen i en debounce, og det nye vindue
+ * henter noten fra serveren. Derfor sendes PATCH'en af sted foerst.
+ *
+ * Uden `await`, med vilje: `window.open` skal koere i SAMME hop som klikket,
+ * ellers er brugerhandlingen brugt op, og browseren blokerer vinduet. Vi
+ * sender altsaa gemningen af sted og aabner straks efter. Naar den sidste
+ * rettelse i sjaeldne tilfaelde ikke naar med, er det ikke et tab: serverens
+ * `ifUpdatedAt`-vagt afviser den, der skriver ovenpaa, saa det bliver en
+ * konflikt man kan se - ikke en tekst, der forsvinder.
+ */
+function popUdNote(n) {
+  if (typeof gemNu === 'function') gemNu();
+  /*
+   * `location.pathname`, ikke `offentligBase()`. Linket i menuen skal pege
+   * paa den adresse, man DELER; det her vindue skal aabne paa den samme
+   * oprindelse, man allerede sidder paa - ellers foelger sessionen ikke med.
+   */
+  const adr = `${location.pathname}?solo=1#note-${n.id}`;
+  const v = window.open(adr, `sagu-note-${n.id}`, 'popup,width=560,height=800');
+  if (!v) { toast('The browser blocked the window. Allow pop-ups for Sagu.'); return; }
+  try { v.focus(); } catch { /* et vindue, der ikke vil frem, er stadig aabent */ }
+}
+
 function visNoteMenu() {
   const gammel = document.getElementById('noteMenu');
   if (gammel) { gammel.remove(); return; }
@@ -2495,6 +2533,7 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="ned">${icon('udfold', 16)}<span>Move down</span></button>
     <button class="usermenu-item" data-do="flyt">${icon('book', 16)}<span>Move to notebook…</span></button>
     ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}` : ''}
+    ${soloVindue() ? '' : `<button class="usermenu-item" data-do="popud">${icon('vindue', 16)}<span>Open in its own window</span></button>`}
     <button class="usermenu-item" data-do="fs">${icon('focus', 16)}<span>Browser fullscreen</span></button>
     ${mit ? `<button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>` : ''}`;
   vaert.appendChild(host);
@@ -2504,6 +2543,12 @@ function visNoteMenu() {
       const hvad = el.dataset.do;
       host.remove();
       try {
+        /*
+         * Foerst i listen, og synkront: `window.open` skal naa at koere,
+         * mens klikket stadig taeller som en brugerhandling. Ét `await`
+         * foran ville vaere nok til, at browseren blokerede vinduet.
+         */
+        if (hvad === 'popud') { popUdNote(n); return; }
         if (hvad === 'fil') { vaelgFiler(); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         if (hvad === 'pdf') { gemSomPdf(n); return; }

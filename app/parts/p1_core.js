@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -264,6 +264,10 @@ const ICONS = {
   fold: '<path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/>',
   udfold: '<path d="M8 5l4 4 4-4"/><path d="M8 19l4-4 4 4"/>',
   globe: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4a12 12 0 010 16 12 12 0 010-16z"/>',
+  // Et vindue med en pil, der forlader det - ikke `out`, som allerede
+  // betyder »flyt ud« i den samme menu. To punkter med samme ikon i én
+  // menu er to punkter, man skal laese for at skelne.
+  vindue: '<path d="M13 4.5H6A1.5 1.5 0 004.5 6v12A1.5 1.5 0 006 19.5h12a1.5 1.5 0 001.5-1.5v-7"/><path d="M13.5 10.5l6-6"/><path d="M15 4.5h4.5V9"/>',
 };
 
 function icon(name, size = 18) {
@@ -1348,6 +1352,12 @@ function fortsaetTilConnector() {
 }
 
 (async function start() {
+  /*
+   * FOER alt andet, og synkront: scriptet ligger sidst i `<body>`, saa
+   * klassen naar at staa der, foer der tegnes noget. Saettes den foerst efter
+   * `await api(...)`, naar sidebaren at blive vist og forsvinde igen.
+   */
+  if (soloVindue()) document.body.classList.add('solo');
   anvendTema(nuvaerendeTema());
   registrerOffline();
   try {
@@ -1399,6 +1409,43 @@ function aabnFraAdressen() {
 }
 
 window.addEventListener('hashchange', aabnFraAdressen);
+
+/**
+ * Er DET HER vindue en note, der er poppet ud i sit eget vindue? (F29)
+ *
+ * »Kan du lave en knap saa man kan poppe en note ud i sit eget vindue, saa
+ * den er til at have ved siden af?« (Andreas, 2026-09-05).
+ *
+ * Flaget staar i `?solo=1` og ikke i fragmentet, af to grunde. Fragmentet er
+ * NOTENS adresse (`#note-<id>`), og de to ting hoerer ikke sammen: vinduet
+ * bliver ved med at vaere et sidevindue, ogsaa naar man foelger et link til
+ * en anden note. Og `saetAdresse()` skriver `pathname + search + hash`, saa
+ * en query overlever hver eneste adresseskrivning uden en linje ekstra.
+ *
+ * Service workeren gemmer skallen under './', naar `pathname` er '/' - og
+ * det er den ogsaa her, for `?solo=1` ligger i `search`. Sidevinduet virker
+ * derfor uden net paa noejagtig samme vilkaar som appen selv.
+ */
+function soloVindue() {
+  try { return new URLSearchParams(location.search).get('solo') === '1'; }
+  catch { return false; }
+}
+
+/**
+ * Vinduets titel.
+ *
+ * I et almindeligt vindue er den appens navn. I et sidevindue er den NOTENS
+ * navn - og det er ikke pynt: har man tre noter poppet ud, staar de i
+ * operativsystemets vinduesliste og paa proceslinjen med hver sin titel, og
+ * hedder de alle sammen »Sagu«, kan man ikke vaelge imellem dem. En funktion,
+ * hvis formaal er at have noter ved siden af hinanden, skal kunne navngive
+ * dem.
+ */
+function vinduestitel() {
+  const app = state.config.appName || 'Sagu';
+  const n = (typeof editor === 'object' && editor.note) ? String(editor.note.title || '').trim() : '';
+  document.title = (soloVindue() && n) ? `${n} - ${app}` : app;
+}
 
 /**
  * Skriver adressen, saa den passer til det, man ser.

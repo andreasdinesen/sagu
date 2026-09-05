@@ -1211,13 +1211,47 @@ kbd {
  * fremtidig fejlsoegning, hvor man leder efter det, der taender den.
  */
 
+/*
+ * `body.solo` staar paa de SAMME linjer som `body.fokus` (F29).
+ *
+ * Et udpoppet notevindue skal af med noejagtig den ramme, fokus-tilstanden
+ * allerede tager af: sidebaren, menuknappen, krummerne og baglinkene. To
+ * lister ville drive fra hinanden - den dag nogen skjuler ét element mere i
+ * fokus, skal sidevinduet have det med, uden at nogen husker det.
+ *
+ * De to klasser er stadig HVER SIN ting: `fokus` slaas til og fra med F og
+ * ryddes af `gaaTil()`, mens `solo` er en egenskab ved vinduet og bliver
+ * staaende. Derfor to klasser og ét regelsaet - ikke én klasse.
+ *
+ * Topbaren bliver med VILJE. Den koster 60 px i et smalt vindue, men uden
+ * soegefeltet er sidevinduet en blindgyde, saa snart man klikker paa et
+ * maerke og lander paa en liste: ingen sidebar, ingen søgning, ingen vej
+ * tilbage.
+ */
 body.fokus .sidebar,
 body.fokus .navtoggle,
 body.fokus .krummer,
-body.fokus .backlinks { display: none; }
+body.fokus .backlinks,
+body.solo .sidebar,
+body.solo .navtoggle,
+body.solo .krummer,
+body.solo .backlinks { display: none; }
 
 body.fokus .main { padding: 56px 32px 96px; }
 body.fokus #pageHost { max-width: 760px; }
+
+/* Et sidevindue er smalt med vilje - luften skal vaere mindre end i fokus. */
+body.solo .main { padding: 20px 20px 64px; }
+body.solo #pageHost { max-width: 760px; }
+
+/*
+ * Tastaturhintene under soegefeltet fylder 61 px - maalt - og hoejden er
+ * netop det, der er knapt i et sidevindue. Selve FELTET bliver: uden det er
+ * vinduet en blindgyde, saa snart man klikker paa et maerke og lander paa en
+ * liste. Hintene er en huskeseddel, ikke en vej.
+ */
+body.solo .omni-legend { display: none; }
+body.solo .topbar { margin-bottom: 12px; }
 /* Vaerktoejerne bliver - man skal kunne komme UD igen. En udvej skal virke
    praecis dér, hvor man er (RUNE-ERFARINGER, doda v39). */
 body.fokus .note-tools { opacity: .35; transition: opacity .15s; }
@@ -1225,6 +1259,8 @@ body.fokus .note-tools:hover, body.fokus .note-tools:focus-within { opacity: 1; 
 
 @media (max-width: 900px) {
   body.fokus .main { padding: 20px 16px 80px; }
+  /* Sidevinduet er naesten altid under 900 px - det er hele pointen. */
+  body.solo .main { padding: 16px 14px 64px; }
   .note-title { font-size: 27px; }
 
   /* Ikonet hoerer SAMMEN med titlen - det er vaerktoejerne, der skal bryde
