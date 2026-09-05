@@ -3501,6 +3501,30 @@ i det rå felt og i den rige blok — og en `replace(…, 1)` fjernede det førs
 ændrede filen og gav alligevel grønt. *En sabotage skal ramme dét sted, prøven handler
 om;* i en fil med to editorer er »den første forekomst« ikke godt nok.
 
+### Den nye blok var usynlig
+
+»Tekstfeltet er skjult, indtil man begynder at skrive i det« (Andreas, 2026-09-05).
+
+En ny blok tegnes som et tomt `<p>`, og **et tomt afsnit har ingen linjeboks** — det
+falder sammen til nul i højden. Tilbage stod kun den 2 px accent-streg i venstre kant.
+Feltet har nu en `min-height` og en pladsholder.
+
+**Pladsholderen tegnes med CSS, aldrig som tekst.** Et tekstnode ville blive skrevet med
+ind i noten, næste gang blokken oversættes tilbage til markdown — man ville få
+»Write here…« stående i sin note, fordi man klikkede. `::before` findes ikke i
+`innerHTML` og kan derfor ikke nå databasen. En prøve holder den dér: teksten må ikke
+optræde i `p4_editor.js`.
+
+**Målingen løj undervejs.** Jeg målte feltet til 272 px og gik i gang med at lede efter en
+regel, der gjorde det højt — men `window.innerWidth` var **0**, fordi browser-ruden var
+skjult, og hele layoutet var kollapset. Pladsholderteksten brød derfor én bogstav pr.
+linje. Med en tvunget bredde er feltet 31 px, altså præcis én linje. *Fælden står allerede
+i RUNE-ERFARINGER, og jeg gik i den alligevel* — en måling fra en skjult rude er ikke en
+måling.
+
 ### Hvad der venter
 
-Ingenting bestemt. Fladen dækker det, den skal.
+Billeder i en anden størrelse end deres egen er **fravalgt** (Andreas, 2026-09-05).
+Markdown har ingen syntaks for det, så det ville kræve en udvidelse af sproget, som skulle
+bæres gennem rundturen og kendes af wiki-rendereren — og den ville stå i noterne for
+altid. Billeder vises i naturlig størrelse, begrænset af spaltens bredde.

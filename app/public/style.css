@@ -1185,12 +1185,42 @@ kbd {
  * `--mono`, og markeringen af »her skriver du« er kantstregen alene.
  */
 .blok-felt.rig-felt {
+  /*
+   * `min-height` er ikke pynt (F31).
+   *
+   * En NY blok tegnes som et tomt `<p>`, og et tomt afsnit har ingen
+   * linjeboks - det falder sammen til nul i hoejden. Tilbage stod kun den
+   * 2 px accent-streg i venstre kant, saa feltet var i praksis usynligt, til
+   * man begyndte at skrive (meldt af Andreas 2026-09-05). Feltet skal have en
+   * form, FOER der staar noget i det.
+   */
+  min-height: 1.7em;
   padding: 2px 8px;
   background: var(--card-hover);
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
   white-space: normal;
+}
+
+/*
+ * Pladsholderen tegnes med CSS - ALDRIG som tekst.
+ *
+ * Et tekstnode ville blive skrevet MED ind i noten, naeste gang blokken
+ * oversaettes tilbage til markdown: man ville faa »Write here…« staaende i
+ * sin note, fordi man klikkede. `::before` findes ikke i `innerHTML` og kan
+ * derfor ikke naa databasen.
+ *
+ * To selektorer, fordi browserne er uenige om en tom blok: nogle efterlader
+ * `<p></p>`, andre `<p><br></p>` (naar man har slettet det hele igen).
+ * Kan browseren ikke `:has()`, mister vi kun teksten i det andet tilfaelde -
+ * `min-height` ovenfor holder feltet synligt uanset hvad.
+ */
+.rig-felt > p:empty::before,
+.rig-felt > p:has(> br:only-child)::before {
+  content: 'Write here…';
+  color: var(--muted);
+  pointer-events: none;
 }
 /* Foerste og sidste element inde i feltet maa ikke give dobbelt luft -
    afsnittet har sin egen margen, og den staar allerede uden om feltet. */

@@ -119,6 +119,27 @@ test('der er en vej til at TILFOEJE en blok - ikke kun til at aabne én', () => 
   assert.match(p4, /maaRette\(n\) \? nyBlokFeltHtml\(\) : ''/);
 });
 
+test('en TOM blok kan ses - og pladsholderen naar aldrig noten', () => {
+  /*
+   * »Tekstfeltet er skjult indtil man begynder at skrive i det« (Andreas,
+   * 2026-09-05). En ny blok tegnes som et tomt `<p>`, og et tomt afsnit har
+   * ingen linjeboks - det falder sammen til nul i hoejden. Tilbage stod kun
+   * accent-stregen i venstre kant.
+   *
+   * Pladsholderen SKAL tegnes med CSS. Et tekstnode ville blive skrevet med
+   * ind i noten, naeste gang blokken oversaettes tilbage - man ville faa
+   * »Write here…« staaende i sin note, fordi man klikkede.
+   */
+  const css = readFileSync(new URL('../app/public/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.blok-felt\.rig-felt \{[^}]*min-height:/,
+    'feltet har ingen hoejde, foer der staar noget i det');
+  assert.match(css, /\.rig-felt > p:empty::before[\s\S]{0,120}content:/,
+    'pladsholderen tegnes ikke med CSS');
+  // ... og den maa IKKE staa i koden som tekst, der kan havne i noten.
+  assert.ok(!/Write here/.test(p4),
+    'pladsholderen staar i JS - saa kan den skrives med ind i noten');
+});
+
 test('hele-noten-kontakten siger, hvad man giver AFKALD paa', () => {
   /*
    * »Mine noter bliver stadigvaek lavet om til markdown naar jeg proever at
