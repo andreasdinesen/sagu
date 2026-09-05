@@ -313,6 +313,35 @@
   }
 
   /**
+   * Fra `esc()`'et tekst tilbage til den raa streng.
+   *
+   * ── Den fejl, den findes for ──────────────────────────────────────────
+   *
+   * `inline()` escaper HELE teksten foerst, saa alt herefter er ufarligt.
+   * Men det betyder ogsaa, at en adresse, der fanges af en af reglerne
+   * nedenfor, ALLEREDE baerer `&amp;` - og et `attr()` ovenpaa gjorde den til
+   * `&amp;amp;`. Browseren afkoder ét lag, saa
+   *
+   *     https://a.dk/?x=1&y=2   ->   href="...?x=1&amp;amp;y=2"
+   *
+   * og linket peger paa `?x=1&amp;y=2`. Hver eneste adresse med en query
+   * var i stykker - YouTube med `&t=`, Amazon, alt med mere end én parameter.
+   * Fundet 2026-09-05, da rundturen HTML -> markdown (F30) sammenlignede
+   * hrefs med kilden.
+   *
+   * Adressen afkodes derfor STRAKS efter, den er fanget. Saa ser
+   * `sikkerUrl()` den rigtige adresse, vaertens kroge (`billedUrl`,
+   * `linkUrl`) faar den rigtige adresse, og `attr()` undslipper én gang.
+   *
+   * Raekkefoelgen er ikke tilfaeldig: `&amp;` skal vaere SIDST, ellers ville
+   * `&amp;lt;` blive til `<` i stedet for `&lt;`.
+   */
+  function afEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  }
+
+  /**
    * En adresse, der er sikker at saette i et href.
    *
    * Der matches paa det, der ER tilladt, ikke paa det, der er farligt. En
@@ -355,6 +384,20 @@
      */
     const eksternRel = o.noFoelg ? 'noopener noreferrer nofollow ugc' : 'noopener noreferrer';
     const gemt = [];
+    /*
+     * Et FAERDIGT tag laegges til side bag en pladsholder.
+     *
+     * Reglerne nedenfor koerer paa én lang streng, og uden det her ser de
+     * ogsaa ind i de tags, de tidligere regler lige har udsendt. En adresse
+     * med `__` i - fx et sporingslink `.../v3/__https://...` - fik derfor et
+     * `<strong>` injiceret midt i sit href, og linket var i stykker. Fundet
+     * 2026-09-05 (F30). Kodestumper har brugt teknikken siden F1; nu bruger
+     * alle tag-udsendende regler den.
+     */
+    const gem = (html) => {
+      gemt.push(html);
+      return `\x00${gemt.length - 1}\x00`;
+    };
     // NUL bruges som pladsholder for kodestumper nedenfor. Kommer der et
     // NUL med i brugerens egen tekst (JSON kan skrive \u0000), ville det
     // kunne ligne en pladsholder - saa det ryger ud foerst.
@@ -362,10 +405,7 @@
     let s = esc(String(raa == null ? '' : raa).replace(/\x00/g, ''));
 
     // 1. kodestumper ud
-    s = s.replace(/`([^`\n]+)`/g, (_, k) => {
-      gemt.push(`<code>${k}</code>`);
-      return `\x00${gemt.length - 1}\x00`;
-    });
+    s = s.replace(/`([^`\n]+)`/g, (_, k) => gem(`<code>${k}</code>`));
 
     // 2. [[note-titel]] - wiki-link. Maalet slaas op af vaerten; her bliver
     //    det til et link med titlen i et data-attribut, saa baade appen og
@@ -373,10 +413,10 @@
     s = s.replace(/\[\[([^\]\n]{1,200})\]\]/g, (_, navn) => {
       const rent = navn.trim();
       const kendt = o.slaaOpNote ? o.slaaOpNote(rent) : null;
-      if (kendt) return `<a class="notelink" href="${attr(kendt.href)}">${rent}</a>`;
+      if (kendt) return gem(`<a class="notelink" href="${attr(kendt.href)}">${rent}</a>`);
       // En doed henvisning skal SES som doed, ikke forsvinde. Det er en
       // kendsgerning om noten, ikke en fejl (Verdandes spec, og den er rigtig).
-      return `<span class="notelink dead" title="No note with that title yet">${rent}</span>`;
+      return gem(`<span class="notelink dead" title="No note with that title yet">${rent}</span>`);
     });
 
     // 3. ![alt](adresse) - FOER links, ellers spiser link-reglen udraabstegnet.
@@ -384,10 +424,18 @@
     //    Her er `attr()` ikke valgfri: alt-teksten havner i en ATTRIBUT, og
     //    en escaper skrevet til tekst mellem tags tager ikke anfoerselstegn.
     //    `![" onerror="alert(1)](x.png)` er hele angrebet.
-    s = s.replace(/!\[([^\]\n]{0,200})\]\(([^)\s]{1,2000})\)/g, (helt, alt, url) => {
+    s = s.replace(/!\[([^\]\n]{0,200})\]\(([^)\s]{1,2000})\)/g, (helt, alt, raaUrl) => {
+      const url = afEsc(raaUrl);
       const sikker = o.billedUrl ? o.billedUrl(url) : sikkerUrl(url);
       if (sikker) {
-        return `<img src="${attr(sikker)}" alt="${attr(alt)}" loading="lazy" class="note-img">`;
+        /*
+         * `data-md` er den adresse, der STAAR i noten. `sagu:<id>` oversaettes
+         * af vaerten til en api-adresse, og uden sporet her kunne vejen
+         * tilbage til markdown ikke skrive `sagu:`-adressen igen - noten ville
+         * holde op med at pege paa sin egen vedhaeftning (F30).
+         */
+        const spor = sikker === url ? '' : ` data-md="${attr(url)}"`;
+        return gem(`<img src="${attr(sikker)}"${spor} alt="${attr(alt)}" loading="lazy" class="note-img">`);
       }
       /*
        * Vaerten ville ikke vise billedet - men adressen kan stadig vaere en
@@ -402,14 +450,23 @@
        */
       const udefra = sikkerUrl(url);
       if (udefra) {
-        return `<a href="${attr(udefra)}" class="ekstern-billede" target="_blank"
-          rel="noopener noreferrer" title="External images are not loaded">${alt || attr(udefra)}</a>`;
+        /*
+         * Det her ER et billede - CSP'en naegter bare at hente det fra en
+         * fremmed vaert. `data-billede` siger det, saa vejen tilbage til
+         * markdown skriver `![]()` og ikke `[]()`; `data-tom` daekker den
+         * tomme alt-tekst, som rendereren erstatter med adressen, for at der
+         * er noget at klikke paa (F30).
+         */
+        return gem(`<a href="${attr(udefra)}" class="ekstern-billede" data-billede="1"${
+          alt ? '' : ' data-tom="1"'} target="_blank"
+          rel="noopener noreferrer" title="External images are not loaded">${alt || attr(udefra)}</a>`);
       }
       return helt;
     });
 
     // 4. [tekst](adresse)
-    s = s.replace(/\[([^\]\n]{0,200})\]\(([^)\s]{1,2000})\)/g, (helt, tekst, url) => {
+    s = s.replace(/\[([^\]\n]{0,200})\]\(([^)\s]{1,2000})\)/g, (helt, tekst, raaUrl) => {
+      const url = afEsc(raaUrl);
       // `linkUrl` er vaertens krog - praecis som `billedUrl`. Uden den kunne
       // en vedhaeftning, der ikke er et billede, ikke haentes: `sagu:<id>` er
       // ikke http(s), saa sikkerUrl afviser den med rette, og linket blev til
@@ -428,8 +485,8 @@
        * maa naa, skal slet ikke staa der.
        */
       if (oversat === false) {
-        return `<span class="notelink dead" title="This page is not part of this site">${
-          tekst || 'note'}</span>`;
+        return gem(`<span class="notelink dead" title="This page is not part of this site">${
+          tekst || 'note'}</span>`);
       }
       const sikker = oversat || sikkerUrl(url);
       // Alt andet staar som den tekst, der blev skrevet - saa forsvinder
@@ -437,26 +494,48 @@
       if (!sikker) return helt;
       // `#` er lige saa intern som `/`: appen aabner `#note-<id>` selv.
       const intern = oversat && (oversat[0] === '/' || oversat[0] === '#');
-      return `<a href="${attr(sikker)}"${intern ? ' class="vedhaeft"'
-        : ` target="_blank" rel="${eksternRel}"`}>${tekst || attr(sikker)}</a>`;
+      /*
+       * `data-tom` er det tredje spor (F30): skrev man `[](adresse)` uden
+       * tekst, saetter rendereren adressen ind, saa linket kan ses og klikkes.
+       * Men saa ligner det `[adressen](adressen)`, og vejen tilbage til
+       * markdown ville skrive en tekst, ingen har skrevet.
+       */
+      return gem(`<a href="${attr(sikker)}"${tekst ? '' : ' data-tom="1"'}${intern ? ' class="vedhaeft"'
+        : ` target="_blank" rel="${eksternRel}"`}>${tekst || attr(sikker)}</a>`);
     });
 
     // 5. naegen adresse
-    s = s.replace(/(^|[\s(])((?:https?:\/\/)[^\s<]{1,2000})/g, (helt, foer, url) => {
+    s = s.replace(/(^|[\s(])((?:https?:\/\/)[^\s<]{1,2000})/g, (helt, foer, raaUrl) => {
+      const url = afEsc(raaUrl);
       // Slutpunktum og lukkeparentes hoerer til saetningen, ikke til adressen.
       const hale = url.match(/[.,;:!?)]+$/);
       const ren = hale ? url.slice(0, -hale[0].length) : url;
       const sikker = sikkerUrl(ren);
       if (!sikker) return helt;
-      const vis = sikker.replace(/^https?:\/\//, '');
-      return `${foer}<a href="${attr(sikker)}" target="_blank" rel="${eksternRel}">${vis}</a>${hale ? hale[0] : ''}`;
+      const vis = esc(sikker.replace(/^https?:\/\//, ''));
+      /*
+       * `data-auto` siger, at rendereren SELV fandt linket i teksten.
+       *
+       * Uden det er `[bar.dk](https://bar.dk)` og en bar `https://bar.dk`
+       * det SAMME `<a>`, og vejen tilbage til markdown maa gaette. Den gaettede
+       * forkert 240 gange i Andreas' arkiv (F30). Et program, der har udledt
+       * noget, skal skrive det ned - ikke lade den naeste regne baglaens.
+       */
+      return `${foer}${gem(`<a href="${attr(sikker)}" data-auto="1" target="_blank" rel="${
+        eksternRel}">${vis}</a>`)}${hale ? hale[0] : ''}`;
     });
 
     // 6. eftertryk. ** foer *, ellers spiser den enkelte stjerne den dobbelte.
+    /*
+     * `_kursiv_` og `*kursiv*` er det SAMME tag, og `__fed__` og `**fed**`
+     * ogsaa. Uden et spor kan vejen tilbage til markdown ikke vide, hvad der
+     * stod - og en note, man kun har klikket i, ville faa sin tekst skrevet om
+     * (F30). Understregen er den sjaeldne, saa den er den, der maerkes.
+     */
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/__([^_\n]+)__/g, '<strong data-md="_">$1</strong>');
     s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?![*\w])/g, '$1<em>$2</em>');
-    s = s.replace(/(^|[^_\w])_([^_\n]+)_(?![_\w])/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[^_\w])_([^_\n]+)_(?![_\w])/g, '$1<em data-md="_">$2</em>');
     s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
 
     // 7. kodestumperne tilbage
@@ -1493,6 +1572,188 @@
     laesCsv, laesStruktur, faellesRod, erLinketVisning, omskrivLinks, filnavnsform,
   };
 }));
+
+/* ---- shared/redigering.js ---- */
+/*
+ * Sagu - fra HTML tilbage til markdown (F30).
+ *
+ * `markdown.render()` gaar den ene vej. Det her modul gaar den anden, og det
+ * er forudsaetningen for at kunne skrive i noten, mens den ser ud, som naar
+ * man laeser den: et `contenteditable` giver HTML tilbage, og databasen skal
+ * have markdown.
+ *
+ * ── Hvorfor den er REN (streng ind, streng ud) ────────────────────────────
+ *
+ * Den kunne have gaaet gennem browserens DOM - det er der, den skal bruges.
+ * Men proeverne koerer i node, hvor der ingen DOM er, og den vigtigste proeve
+ * er rundturen over Andreas' 9.233 rigtige afsnit:
+ *
+ *     tilMarkdown(render(md)) === md
+ *
+ * En DOM-drevet udgave kunne ikke koere den. To udgaver - én til browseren og
+ * én til proeverne - ville drive fra hinanden. Altsaa: en lille HTML-laeser
+ * her, og browseren giver bare sin `innerHTML` videre.
+ *
+ * ── Hvad den IKKE goer ────────────────────────────────────────────────────
+ *
+ * Den gaetter aldrig. Kan et element ikke oversaettes, foldes dets TEKST ud i
+ * stedet for at blive tabt. Et ukendt tag maa koste sin formatering; det maa
+ * aldrig koste ordene.
+ */
+(function (global) {
+  'use strict';
+
+  /* Tags, der udsendes af rendereren og oversaettes tilbage. Alt andet
+   * foldes ud som tekst - se `ud()` nedenfor. */
+  const TOM = new Set(['br', 'img', 'hr', 'wbr']);
+
+  const ENTITETER = {
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'",
+  };
+
+  function afkod(s) {
+    return String(s).replace(/&(#\d{1,6}|#x[0-9a-f]{1,5}|[a-z]+);/gi, (helt, navn) => {
+      const n = navn.toLowerCase();
+      if (n[0] === '#') {
+        const kode = n[1] === 'x' ? parseInt(n.slice(2), 16) : parseInt(n.slice(1), 10);
+        return Number.isFinite(kode) && kode > 0 && kode < 0x110000
+          ? String.fromCodePoint(kode) : helt;
+      }
+      return Object.prototype.hasOwnProperty.call(ENTITETER, n) ? ENTITETER[n] : helt;
+    });
+  }
+
+  /** Attributterne paa ét starttag. Vaerdier maa staa i ', " eller bart. */
+  function attributter(raa) {
+    const ud = {};
+    const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+    let m = re.exec(raa);
+    while (m) {
+      ud[m[1].toLowerCase()] = afkod(m[2] !== undefined ? m[2]
+        : (m[3] !== undefined ? m[3] : (m[4] !== undefined ? m[4] : '')));
+      m = re.exec(raa);
+    }
+    return ud;
+  }
+
+  /**
+   * HTML -> et traes af { tag, attr, boern } og { tekst }.
+   *
+   * Ubalancerede tags lukkes af sig selv ved enden. En note midt i at blive
+   * skrevet er ikke velformet HTML, og et kast her ville vaere et tab af
+   * tekst - ikke en fejlmeddelelse, nogen kan bruge.
+   */
+  function laes(html) {
+    const rod = { tag: null, attr: {}, boern: [] };
+    const stak = [rod];
+    const re = /<!--[\s\S]*?-->|<\/([a-zA-Z][-a-zA-Z0-9]*)\s*>|<([a-zA-Z][-a-zA-Z0-9]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+    let sidst = 0;
+    let m = re.exec(html);
+    const tekstUd = (s) => {
+      if (s) stak[stak.length - 1].boern.push({ tekst: afkod(s) });
+    };
+    while (m) {
+      tekstUd(html.slice(sidst, m.index));
+      sidst = m.index + m[0].length;
+      if (m[1]) {
+        const navn = m[1].toLowerCase();
+        // Luk til og med det naermeste aabne tag af samme navn. Et
+        // </em> uden et <em> er stoej og springes over.
+        for (let i = stak.length - 1; i > 0; i -= 1) {
+          if (stak[i].tag === navn) { stak.length = i; break; }
+        }
+      } else if (m[2]) {
+        const navn = m[2].toLowerCase();
+        const knude = { tag: navn, attr: attributter(m[3] || ''), boern: [] };
+        stak[stak.length - 1].boern.push(knude);
+        if (!TOM.has(navn) && !/\/\s*$/.test(m[3] || '')) stak.push(knude);
+      }
+      m = re.exec(html);
+    }
+    tekstUd(html.slice(sidst));
+    return rod;
+  }
+
+  /* ------------------------------------------------------- oversaettelsen */
+
+  const OVERSKRIFT = { h1: '#', h2: '##', h3: '###', h4: '####', h5: '#####', h6: '######' };
+
+  function ud(knude, opt) {
+    if (knude.tekst !== undefined) return knude.tekst;
+    const boern = () => knude.boern.map((b) => ud(b, opt)).join('');
+    const a = knude.attr || {};
+
+    switch (knude.tag) {
+      case null: return boern();
+      case 'br': return '\n';
+      /*
+       * `data-md` er rendererens spor: `_kursiv_` og `*kursiv*` bliver til det
+       * samme tag, og uden sporet ville en note, man kun har klikket i, faa
+       * sin tekst skrevet om. Vi gaetter ikke - vi laeser, hvad der stod.
+       */
+      case 'strong': case 'b': {
+        const t = a['data-md'] === '_' ? '__' : '**';
+        return `${t}${boern()}${t}`;
+      }
+      case 'em': case 'i': {
+        const t = a['data-md'] === '_' ? '_' : '*';
+        return `${t}${boern()}${t}`;
+      }
+      case 'del': case 's': return `~~${boern()}~~`;
+      case 'u': return `__${boern()}__`;
+      case 'code': return `\`${boern()}\``;
+      case 'img': {
+        /*
+         * `data-md` er DEN oprindelige adresse. Uden den ville et
+         * `sagu:`-billede komme tilbage som sin oversatte api-adresse, og
+         * noten ville holde op med at pege paa sin egen vedhaeftning.
+         */
+        const kilde = a['data-md'] || a.src || '';
+        return `![${a.alt || ''}](${kilde})`;
+      }
+      case 'a': {
+        const href = a['data-md'] || a.href || '';
+        const tekst = boern();
+        /*
+         * `data-auto` betyder, at rendereren SELV fandt adressen i teksten -
+         * saa skal den tilbage som en bar adresse. Uden sporet maatte vi
+         * gaette ud fra, om teksten ligner adressen, og det gaettede forkert
+         * 240 gange i Andreas' arkiv: `[megaphone.fm/x](https://megaphone.fm/x)`
+         * er skrevet af et menneske og ser ud som et autolink.
+         */
+        if (a['data-auto'] === '1') return href;
+        // `data-billede`: det VAR et billede - CSP'en naegtede bare at hente
+        // det fra en fremmed vaert, saa rendereren viste et link i stedet.
+        const bang = a['data-billede'] === '1' ? '!' : '';
+        // `data-tom`: kilden havde ingen tekst - rendereren satte adressen ind,
+        // saa linket kunne ses. Den tekst er ikke brugerens og skal ikke gemmes.
+        return `${bang}[${a['data-tom'] === '1' ? '' : tekst}](${href})`;
+      }
+      case 'span': {
+        // `[[en anden note]]` bliver til en chip. Klassen er det eneste spor.
+        const kl = String(a.class || '');
+        if (/\bnotelink\b/.test(kl)) return `[[${boern()}]]`;
+        return boern();
+      }
+      default: {
+        const h = OVERSKRIFT[knude.tag];
+        if (h) return `${h} ${boern()}`;
+        // p og alt ukendt: teksten foldes ud. Et tag, vi ikke kender, maa
+        // koste sin formatering - aldrig sine ord.
+        return boern();
+      }
+    }
+  }
+
+  /** HTML fra én blok -> den markdown, blokken kom af. */
+  function tilMarkdown(html, opt) {
+    return ud(laes(String(html == null ? '' : html)), opt || {});
+  }
+
+  const api = { tilMarkdown, laes, afkod };
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else global.saguRedigering = api;
+}(typeof globalThis !== 'undefined' ? globalThis : this));
 
 /* ---- shared/soeg.js ---- */
 /*
@@ -3324,7 +3585,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 50;
+const APP_VERSION = 51;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er

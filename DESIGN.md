@@ -3217,3 +3217,87 @@ Fjorten sabotager er set fælde dem. Selve vinduet er ikke prøvet automatisk �
 ruden laver ingen selvstændige vinduer, den navigerede sin egen fane — men tilstanden er
 set i ruden: sidebaren væk, titlen sat til notens navn, og `?solo=1` bevaret gennem en
 navigation til en anden note.
+
+---
+
+## 38 · F30 · Vejen tilbage: HTML → markdown
+
+»Jeg vil gerne have et interface som viser det på samme måde som når man bare kigger på
+vores noter — bare også når man skriver i den« (Andreas, 2026-09-05).
+
+For at kunne skrive i noten, mens den er **renderet**, skal HTML kunne blive til markdown
+igen. `app/shared/redigering.js` er den vej. Fladen er ikke bygget endnu — det her er
+porten, der skulle bestås først.
+
+### Invarianten
+
+```
+tilMarkdown(render(md)) === md
+```
+
+Holder den ikke, bliver en note, man bare har **klikket** i, skrevet om — og det ville stå
+i versionshistorikken som en rettelse, ingen har lavet.
+
+Målt mod Andreas' 948 rigtige noter, alle 9.233 afsnit og overskrifter:
+
+| | |
+|---|---|
+| Første forsøg | **96,93 %** |
+| Efter rettelserne | **99,99 %** (9.232 af 9.233) |
+
+Den ene afviger er `## Husk ` → `## Husk`: rendereren trimmer overskrifter. Sådan en blok
+skal åbnes **råt** — og det er hele sikkerhedsnettet: *består en blok ikke rundturen,
+får den ikke WYSIWYG.* En serialiseringsfejl kan så aldrig omskrive tekst i tavshed.
+
+### Den er ren, ikke DOM-drevet
+
+Den skal bruges i browseren, hvor der er en DOM. Men prøverne kører i node, hvor der ikke
+er — og den vigtigste prøve er rundturen over hele korpus. En DOM-drevet udgave kunne ikke
+køre den, og to udgaver ville drive fra hinanden. Altså: en lille HTML-læser i modulet, og
+browseren giver bare sin `innerHTML` videre.
+
+### Rendereren skriver ned, hvad den udledte
+
+Det var her, arbejdet lå. Fire ting kunne ikke regnes baglæns, fordi to forskellige kilder
+gav samme HTML:
+
+| Spor | Uden det |
+|---|---|
+| `data-auto="1"` | `[a.dk](https://a.dk)` og en bar `https://a.dk` er samme `<a>` — gættet var forkert **240 gange** |
+| `data-md="_"` | `_kursiv_` og `*kursiv*` er samme `<em>` |
+| `data-md="sagu:…"` | `sagu:`-id'et forsvinder i den oversatte `src`, og noten taber sin vedhæftning |
+| `data-tom` / `data-billede` | `[](url)` og `![](url)` får deres tekst udfyldt af rendereren |
+
+**Et program, der har udledt noget, skal skrive det ned — ikke lade den næste regne
+baglæns.** Rettelsen hørte hjemme i rendereren, ikke i en klogere serialisering.
+
+### To rigtige fejl, fundet undervejs
+
+Rundturen sammenlignede `href` med kilden, og det afslørede to fejl, der ramte noterne
+**i drift** — ikke bare oversættelsen.
+
+**1 · `&` blev dobbelt-undsluppet.** `inline()` escaper hele teksten først, så en adresse,
+en regel fanger, bærer allerede `&amp;`. Et `attr()` ovenpå gjorde den til `&amp;amp;`,
+browseren afkodede ét lag, og linket pegede på `?x=1&amp;y=2`. **Hver eneste adresse med
+mere end én parameter var i stykker** — YouTube med `&t=`, Amazon, alt med en query.
+Adressen afkodes nu straks efter, den er fanget, så `sikkerUrl()` og værtens kroge også
+ser den rigtige adresse, og `attr()` undslipper én gang.
+
+**2 · Fremhævning kunne komme ind i et færdigt tag.** Reglerne kørte hen over hele
+strengen, også inde i de tags, de tidligere regler lige havde udsendt. Et sporingslink
+`.../v3/__https://...` fik et `<strong>` injiceret midt i sit `href`. Et færdigt tag
+lægges nu til side bag en pladsholder — præcis som kodestumper altid har været. Det
+fjerner en hel klasse af fejl, ikke bare den ene.
+
+### Indsæt-rensningen bliver gratis
+
+Andreas bad om rensning ved indsæt. Det er den samme funktion: indsat HTML køres gennem
+`tilMarkdown()`, og reglen »et ukendt tag koster sin formatering, aldrig sine ord« gør et
+Word-indsæt til ren markdown i stedet for `<span style>`-suppe. **Én mekanisme, to
+formål** — ikke en sanitizer ved siden af en serialisering, som kunne drive fra hinanden.
+
+### Hvad der venter
+
+Fladen: værktøjslinje, live-formatering (målrettet erstatning ved markøren, ikke en
+gentegning — ellers flytter markøren sig), og `contenteditable` pr. blok frem for pr.
+note, så en fejl kun kan ramme den blok, man står i.
