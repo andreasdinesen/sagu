@@ -278,10 +278,13 @@ generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
 - **GitHub sorterer tags ALFABETISK.** `v9` står efter `v80`. Tager man `liste[0]` fra
   `/repos/:ejer/:repo/tags`, ruller hver server 37 udgaver tilbage ved næste genstart.
   Regn hele listen igennem (`/^v(\d+)$/`, tag max), og bladr til en side ikke er fuld.
-- **Panelets »Opdater app« genstarter IKKE serveren.** `POST /api/servers/<id>/app-update`
-  svarer **202** og er asynkron; `restart` er et separat endpoint. En knap, der skifter
-  filer, efterlader altså den gamle proces kørende oven på ny kode, til nogen genstarter.
-  Målt i panelets egen log 2026-09-04 — det kostede Sagu ti timer.
+- **Panelets »Opdater app« kører stop → skift → start.** Målt to steder 2026-09-04:
+  `server_crashes` har `[sagu] lukker ned` med `exit_code 0` i samme sekund som
+  `app-update`, og containerens `StartedAt` er seks sekunder senere.
+  **Slut aldrig »ingen genstart« ud af, at der ikke står en `restart`-anmodning i loggen** —
+  en genstart inde i jobbet giver ingen HTTP-anmodning, og `202` kvitterer for, at jobbet
+  er accepteret, ikke for hvad det gjorde. Den fejlslutning stod i v48 og blev rettet i v49.
+  Skriv beskeder, der er sande, uanset hvad panelet gør.
 - **Pak aldrig ud i `/tmp` og byt med `mv`.** `mv` mellem to filsystemer er en kopi, og en
   kopi kan afbrydes på midten. Pak ud **ved siden af** `app/` i datamappen, flyt den gamle
   til `.sagu-gammel`, og byt med to `rename`. Det gælder `kilde.js` **og** runens scripts —

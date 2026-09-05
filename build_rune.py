@@ -90,7 +90,7 @@ GITHUB_REPO = 'sagu'
 # behoever ikke vaere den nyeste: foerste opstart henter alligevel det, der
 # staar i KODE_VERSION. Den skal bare vaere en udgave, der KAN starte - og
 # taggen SKAL vaere pushet, ellers kan runen ikke installeres forfra.
-RUNE_VERSION = 48
+RUNE_VERSION = 49
 
 
 def tarball_url(version):
@@ -709,18 +709,21 @@ def opdater_script(version, payload):
             + 'fi\n'
             '\n'
             '\n'
-            # Knappen skifter FILER. Panelets app-update svarer 202 og
-            # genstarter ikke selv - maalt i panelets egen log 2026-09-04:
-            # to app-update kl. 12:30, og foerst en restart ti timer senere.
-            # Indtil da koerte den gamle proces oven paa nye filer. Beskeden
-            # skal derfor vaere det sidste OG det tydeligste, man ser.
-            'echo "Databasen i /data er uroert."\n'
-            'echo ""\n'
-            'echo "============================================"\n'
-            'echo "  GENSTART SAGU NU."\n'
-            'echo "  Filerne er skiftet ud, men serveren koerer"\n'
-            'echo "  stadig den gamle kode, indtil den genstartes."\n'
-            'echo "============================================"\n'
+            # Panelet stopper appen FOER opdateringen og starter den bagefter
+            # - maalt to steder 2026-09-04: server_crashes har en post kl.
+            # 22:28:34 med "[sagu] lukker ned" og exit_code 0 (samme sekund som
+            # app-update), og containerens StartedAt er 22:28:40, altsaa seks
+            # sekunder efter. Panelet koerer stop -> skift -> start.
+            #
+            # Min foerste laesning var, at knappen IKKE genstartede - sluttet
+            # ud af, at der ikke stod en separat restart-anmodning i loggen.
+            # Det var aldrig et bevis: en genstart INDE i jobbet giver ingen
+            # HTTP-anmodning. Beskeden er derfor formuleret, saa den er sand
+            # begge veje - den lover ikke noget om panelet, og den efterlader
+            # heller ikke nogen i troen paa, at ny kode koerer af sig selv.
+            'echo "App-filerne er skiftet ud. Databasen i /data er uroert."\n'
+            'echo "Panelet genstarter Sagu bagefter. Sker det ikke, saa genstart"\n'
+            'echo "selv - serveren koerer den gamle kode, til den er genstartet."\n'
         )
     linjer = textwrap.wrap(payload, 100)
     return (

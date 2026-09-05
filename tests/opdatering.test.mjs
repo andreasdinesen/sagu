@@ -136,6 +136,19 @@ test('to samtidige tryk paa knappen: den ene arbejder, den anden faar besked', a
   assert.equal(lykkedes.length, 1, 'og praecis én skal komme igennem');
   assert.equal(afvist[0].kode, 1, 'den afviste skal faelde, ikke lade som om');
 
+  /*
+   * Peer-fund fra doda v84, og det er en skaerpelse vaerd at have: UDEN laasen
+   * faar man ogsaa »én igennem, én fejlet«. Taberen fejler bare paa en fil,
+   * vinderen lige har flyttet (`mv: ... No such file`) - og om `app/` overlever
+   * det, afhaenger af timingen, ikke af en regel. En prøve, der kun taeller
+   * successer og fejl, ville altsaa bestaa uden laasen.
+   *
+   * Derfor maales det deterministiske: taberen skal falde paa LAASEN og aldrig
+   * naa at roere en fil.
+   */
+  assert.doesNotMatch(afvist[0].ud + afvist[0].fejl, /mv:|tar:|No such file/,
+    'taberen naaede ind i filerne - saa stoppede laasen den ikke');
+
   // ... og appen skal vaere HEL bagefter - ikke en blanding af de to.
   assert.equal(readFileSync(path.join(s.data, 'app', 'server.js'), 'utf8'), '// ny server\n');
   assert.ok(existsSync(path.join(s.data, 'app', 'ny-fil.js')), 'den nye fil mangler');
@@ -259,12 +272,17 @@ test('laasen tages FOER begge grene', () => {
   assert.match(s, /trap '[^']*\.sagu-laas/, 'laasen frigives ikke ved fejl');
 });
 
-test('»genstart nu« er det SIDSTE, der staar', async (t) => {
+test('beskeden til sidst lover ikke noget om panelet - og glemmer det ikke', async (t) => {
   /*
-   * Panelets app-update svarer 202 og genstarter ikke selv - maalt i panelets
-   * egen log 2026-09-04: to app-update kl. 12:30, og foerst en restart ti
-   * timer senere. Indtil da koerte den gamle proces oven paa nye filer.
-   * Beskeden er den eneste vagt, der findes mod det, saa den skal staa sidst.
+   * Foerste udgave af den her prøve laaste et banner fast, der sagde »GENSTART
+   * SAGU NU - serveren koerer stadig den gamle kode«. Det var USANDT: panelet
+   * stopper appen foer opdateringen og starter den bagefter (maalt i
+   * server_crashes og i containerens StartedAt, 2026-09-04).
+   *
+   * En prøve, der holder en paastand paa plads, er praecis saa god som
+   * paastanden. Derfor maaler den her ikke ordlyden af et banner, men de to
+   * ting, beskeden SKAL kunne baere: at panelet plejer at genstarte, og at man
+   * selv skal, hvis det ikke sker. Saa er den sand, uanset hvad panelet goer.
    */
   const s = scene('besked');
   t.after(() => s.ryd());
@@ -273,8 +291,11 @@ test('»genstart nu« er det SIDSTE, der staar', async (t) => {
   const r = await koer(skriv(s.dir, medLokalAdresse(udgivet('update'), srv.url)), s.data);
   assert.equal(r.kode, 0, r.ud + r.fejl);
 
-  const linjer = r.ud.trimEnd().split('\n');
-  const sidste = linjer.slice(-5).join('\n');
-  assert.match(sidste, /GENSTART SAGU NU/, `beskeden staar ikke sidst:\n${r.ud}`);
-  assert.match(sidste, /gamle kode/, 'beskeden siger ikke HVORFOR');
+  const sidste = r.ud.trimEnd().split('\n').slice(-3).join('\n');
+  assert.match(sidste, /genstarter Sagu bagefter/, `beskeden staar ikke sidst:\n${r.ud}`);
+  assert.match(sidste, /Sker det ikke/, 'beskeden daekker ikke det tilfaelde');
+  assert.match(sidste, /gamle kode/, 'beskeden siger ikke HVAD der saa er galt');
+  // ... og den maa ikke paastaa noget, vi ikke har maalt.
+  assert.doesNotMatch(r.ud, /GENSTART SAGU NU/,
+    'et banner, der siger at serveren IKKE er genstartet, er usandt');
 });

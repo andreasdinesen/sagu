@@ -7,7 +7,7 @@ gameskill:
     wiki med valgfrit kodeord og kommentarer. Import fra Notion, API til iOS Shortcuts, MCP-server. Flere brugere med egne
     noter. Egen SQLite-database, ingen eksterne afhaengigheder.
   author: andreas
-  version: 48
+  version: 49
   icon: app
   docker:
     image: '{{NODE_IMAGE}}'
@@ -30,10 +30,10 @@ gameskill:
     hint: Tom = hent nyeste udgivelse fra GitHub ved hver genstart. Et tal (fx 46) laaser til praecis den udgave.
   install:
     image: '{{NODE_IMAGE}}'
-    script: "set -eu\necho \"Installerer Sagu (startsnor v48) ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden\
+    script: "set -eu\necho \"Installerer Sagu (startsnor v49) ...\"\necho \"Node: $(node --version)\"\n\necho \"Henter app-koden\
       \ fra GitHub ...\"\n\n# Der pakkes ud VED SIDEN AF app/, ikke i /tmp: et bytte skal kunne\n# ske med to rename inden\
       \ for samme filsystem.\nrm -rf .sagu-ny .sagu-gammel\nmkdir -p .sagu-ny\nnode -e 'const https=require(\"https\"),zlib=require(\"\
-      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v48\";function d(m){console.error(\"\
+      zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v49\";function d(m){console.error(\"\
       [fejl] \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen ikke findes OG naar\
       \ der ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function hent(u,n){https.get(u,{headers:{\"\
       user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return d(\"\
@@ -58,7 +58,7 @@ gameskill:
       \ ;;\n  esac\n  echo \"Oensket udgave: ${K:-nyeste}\"\n  KODE_VERSION=\"$K\" node app/kilde.js\nelse\n  echo \"Henter\
       \ app-koden fra GitHub ...\"\n\n  # Der pakkes ud VED SIDEN AF app/, ikke i /tmp: et bytte skal kunne\n  # ske med to\
       \ rename inden for samme filsystem.\n  rm -rf .sagu-ny .sagu-gammel\n  mkdir -p .sagu-ny\n  node -e 'const https=require(\"\
-      https\"),zlib=require(\"zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v48\";function\
+      https\"),zlib=require(\"zlib\");const U=\"https://codeload.github.com/andreasdinesen/sagu/tar.gz/refs/tags/v49\";function\
       \ d(m){console.error(\"[fejl] \"+m);console.error(\"Adresse: \"+U);console.error(\"GitHub svarer 404 BAADE naar adressen\
       \ ikke findes OG naar der ikke er adgang - tjek at taggen er pushet, og at repoet er offentligt.\");process.exit(1);}function\
       \ hent(u,n){https.get(u,{headers:{\"user-agent\":\"sagu-installer\"}},(r)=>{if(r.statusCode>=300&&r.statusCode<400&&r.headers.location){if(n<=0)return\
@@ -71,9 +71,9 @@ gameskill:
       \ 1)\n  if [ -z \"$NY\" ] || [ ! -f \"$NY/server.js\" ]; then\n    echo \"[fejl] arkivet fra GitHub indeholder ingen\
       \ app/server.js\"\n    exit 1\n  fi\n\n  # To omdoebninger, ingen kopi. Doer vi mellem dem, ligger den gamle\n  # app\
       \ under .sagu-gammel, og startup-kommandoen saetter den tilbage.\n  if [ -d app ]; then mv app .sagu-gammel; fi\n  mv\
-      \ \"$NY\" app\n  rm -rf .sagu-ny .sagu-gammel\nfi\n\n\necho \"Databasen i /data er uroert.\"\necho \"\"\necho \"============================================\"\
-      \necho \"  GENSTART SAGU NU.\"\necho \"  Filerne er skiftet ud, men serveren koerer\"\necho \"  stadig den gamle kode,\
-      \ indtil den genstartes.\"\necho \"============================================\"\n"
+      \ \"$NY\" app\n  rm -rf .sagu-ny .sagu-gammel\nfi\n\n\necho \"App-filerne er skiftet ud. Databasen i /data er uroert.\"\
+      \necho \"Panelet genstarter Sagu bagefter. Sker det ikke, saa genstart\"\necho \"selv - serveren koerer den gamle kode,\
+      \ til den er genstartet.\"\n"
   startup:
     command: "if [ ! -f app/server.js ] && [ -f .sagu-gammel/server.js ]; then\n  rm -rf app\n  mv .sagu-gammel app\n  echo\
       \ \"[kode] app/ sat tilbage efter en afbrudt udskiftning\"\nfi\nif [ -d .sagu-laas ]; then\n  rm -rf .sagu-laas .sagu-ny\n\

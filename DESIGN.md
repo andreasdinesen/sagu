@@ -3004,10 +3004,10 @@ Målt i panelets egen anmodningslog:
 22:27:00  DELETE .../crashes    -> 200
 ```
 
-To ting står klart. **`app-update` svarer 202 og genstarter ikke selv** — genstart er
-et separat endpoint, og den kom ti timer senere, fra Andreas. Indtil da kørte den
-gamle proces oven på nye filer. Og **knappen blev trykket to gange med otte sekunders
-mellemrum.**
+Én ting står klart: **knappen blev trykket to gange med otte sekunders mellemrum.**
+
+Jeg læste også noget andet ud af loggen, og **det var forkert** — se næst­sidste afsnit.
+Panelet **genstarter** appen som en del af opdateringen.
 
 ### De tre fælder, på tre linjer
 
@@ -3058,21 +3058,40 @@ altid. Bliver containeren dræbt hårdt, når `trap` ikke at køre; den vej rydd
 øjeblik appen starter, mister sin lås — og den pris er mindre end en knap, der aldrig
 virker igen.
 
-### Beskeden
+### Beskeden — og den slutning, der ikke holdt
 
-Knappen skifter **filer**. Den kan ikke genstarte serveren, og panelet gør det ikke
-selv. Den eneste vagt, der findes mod det, er en besked — så den står nu sidst,
-i en ramme, og siger hvorfor:
+Første udgave af v48 sluttede med et indrammet **»GENSTART SAGU NU — serveren koerer
+stadig den gamle kode«**. Det var **usandt**, og det stod der, fordi jeg havde sluttet
+»panelet genstarter ikke« ud af, at der ikke lå en separat `restart`-anmodning i
+panelets log.
+
+Det har aldrig været et bevis. **En genstart inde i selve jobbet giver ingen
+HTTP-anmodning**, og `202` er kvitteringen for, at jobbet er *accepteret* — ikke for,
+hvad det gjorde. Fundet af doda v84, som spurgte til sin egen install-log.
+
+Målt bagefter, to uafhængige steder:
+
+- `server_crashes` har en post for Sagu kl. **22:28:34** med `exit_code 0` og
+  `[sagu] lukker ned` — samme sekund som `app-update`. Panelet **stoppede** appen.
+- Containerens `StartedAt` er **22:28:40**, seks sekunder senere. Genstarten kl.
+  22:26:44 ville have givet 22:26:47.
+
+Panelet kører altså **stop → skift filer → start**. Det ændrer også diagnosen af
+nedetiden: den gamle proces kørte ikke videre på nye filer — appen blev stoppet,
+filerne skiftet af to kørsler, der trådte i hinanden, og så kunne den ikke starte igen.
+
+Beskeden er derfor formuleret, så den er sand **begge veje**. Den lover ikke noget om
+panelet, og den efterlader heller ikke nogen i troen på, at ny kode kører af sig selv:
 
 ```
-============================================
-  GENSTART SAGU NU.
-  Filerne er skiftet ud, men serveren koerer
-  stadig den gamle kode, indtil den genstartes.
-============================================
+App-filerne er skiftet ud. Databasen i /data er uroert.
+Panelet genstarter Sagu bagefter. Sker det ikke, saa genstart
+selv - serveren koerer den gamle kode, til den er genstartet.
 ```
 
-En prøve holder den dér: flyttes den op i scriptet, bliver den rød.
+Prøven blev rettet med den. Den måler ikke længere **ordlyden af et banner**, men de to
+ting, beskeden skal kunne bære — og den fælder udtrykkeligt det gamle banner.
+**En prøve, der holder en påstand på plads, er præcis så god som påstanden.**
 
 ### Hvad prøverne måler
 
@@ -3091,3 +3110,12 @@ vagt og ikke prøvens.
 ikke findes, og `-1 < x` er altid sandt. Prøven for »låsen tages før begge grene« ville
 altså have bestået netop den dag, låsen var **væk**. Den kræver nu, at begge strenge
 findes, før den sammenligner.
+
+**Og én skærpelse kom udefra** (doda v84). Uden låsen får man også »én igennem, én
+fejlet« — reproduceret her: taberen falder på `tar: .sagu-ny/app.tar: No such file`,
+fordi vinderen har ryddet mappen, og `app/` overlever *tilfældigvis*. Om skaden sker,
+afhænger altså af timing, ikke af en regel. En samtidigheds-prøve, der kun tæller
+successer og fejl, ville derfor bestå uden låsen. Prøven kræver nu det deterministiske:
+**taberen skal falde på LÅSEN og aldrig nå at røre en fil** (`doesNotMatch(/mv:|tar:|No
+such file/)`). Samme slags fejl som `indexOf`-fangsten, et lag højere — *påstanden om,
+hvad en sabotage beviser, skal selv efterprøves.*
