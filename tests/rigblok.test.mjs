@@ -140,6 +140,62 @@ test('en TOM blok kan ses - og pladsholderen naar aldrig noten', () => {
     'pladsholderen staar i JS - saa kan den skrives med ind i noten');
 });
 
+test('Enter bliver i afsnittet - ⌘/Ctrl+Enter laver et nyt', () => {
+  /*
+   * »Kan du lave saa den kun laver et nyt afsnit hvis man benytter command +
+   * enter? Hvis man bare bruger enter saa bliver det i samme afsnit?«
+   * (Andreas, 2026-09-05).
+   *
+   * Browserens EGEN opfoersel er den modsatte, saa det er ikke nok at lade
+   * tasten falde igennem - den skal fanges begge veje. Selve virkningen kan
+   * ikke proeves her (ingen DOM, og browser-ruden sluger tastetryk), saa den
+   * er maalt i browseren: Enter gav `linje et\nsamme`, ⌘+Enter gav
+   * `linje et\nsamme\n\nnyt`.
+   */
+  const i = p4.indexOf('function bindRigBlok');
+  const stykke = p4.slice(i, p4.indexOf('\n}\n', i));
+  assert.match(stykke, /if \(e\.key === 'Enter'\) \{/, 'Enter fanges ikke');
+  assert.match(stykke, /nytLinjeskift\(vaert, e\.metaKey \|\| e\.ctrlKey\)/,
+    'valget mellem linjeskift og nyt afsnit haenger ikke paa ⌘/Ctrl');
+  // Windows skal med: `ctrlKey`, ikke kun `metaKey`.
+  assert.match(stykke, /e\.ctrlKey/, 'Ctrl+Enter virker ikke paa Windows');
+  // ... og ⌘+Enter maa ikke ogsaa lukke blokken, som det gjorde foer.
+  assert.ok(!/Enter' && \(e\.metaKey \|\| e\.ctrlKey\)\) \{\s*e\.preventDefault\(\); e\.stopPropagation\(\); lukBlok/.test(stykke),
+    '⌘+Enter lukker stadig blokken - saa kan den ikke ogsaa lave et afsnit');
+  assert.match(stykke, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); lukBlok\(\); return; \}/,
+    'Escape lukker ikke laengere - og saa er der ingen vej ud');
+});
+
+test('linjeskiftet bruger browserens egne to kommandoer', () => {
+  // `insertLineBreak` og `insertParagraph` er markeret som udgaaede, men er
+  // den eneste vej til browserens EGEN fortrydelseshistorik. Reserven under
+  // dem daekker kun det bloede linjeskift - et halvt delt afsnit er vaerre
+  // end ingenting.
+  const i = p4.indexOf('function nytLinjeskift');
+  assert.ok(i > -1, 'nytLinjeskift findes ikke');
+  const stykke = p4.slice(i, p4.indexOf('\n}\n', i));
+  assert.match(stykke, /nytAfsnit \? 'insertParagraph' : 'insertLineBreak'/);
+  assert.match(stykke, /createElement\('br'\)/, 'der er ingen reserve');
+});
+
+test('pop-ud staar i vaerktoejsraekken - og KUN dér', () => {
+  /*
+   * »Kan du flytte Open in its own window op i menuen ved saved, saa det er
+   * let at trykke paa?« (Andreas, 2026-09-05). To steder til den samme
+   * handling er ét for meget, og `...`-menuen er i forvejen lang.
+   */
+  assert.match(p4, /id="popUdBtn"/, 'knappen staar ikke i raekken');
+  assert.ok(!/data-do="popud"/.test(p4), 'punktet staar stadig i ...-menuen');
+  // Skjult i et vindue, der ALLEREDE er poppet ud.
+  const i = p4.indexOf('id="popUdBtn"');
+  assert.match(p4.slice(Math.max(0, i - 200), i), /soloVindue\(\) \? '' :/,
+    'knappen vises ogsaa i et sidevindue');
+  // Handleren skal blive ved med at vaere synkron - ellers blokeres vinduet.
+  const j = p4.indexOf("getElementById('popUdBtn')");
+  const h = p4.slice(j, j + 220);
+  assert.ok(!/await/.test(h), 'der ventes paa noget foer window.open');
+});
+
 test('hele-noten-kontakten siger, hvad man giver AFKALD paa', () => {
   /*
    * »Mine noter bliver stadigvaek lavet om til markdown naar jeg proever at

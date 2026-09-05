@@ -193,25 +193,28 @@ test('sidevinduet beholder soegefeltet - ellers er det en blindgyde', () => {
   assert.match(css, /body\.solo \.omni-legend\s*\{\s*display:\s*none/);
 });
 
-test('pop-ud staar FOER det foerste await i menuens handler', () => {
+test('knappens handler er SYNKRON - intet await foran window.open', () => {
   /*
    * `window.open` skal koere i samme hop som klikket, ellers er
    * brugerhandlingen brugt op, og browseren blokerer vinduet. Ét `await`
    * foran ville vaere nok - og fejlen ville vise sig som »der sker ingenting«,
    * kun hos den, der har en langsom forbindelse.
+   *
+   * Knappen laa i `...`-menuen til v57. Fra v58 staar den i
+   * vaerktoejsraekken (»saa det er let at trykke paa«), og proeven flyttede
+   * med - reglen er den samme, stedet er et andet.
    */
-  const i = p4.indexOf("if (hvad === 'popud')");
-  assert.ok(i > -1, 'popud-grenen findes ikke');
-  const start = p4.lastIndexOf('async () => {', i);
-  assert.ok(start > -1 && start < i, 'popud staar ikke i menuens handler');
-  const foer = p4.slice(start, i);
-  assert.ok(!foer.includes('await '), `der ventes paa noget foer popud:\n${foer.slice(-200)}`);
+  const i = p4.indexOf("getElementById('popUdBtn')");
+  assert.ok(i > -1, 'pop-ud-knappen findes ikke');
+  const h = p4.slice(i, i + 260);
+  assert.ok(!h.includes('await '), `der ventes paa noget foer window.open:\n${h}`);
+  assert.match(h, /popUdNote\(editor\.note\)/, 'knappen kalder ikke popUdNote');
 });
 
-test('punktet er skjult i et vindue, der ALLEREDE er poppet ud', () => {
+test('knappen er skjult i et vindue, der ALLEREDE er poppet ud', () => {
   // En knap, der aabner det vindue, man staar i, er ikke en knap.
-  const i = p4.indexOf("data-do=\"popud\"");
-  const linje = p4.slice(p4.lastIndexOf('\n', i), i);
-  assert.match(linje, /soloVindue\(\)\s*\?\s*''\s*:/,
-    'pop-ud-punktet vises ogsaa i et sidevindue');
+  const i = p4.indexOf('id="popUdBtn"');
+  assert.ok(i > -1, 'knappen findes ikke');
+  assert.match(p4.slice(Math.max(0, i - 200), i), /soloVindue\(\)\s*\?\s*''\s*:/,
+    'pop-ud-knappen vises ogsaa i et sidevindue');
 });

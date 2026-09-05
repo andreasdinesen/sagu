@@ -3790,7 +3790,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 57;
+const APP_VERSION = 58;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -8873,6 +8873,8 @@ function sideNote() {
         <button class="iconbtn" id="kopiNote"
           title="Copy the whole note — with the images">${icon('copy', 15)}</button>
         <button class="iconbtn" id="fokusBtn" title="Focus mode (F) — just the note">${icon('focus', 16)}</button>
+        ${soloVindue() ? '' : `<button class="iconbtn" id="popUdBtn"
+          title="Open in its own window">${icon('vindue', 16)}</button>`}
         ${favoritKnapHtml(n)}
         ${delKnapHtml(n)}
         ${n.mine === false ? '' : udgivKnapHtml(n.published)}
@@ -9750,6 +9752,48 @@ function rydTomme(vaert) {
   });
 }
 
+/*
+ * Enter og ⌘/Ctrl+Enter i den rige blok (F32).
+ *
+ * »Kan du lave saa den kun laver et nyt afsnit hvis man benytter command +
+ * enter? Hvis man bare bruger enter saa bliver det i samme afsnit?«
+ * (Andreas, 2026-09-05).
+ *
+ * Browserens egen opfoersel er den modsatte: Enter laver et nyt afsnit,
+ * Shift+Enter et blødt linjeskift. Vi vender den om, saa den mest brugte
+ * tast goer det mest almindelige - at skrive videre paa naeste linje i det
+ * samme afsnit.
+ *
+ * `execCommand` er markeret som udgaaet, men er stadig den eneste vej til
+ * browserens EGEN haandtering af de to slags linjeskift - inklusive dens
+ * fortrydelseshistorik. En haandlavet udgave ville skulle vedligeholde den
+ * selv. Derfor bruges den, og derfor er der en reserve nedenunder.
+ */
+function nytLinjeskift(vaert, nytAfsnit) {
+  const kommando = nytAfsnit ? 'insertParagraph' : 'insertLineBreak';
+  try {
+    if (document.execCommand(kommando)) return true;
+  } catch { /* faldet igennem - se reserven */ }
+  /*
+   * Reserven daekker kun det bloede linjeskift; et nyt afsnit uden
+   * `execCommand` ville kraeve, at vi selv delte elementet, og et halvt delt
+   * afsnit er vaerre end ingenting. Kan browseren ikke kommandoen, faar man
+   * et linjeskift - og markdown gør resten, naar blokken skrives tilbage.
+   */
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const br = document.createElement('br');
+  r.insertNode(br);
+  const efter = document.createRange();
+  efter.setStartAfter(br);
+  efter.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(efter);
+  return true;
+}
+
 /** Blokkens HTML tilbage til markdown og ind i noten. */
 function gemRigBlok(vaert, b) {
   rydTomme(vaert);
@@ -9786,8 +9830,18 @@ function bindRigBlok(vaert, b) {
     // Escape hele blokken i stedet for kun listen.
     if (wikiTast(e)) return;
     if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault(); e.stopPropagation(); lukBlok(); return;
+    /*
+     * Enter bliver i afsnittet; ⌘/Ctrl+Enter laver et nyt.
+     *
+     * ⌘+Enter LUKKEDE blokken foer. Den vej er ikke vaek - Escape lukker, og
+     * det goer et klik uden for feltet ogsaa - men det er en vane, der
+     * skifter, og derfor staar den skrevet her og i »How to write«.
+     */
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (nytLinjeskift(vaert, e.metaKey || e.ctrlKey)) gemRigBlok(vaert, b);
+      return;
     }
     if ((e.metaKey || e.ctrlKey) && !e.altKey) {
       const t = { b: 'strong', i: 'em', u: 'u' }[e.key.toLowerCase()];
@@ -10168,6 +10222,19 @@ function bindNoteSide() {
   const fokus = document.getElementById('fokusBtn');
   if (fokus) fokus.addEventListener('click', () => saetFokus(!erIFokus()));
 
+  /*
+   * Pop-ud flyttet op i vaerktoejsraekken (Andreas, 2026-09-05): »saa det er
+   * let at trykke paa«. Den staar derfor IKKE laengere i `...`-menuen - to
+   * steder til den samme handling er ét for meget, og menuen er i forvejen
+   * lang.
+   *
+   * Handleren skal blive ved med at vaere SYNKRON: `window.open` maa koere i
+   * samme hop som klikket, ellers er brugerhandlingen brugt op, og browseren
+   * blokerer vinduet.
+   */
+  const popUd = document.getElementById('popUdBtn');
+  if (popUd) popUd.addEventListener('click', () => { if (editor.note) popUdNote(editor.note); });
+
   const ikonKnap = document.getElementById('noteIkon');
   if (ikonKnap) {
     ikonKnap.addEventListener('click', () => visIkonVaelger(ikonKnap, n.icon, async (e) => {
@@ -10492,7 +10559,6 @@ function visNoteMenu() {
     <button class="usermenu-item" data-do="ned">${icon('udfold', 16)}<span>Move down</span></button>
     <button class="usermenu-item" data-do="flyt">${icon('book', 16)}<span>Move to notebook…</span></button>
     ${n.parentId ? `<button class="usermenu-item" data-do="root">${icon('out', 16)}<span>Move to top level</span></button>` : ''}` : ''}
-    ${soloVindue() ? '' : `<button class="usermenu-item" data-do="popud">${icon('vindue', 16)}<span>Open in its own window</span></button>`}
     <button class="usermenu-item" data-do="fs">${icon('focus', 16)}<span>Browser fullscreen</span></button>
     ${mit ? `<button class="usermenu-item danger" data-do="del">${icon('trash', 16)}<span>Move to trash</span></button>` : ''}`;
   vaert.appendChild(host);
@@ -10502,12 +10568,6 @@ function visNoteMenu() {
       const hvad = el.dataset.do;
       host.remove();
       try {
-        /*
-         * Foerst i listen, og synkront: `window.open` skal naa at koere,
-         * mens klikket stadig taeller som en brugerhandling. Ét `await`
-         * foran ville vaere nok til, at browseren blokerede vinduet.
-         */
-        if (hvad === 'popud') { popUdNote(n); return; }
         if (hvad === 'fil') { vaelgFiler(); return; }
         if (hvad === 'md') { visMarkdownPanel(); return; }
         if (hvad === 'pdf') { gemSomPdf(n); return; }

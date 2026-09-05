@@ -3522,6 +3522,35 @@ linje. Med en tvunget bredde er feltet 31 px, altså præcis én linje. *Fælden
 i RUNE-ERFARINGER, og jeg gik i den alligevel* — en måling fra en skjult rude er ikke en
 måling.
 
+### Enter vendt om
+
+»Kan du lave så den kun laver et nyt afsnit hvis man benytter command + enter? Hvis man
+bare bruger enter så bliver det i samme afsnit?« (Andreas, 2026-09-05).
+
+Browserens egen opførsel er den modsatte — Enter deler afsnittet, Shift+Enter giver et
+blødt linjeskift — så tasten skal fanges **begge veje**, ikke bare falde igennem. Nu:
+
+| | |
+|---|---|
+| **Enter** | linjeskift i samme afsnit |
+| **⌘ / Ctrl + Enter** | nyt afsnit |
+| **Esc** | lukker blokken |
+
+`⌘+Enter` **lukkede blokken** før. Den vej er ikke væk — Escape lukker, og det gør et klik
+uden for feltet også — men det er en vane, der skifter, og derfor står det skrevet både i
+koden og her.
+
+De to slags linjeskift laves med browserens egne kommandoer (`insertLineBreak` og
+`insertParagraph`). De er markeret som udgåede, men er den eneste vej til browserens
+**egen fortrydelseshistorik**; en håndlavet udgave skulle vedligeholde den selv. Reserven
+under dem dækker kun det bløde linjeskift: et halvt delt afsnit er værre end ingenting.
+
+### Pop-ud flyttet op
+
+»…op i menuen ved saved, så det er let at trykke på.« Den står nu i værktøjsrækken ved
+siden af fokus-knappen — og **kun** dér. To steder til den samme handling er ét for meget,
+og `…`-menuen er i forvejen lang.
+
 ### Hvad der venter
 
 Billeder i en anden størrelse end deres egen er **fravalgt** (Andreas, 2026-09-05).
