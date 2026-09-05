@@ -666,6 +666,10 @@
              * skrevet om, fordi man klikkede i den (F30).
              */
             praefiks: m[0].slice(0, m[0].indexOf('[')),   // uden [ ] - boksen skrives af serialiseringen
+            // Mellemrummene MELLEM ] og teksten. Andreas skriver `- [x]  ` med
+            // to; skrev vi ét tilbage, ville hele hans indkoebsliste blive
+            // rettet, fordi han klikkede i den (F30).
+            mellem: m[0].slice(m[0].indexOf(']') + 1, m[0].length - m[3].length),
             linje: i,
           });
           i++;
@@ -797,7 +801,8 @@
         // raekken - et rigtigt checkbox ville sende en formular ingen steder.
         html += `<div class="tjekliste"${mrk}>${b.punkter.map((p) => `
           <div class="tjek${p.tjekket ? ' er-tjekket' : ''}"${
-  p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''} style="margin-left:${p.dybde * 22}px">
+  p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''}${
+  p.mellem && p.mellem !== ' ' ? ` data-mellem="${attr(p.mellem)}"` : ''} style="margin-left:${p.dybde * 22}px">
             <button class="tjek-boks" data-tjek="${p.linje}" role="checkbox"
               aria-checked="${p.tjekket ? 'true' : 'false'}"${
   p.tjekket && p.maerke !== 'x' ? ` data-x="${attr(p.maerke)}"` : ''}>${p.tjekket ? '✓' : ''}</button>
@@ -1755,7 +1760,8 @@
       const tjekket = boks && (boks.attr || {})['aria-checked'] === 'true';
       const x = (boks && (boks.attr || {})['data-x']) || 'x';
       const raa = (raekke.attr || {})['data-md'];
-      if (raa) return `${raa}[${tjekket ? x : ' '}] ${tekst ? ud(tekst, opt) : ''}`;
+      const mellem = (raekke.attr || {})['data-mellem'] || ' ';
+      if (raa) return `${raa}[${tjekket ? x : ' '}]${mellem}${tekst ? ud(tekst, opt) : ''}`;
       const m = /margin-left:\s*(\d+)px/.exec(String((raekke.attr || {}).style || ''));
       const dybde = m ? Math.round(Number(m[1]) / 22) : 0;
       return `${'  '.repeat(dybde)}- [${tjekket ? x : ' '}] ${tekst ? ud(tekst, opt) : ''}`;
@@ -1871,6 +1877,28 @@
         if (harKlasse(knude, 'notelink')) return `[[${boern()}]]`;
         return boern();
       }
+
+      case 'table': {
+        /*
+         * Skillelinjen baerer justeringen, og den staar i cellernes KLASSE:
+         * `left` skrives uden tegn, som markdown goer det. `data-md` paa
+         * tabellen er skillelinjen, som den STOD - `|---|` og `| --- |` og
+         * `|:--:|` betyder det samme, men kun det ene stod der.
+         */
+        const raekker = find(knude, (k) => k.tag === 'tr');
+        if (!raekker.length) return boern();
+        const celler = (tr) => (tr.boern || []).filter((k) => k.tag === 'th' || k.tag === 'td');
+        const linje = (tr) => `| ${celler(tr).map((c) => ud(c, opt).trim()).join(' | ')} |`;
+        const just = celler(raekker[0]).map((c) => {
+          const kl = klasser(c);
+          if (kl.includes('center')) return ':-:';
+          if (kl.includes('right')) return '--:';
+          return '---';
+        });
+        const skil = a['data-md'] || `|${just.join('|')}|`;
+        return [linje(raekker[0]), skil, ...raekker.slice(1).map(linje)].join('\n');
+      }
+      case 'th': case 'td': return boern();
 
       case 'div': {
         if (harKlasse(knude, 'tjekliste')) return tjeklisteUd(knude, opt);
@@ -3727,7 +3755,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er

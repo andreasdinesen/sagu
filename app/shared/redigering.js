@@ -154,7 +154,8 @@
       const tjekket = boks && (boks.attr || {})['aria-checked'] === 'true';
       const x = (boks && (boks.attr || {})['data-x']) || 'x';
       const raa = (raekke.attr || {})['data-md'];
-      if (raa) return `${raa}[${tjekket ? x : ' '}] ${tekst ? ud(tekst, opt) : ''}`;
+      const mellem = (raekke.attr || {})['data-mellem'] || ' ';
+      if (raa) return `${raa}[${tjekket ? x : ' '}]${mellem}${tekst ? ud(tekst, opt) : ''}`;
       const m = /margin-left:\s*(\d+)px/.exec(String((raekke.attr || {}).style || ''));
       const dybde = m ? Math.round(Number(m[1]) / 22) : 0;
       return `${'  '.repeat(dybde)}- [${tjekket ? x : ' '}] ${tekst ? ud(tekst, opt) : ''}`;
@@ -270,6 +271,28 @@
         if (harKlasse(knude, 'notelink')) return `[[${boern()}]]`;
         return boern();
       }
+
+      case 'table': {
+        /*
+         * Skillelinjen baerer justeringen, og den staar i cellernes KLASSE:
+         * `left` skrives uden tegn, som markdown goer det. `data-md` paa
+         * tabellen er skillelinjen, som den STOD - `|---|` og `| --- |` og
+         * `|:--:|` betyder det samme, men kun det ene stod der.
+         */
+        const raekker = find(knude, (k) => k.tag === 'tr');
+        if (!raekker.length) return boern();
+        const celler = (tr) => (tr.boern || []).filter((k) => k.tag === 'th' || k.tag === 'td');
+        const linje = (tr) => `| ${celler(tr).map((c) => ud(c, opt).trim()).join(' | ')} |`;
+        const just = celler(raekker[0]).map((c) => {
+          const kl = klasser(c);
+          if (kl.includes('center')) return ':-:';
+          if (kl.includes('right')) return '--:';
+          return '---';
+        });
+        const skil = a['data-md'] || `|${just.join('|')}|`;
+        return [linje(raekker[0]), skil, ...raekker.slice(1).map(linje)].join('\n');
+      }
+      case 'th': case 'td': return boern();
 
       case 'div': {
         if (harKlasse(knude, 'tjekliste')) return tjeklisteUd(knude, opt);

@@ -82,10 +82,27 @@ test('lister, tjeklister, citater og callouts redigeres renderet', () => {
   }
 });
 
-test('tabeller aabner raat - endnu', () => {
-  // Ikke lavet. En bloktype, der ikke er maalt, faar ikke WYSIWYG.
-  const kilde = '| a | b |\n|---|---|\n| 1 | 2 |';
+test('tabeller aabner RAAT - og det er et valg, ikke et hul', () => {
+  /*
+   * Oversaettelsen KAN tabeller - den bruges til at rense det, man indsaetter
+   * fra en webside. Men ingen af Andreas' 35 tabeller bestod rundturen:
+   * de er skrevet `| --- | --- |` med mellemrum og med haandsat cellebredde
+   * (`| setup  |`), og en kanonisk udskrift retter det hele.
+   *
+   * Vi kunne have baaret hver celles polstring med. Men for en tabel ER den
+   * raa form den gode skriveflade: kolonnerne staar under hinanden, og det er
+   * netop dét, man har brugt tid paa at rette til. At normalisere den ved
+   * foerste tastetryk ville vaere at smide arbejdet vaek.
+   */
+  const kilde = '| a | b |\n| --- | --- |\n| 1 | 2 |';
   assert.equal(kanRedigereRigt(kilde, blok(kilde)), false);
+  assert.ok(!RIGE_BLOKKE.has('tabel'));
+});
+
+test('tjeklister med to mellemrum bestaar porten', () => {
+  // Syv af ni af Andreas' tjeklister ser saadan ud.
+  const kilde = '- [x]  Kaffe\n- [ ]  Filtre';
+  assert.equal(kanRedigereRigt(kilde, blok(kilde)), true);
 });
 
 test('en blok, der ikke kan skrives TILBAGE, aabner raat', () => {

@@ -73,6 +73,11 @@ const KORPUS = [
   '> et citat\n> paa to linjer',
   '> [!NOTE]\n> en callout',
   '> [!WARNING]\n> pas paa\n> paa to linjer',
+  '- [x]  to mellemrum efter boksen',
+  '- [ ]   og tre',
+  '  - [x]  indrykket OG to mellemrum',
+  '| a | b |\n|---|---|\n| 1 | 2 |',
+  '| a | b | c |\n|---|:-:|--:|\n| 1 | 2 | 3 |',
 ];
 
 test('rundturen er EKSAKT for hver konstruktion, appen kan rendere', () => {
@@ -214,6 +219,37 @@ test('en klasse slaas op som et HELT ord', () => {
   const html = md.render('> [!NOTE]\n> en callout').html.trim();
   assert.match(html, /callout-krop/, 'forudsaetningen holder ikke - ret proeven');
   assert.equal(R.tilMarkdown(html), '> [!NOTE]\n> en callout');
+});
+
+test('mellemrummene efter ] er brugerens - ikke vores', () => {
+  /*
+   * Syv af Andreas' ni tjeklister skrev `- [x]  ` med TO mellemrum. Skrev vi
+   * ét tilbage, ville hele hans indkoebsliste blive rettet, fordi han
+   * klikkede i den - og staa i versionshistorikken som en aendring, han ikke
+   * har lavet. Det bragte tjeklisterne fra 22,2 % til 100 %.
+   */
+  assert.equal(R.tilMarkdown(md.render('- [x]  to').html.trim()), '- [x]  to');
+  assert.equal(R.tilMarkdown(md.render('- [ ] et').html.trim()), '- [ ] et');
+});
+
+test('en tabel indsat fra en webside bliver til en markdown-tabel', () => {
+  /*
+   * Tabeller aabner IKKE renderet - se `rigblok.test.mjs`. Men
+   * oversaettelsen bruges ogsaa til at rense det, man INDSAETTER, og dér er
+   * en tabel netop det, man kopierer fra en side. Uden den her gren blev
+   * cellerne til én lang linje uden struktur.
+   */
+  const web = '<table><thead><tr><th>Navn</th><th>Pris</th></tr></thead>'
+    + '<tbody><tr><td>Etiopien</td><td>250 kr</td></tr></tbody></table>';
+  assert.equal(R.tilMarkdown(web), '| Navn | Pris |\n|---|---|\n| Etiopien | 250 kr |');
+});
+
+test('justeringen laeses af cellernes klasse', () => {
+  assert.equal(
+    R.tilMarkdown('<table><thead><tr><th>a</th><th class="center">b</th>'
+      + '<th class="right">c</th></tr></thead><tbody><tr><td>1</td>'
+      + '<td class="center">2</td><td class="right">3</td></tr></tbody></table>'),
+    '| a | b | c |\n|---|:-:|--:|\n| 1 | 2 | 3 |');
 });
 
 test('fluebenets tilstand laeses af aria-checked, ikke af tegnet indeni', () => {

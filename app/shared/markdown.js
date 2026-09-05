@@ -409,6 +409,10 @@
              * skrevet om, fordi man klikkede i den (F30).
              */
             praefiks: m[0].slice(0, m[0].indexOf('[')),   // uden [ ] - boksen skrives af serialiseringen
+            // Mellemrummene MELLEM ] og teksten. Andreas skriver `- [x]  ` med
+            // to; skrev vi ét tilbage, ville hele hans indkoebsliste blive
+            // rettet, fordi han klikkede i den (F30).
+            mellem: m[0].slice(m[0].indexOf(']') + 1, m[0].length - m[3].length),
             linje: i,
           });
           i++;
@@ -540,7 +544,8 @@
         // raekken - et rigtigt checkbox ville sende en formular ingen steder.
         html += `<div class="tjekliste"${mrk}>${b.punkter.map((p) => `
           <div class="tjek${p.tjekket ? ' er-tjekket' : ''}"${
-  p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''} style="margin-left:${p.dybde * 22}px">
+  p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''}${
+  p.mellem && p.mellem !== ' ' ? ` data-mellem="${attr(p.mellem)}"` : ''} style="margin-left:${p.dybde * 22}px">
             <button class="tjek-boks" data-tjek="${p.linje}" role="checkbox"
               aria-checked="${p.tjekket ? 'true' : 'false'}"${
   p.tjekket && p.maerke !== 'x' ? ` data-x="${attr(p.maerke)}"` : ''}>${p.tjekket ? '✓' : ''}</button>

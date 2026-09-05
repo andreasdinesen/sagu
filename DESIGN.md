@@ -3404,6 +3404,36 @@ var to fejl, og den anden var værre end den, han så:
 Undervejs fandt jeg et **blødt bindestreg-tegn** (U+00AD) i min egen kildekode, som fik to
 søgninger til at fejle uden grund. Det er fjernet; et usynligt tegn i kode er en fælde.
 
+### Tredje etape: tjeklisternes mellemrum, og hvorfor tabeller bliver rå
+
+Tjeklisterne stod på **22,2 %**, og alle fejl var det samme: Andreas skriver
+`- [x]  Kaffe` med **to** mellemrum efter boksen. Skrev vi ét tilbage, ville hele hans
+indkøbsliste blive rettet, fordi han klikkede i den — og stå i versionshistorikken som en
+ændring, han ikke har lavet. Mellemrummene bæres nu med. **100 %.**
+
+Det er tredje gang det samme mønster: parseren normaliserer noget væk (`dybde` for
+lister, `[X]`/`[x]`, nu mellemrummene), og oversættelsen skriver *vores* form tilbage.
+Reglen har vist sig at gælde hver gang: **det, parseren smider væk, skal rendereren bære
+med — ellers retter et klik i en note noget, ingen har bedt om.**
+
+**Tabeller åbner råt, og det er et valg.** Oversættelsen *kan* tabeller — en tabel
+kopieret fra en webside bliver til en rigtig markdown-tabel ved indsæt, hvor cellerne før
+løb sammen til én linje. Men ingen af de 35 tabeller i arkivet består rundturen: de er
+skrevet `| --- | --- |` med mellemrum og med håndsat cellebredde (`| setup  |`), og en
+kanonisk udskrift retter det hele.
+
+Vi kunne have båret hver celles polstring med. Men for en tabel **er den rå form den gode
+skriveflade**: kolonnerne står under hinanden, og det er netop dét, man har brugt tid på
+at rette til. At normalisere den ved første tastetryk ville være at smide arbejdet væk.
+
+Endestillingen:
+
+| | |
+|---|---|
+| **96,9 %** af alle blokke | åbner renderet |
+| Kode | råt — kode *skal* være råt |
+| Tabeller | råt — den rå form er den gode skriveflade |
+
 ### Hvad der venter
 
-Tabeller. Kode bliver ved med at åbne råt — kode *skal* være råt.
+Ingenting bestemt. Fladen dækker det, den skal.
