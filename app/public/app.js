@@ -3790,7 +3790,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 60;
+const APP_VERSION = 61;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -9208,6 +9208,9 @@ function tegnMedAabenBlok(host, n) {
   // Den AABNE blok har ingen `data-blok` og faar derfor intet haandtag - man
   // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
   tegnGreb(host);
+  // ÉT kaldested, foer feltet fyldes: begge veje - rig og raa - skal holdes
+  // i syne, og den ene maa ikke kunne glemme det.
+  holdBlokISyne(host);
 
   const hj = document.getElementById('blokHjaelp');
   // `mousedown` med preventDefault, ikke `click`: et klik ville tage fokus
@@ -9869,6 +9872,46 @@ function gemRigBlok(vaert, b) {
   maerkTomt(vaert);
   const md = saguRedigering.tilMarkdown(vaert.innerHTML);
   skrivBlokTilbage(md, b);
+}
+
+/*
+ * Feltet bliver staaende i syne, mens siden faar sin endelige hoejde.
+ *
+ * Billedernes plads er sat af paa forhaand for alt, vi har set foer
+ * (`billedMaal` i p6) - men et billede, man ALDRIG har rullet ned til, er
+ * ikke hentet endnu, og med `loading="lazy"` bliver det foerst hentet nu.
+ * Naar det saa lander, vokser alt over feltet, og feltet skubbes ud under
+ * kanten, mens man skriver i det.
+ *
+ * Derfor: hver gang et billede, der ikke var inde, bliver faerdigt, hentes
+ * feltet tilbage i syne. `block: 'nearest'` goer INTET, naar det allerede
+ * staar der - saa den, der ikke havde problemet, maerker ikke noget.
+ *
+ * To ting stopper den, og begge er den samme regel: den maa aldrig tage
+ * roret fra brugeren.
+ *
+ *   - Ruller man selv, har man taget over. Saa holder vi op.
+ *   - Er feltet ikke laengere det, man staar i, er der intet at foelge.
+ */
+function holdBlokISyne(host) {
+  const felt = host.querySelector('.blok-felt');
+  if (!felt) return;
+  const venter = [...host.querySelectorAll('img')].filter((b) => !b.complete);
+  if (!venter.length) return;
+
+  let egenRulning = false;
+  const stop = () => { egenRulning = true; };
+  window.addEventListener('wheel', stop, { once: true, passive: true });
+  window.addEventListener('touchmove', stop, { once: true, passive: true });
+
+  const hentTilbage = () => {
+    if (egenRulning || !felt.isConnected || document.activeElement !== felt) return;
+    felt.scrollIntoView({ block: 'nearest' });
+  };
+  for (const b of venter) {
+    b.addEventListener('load', hentTilbage, { once: true });
+    b.addEventListener('error', hentTilbage, { once: true });
+  }
 }
 
 function bindRigBlok(vaert, b) {
@@ -11808,8 +11851,68 @@ function visLightbox(src, alt) {
   return boks;
 }
 
+/*
+ * Billedernes maal huskes paa tvaers af en gentegning.
+ *
+ * ── Fejlen ────────────────────────────────────────────────────────────────
+ *
+ * »hvis jeg klikker add a block. saa hopper den til toppen af noten, istedet
+ * for at blive der hvor jeg skal skrive« (Andreas, 2026-09-06).
+ *
+ * Det var ikke rulningen, der var forkert - det var HOEJDEN. Hver optegning
+ * saetter `host.innerHTML`, og saa er billederne nye elementer, der ikke er
+ * hentet endnu. Et `<img>` uden `width`/`height` fylder NUL, indtil filen er
+ * inde, og med `loading="lazy"` bliver den, der staar under kanten, slet
+ * ikke hentet. Dokumentet skrumper altsaa i samme oejeblik, det bliver
+ * tegnet, og browseren klemmer rullepositionen ned i den nye, lavere
+ * hoejde. Maalt paa noten med ét billede: 2011 px foer klikket, 888 px
+ * bagefter - og rulningen fulgte med fra 1291 til 168. Det er »toppen«.
+ *
+ * ── Hvorfor det skal loeses HER og ikke med en rulning ─────────────────────
+ *
+ * Man kunne rulle tilbage bagefter, men saa retter man et sammenbrud, man
+ * selv har lavet, og det ville flimre. Pladsen skal bare aldrig forsvinde.
+ *
+ * Vi har allerede set billedet én gang - saa kender vi dets maal. Dem
+ * gemmer vi, og naeste gang det samme billede bliver tegnet, faar det
+ * pladsen sat af paa forhaand: `width` er dets egen bredde (og
+ * `max-width: 100%` klemmer den ned i en smal spalte praecis som foer),
+ * `aspect-ratio` giver hoejden. Layoutet bliver dermed det samme foer og
+ * efter hentningen, og der er intet at rulle tilbage til.
+ *
+ * Stempler ryddes, saa snart billedet ER inde: fra da af er billedets egne
+ * maal sandheden, og et gemt maal, der viste sig at vaere forkert (en fil,
+ * der er skiftet ud bag samme adresse), maa ikke blive staaende og trykke
+ * det skaevt.
+ */
+const billedMaal = new Map();
+
+/** Maalene fra et faerdighentet billede - dem husker vi. */
+function gemBilledMaal(el) {
+  el.style.width = '';
+  el.style.aspectRatio = '';
+  if (!el.naturalWidth || !el.naturalHeight) return false;
+  billedMaal.set(el.src, { w: el.naturalWidth, h: el.naturalHeight });
+  return true;
+}
+
+/** Pladsen sat af paa forhaand - kun for et billede, vi har set foer. */
+function saetBilledMaal(el) {
+  if (el.complete) return false;
+  const m = billedMaal.get(el.src);
+  if (!m) return false;
+  el.style.width = `${m.w}px`;
+  el.style.aspectRatio = `${m.w} / ${m.h}`;
+  return true;
+}
+
 function bindBilleder(host) {
   host.querySelectorAll('img.note-img').forEach((el) => {
+    // Maalene FOERST: sker det efter, at browseren har regnet layoutet,
+    // er hoejden allerede faldet sammen, og rulningen er allerede klemt.
+    saetBilledMaal(el);
+    if (el.complete) gemBilledMaal(el);
+    else el.addEventListener('load', () => gemBilledMaal(el), { once: true });
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       visLightbox(el.getAttribute('src'), el.getAttribute('alt'));

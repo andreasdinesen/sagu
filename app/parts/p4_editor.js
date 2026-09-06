@@ -1832,6 +1832,9 @@ function tegnMedAabenBlok(host, n) {
   // Den AABNE blok har ingen `data-blok` og faar derfor intet haandtag - man
   // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
   tegnGreb(host);
+  // ÉT kaldested, foer feltet fyldes: begge veje - rig og raa - skal holdes
+  // i syne, og den ene maa ikke kunne glemme det.
+  holdBlokISyne(host);
 
   const hj = document.getElementById('blokHjaelp');
   // `mousedown` med preventDefault, ikke `click`: et klik ville tage fokus
@@ -2493,6 +2496,46 @@ function gemRigBlok(vaert, b) {
   maerkTomt(vaert);
   const md = saguRedigering.tilMarkdown(vaert.innerHTML);
   skrivBlokTilbage(md, b);
+}
+
+/*
+ * Feltet bliver staaende i syne, mens siden faar sin endelige hoejde.
+ *
+ * Billedernes plads er sat af paa forhaand for alt, vi har set foer
+ * (`billedMaal` i p6) - men et billede, man ALDRIG har rullet ned til, er
+ * ikke hentet endnu, og med `loading="lazy"` bliver det foerst hentet nu.
+ * Naar det saa lander, vokser alt over feltet, og feltet skubbes ud under
+ * kanten, mens man skriver i det.
+ *
+ * Derfor: hver gang et billede, der ikke var inde, bliver faerdigt, hentes
+ * feltet tilbage i syne. `block: 'nearest'` goer INTET, naar det allerede
+ * staar der - saa den, der ikke havde problemet, maerker ikke noget.
+ *
+ * To ting stopper den, og begge er den samme regel: den maa aldrig tage
+ * roret fra brugeren.
+ *
+ *   - Ruller man selv, har man taget over. Saa holder vi op.
+ *   - Er feltet ikke laengere det, man staar i, er der intet at foelge.
+ */
+function holdBlokISyne(host) {
+  const felt = host.querySelector('.blok-felt');
+  if (!felt) return;
+  const venter = [...host.querySelectorAll('img')].filter((b) => !b.complete);
+  if (!venter.length) return;
+
+  let egenRulning = false;
+  const stop = () => { egenRulning = true; };
+  window.addEventListener('wheel', stop, { once: true, passive: true });
+  window.addEventListener('touchmove', stop, { once: true, passive: true });
+
+  const hentTilbage = () => {
+    if (egenRulning || !felt.isConnected || document.activeElement !== felt) return;
+    felt.scrollIntoView({ block: 'nearest' });
+  };
+  for (const b of venter) {
+    b.addEventListener('load', hentTilbage, { once: true });
+    b.addEventListener('error', hentTilbage, { once: true });
+  }
 }
 
 function bindRigBlok(vaert, b) {

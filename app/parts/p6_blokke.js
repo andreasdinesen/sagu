@@ -231,8 +231,68 @@ function visLightbox(src, alt) {
   return boks;
 }
 
+/*
+ * Billedernes maal huskes paa tvaers af en gentegning.
+ *
+ * ── Fejlen ────────────────────────────────────────────────────────────────
+ *
+ * »hvis jeg klikker add a block. saa hopper den til toppen af noten, istedet
+ * for at blive der hvor jeg skal skrive« (Andreas, 2026-09-06).
+ *
+ * Det var ikke rulningen, der var forkert - det var HOEJDEN. Hver optegning
+ * saetter `host.innerHTML`, og saa er billederne nye elementer, der ikke er
+ * hentet endnu. Et `<img>` uden `width`/`height` fylder NUL, indtil filen er
+ * inde, og med `loading="lazy"` bliver den, der staar under kanten, slet
+ * ikke hentet. Dokumentet skrumper altsaa i samme oejeblik, det bliver
+ * tegnet, og browseren klemmer rullepositionen ned i den nye, lavere
+ * hoejde. Maalt paa noten med ét billede: 2011 px foer klikket, 888 px
+ * bagefter - og rulningen fulgte med fra 1291 til 168. Det er »toppen«.
+ *
+ * ── Hvorfor det skal loeses HER og ikke med en rulning ─────────────────────
+ *
+ * Man kunne rulle tilbage bagefter, men saa retter man et sammenbrud, man
+ * selv har lavet, og det ville flimre. Pladsen skal bare aldrig forsvinde.
+ *
+ * Vi har allerede set billedet én gang - saa kender vi dets maal. Dem
+ * gemmer vi, og naeste gang det samme billede bliver tegnet, faar det
+ * pladsen sat af paa forhaand: `width` er dets egen bredde (og
+ * `max-width: 100%` klemmer den ned i en smal spalte praecis som foer),
+ * `aspect-ratio` giver hoejden. Layoutet bliver dermed det samme foer og
+ * efter hentningen, og der er intet at rulle tilbage til.
+ *
+ * Stempler ryddes, saa snart billedet ER inde: fra da af er billedets egne
+ * maal sandheden, og et gemt maal, der viste sig at vaere forkert (en fil,
+ * der er skiftet ud bag samme adresse), maa ikke blive staaende og trykke
+ * det skaevt.
+ */
+const billedMaal = new Map();
+
+/** Maalene fra et faerdighentet billede - dem husker vi. */
+function gemBilledMaal(el) {
+  el.style.width = '';
+  el.style.aspectRatio = '';
+  if (!el.naturalWidth || !el.naturalHeight) return false;
+  billedMaal.set(el.src, { w: el.naturalWidth, h: el.naturalHeight });
+  return true;
+}
+
+/** Pladsen sat af paa forhaand - kun for et billede, vi har set foer. */
+function saetBilledMaal(el) {
+  if (el.complete) return false;
+  const m = billedMaal.get(el.src);
+  if (!m) return false;
+  el.style.width = `${m.w}px`;
+  el.style.aspectRatio = `${m.w} / ${m.h}`;
+  return true;
+}
+
 function bindBilleder(host) {
   host.querySelectorAll('img.note-img').forEach((el) => {
+    // Maalene FOERST: sker det efter, at browseren har regnet layoutet,
+    // er hoejden allerede faldet sammen, og rulningen er allerede klemt.
+    saetBilledMaal(el);
+    if (el.complete) gemBilledMaal(el);
+    else el.addEventListener('load', () => gemBilledMaal(el), { once: true });
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       visLightbox(el.getAttribute('src'), el.getAttribute('alt'));
