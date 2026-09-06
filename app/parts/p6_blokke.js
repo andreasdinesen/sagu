@@ -420,6 +420,22 @@ function htmlTilMarkdown(html) {
  * (RUNE-ERFARINGER §6c). Og PNG bliver PNG: en JPEG-fallback goer transparens
  * SORT, saa output-typen vaelges efter input-typen.
  */
+/**
+ * Markdownen for en vedhaeftning.
+ *
+ * Et BILLEDE vises (`![...]`), alt andet linkes (`[...]`). Valget stod tre
+ * steder - i uploaden, i »tilfoej filer« og paa »Insert« i vedhaeftnings-
+ * listen - og skulle vaere det samme alle tre. Nu er det ét sted (F32).
+ *
+ * `alt` er navnet paa den fil, man valgte; `fil.name` er det, serveren har
+ * gemt. De er som regel ens, men ikke altid, og alt-teksten hoerer til det,
+ * brugeren genkender.
+ */
+function filMarkdown(fil, alt) {
+  const navn = String(alt || fil.name || 'image').replace(/[[\]]/g, '');
+  return fil.inline ? `![${navn}](sagu:${fil.id})` : `[${fil.name}](sagu:${fil.id})`;
+}
+
 async function indsaetFil(fil, felt) {
   const erBillede = /^image\/(png|jpeg|gif|webp|avif)$/.test(fil.type);
   try {
@@ -445,10 +461,18 @@ async function indsaetFil(fil, felt) {
 
     // `sagu:<id>` frem for en absolut adresse: noten skal kunne flyttes med
     // til et andet domaene (wikien, en eksport) uden at billederne doer.
-    const md = d.file.inline
-      ? `![${(fil.name || 'image').replace(/[[\]]/g, '')}](sagu:${d.file.id})`
-      : `[${d.file.name}](sagu:${d.file.id})`;
+    const md = filMarkdown(d.file, fil.name);
     if (felt) indsaetITekst(felt, md);
+    /*
+     * Markdownen foelger med tilbage.
+     *
+     * Den rige blok (F30) kan ikke bruge `indsaetITekst`, som skriver i et
+     * `<textarea>`s `value` - men den skal indsaette PRAECIS den samme
+     * markdown. At bygge den ét sted mere ville betyde, at valget mellem
+     * `![...]` og `[...]` kunne komme til at staa to steder og drive fra
+     * hinanden.
+     */
+    d.file.markdown = md;
     return d.file;
   } catch (ex) {
     toast(ex.message);
@@ -857,9 +881,7 @@ function bindFiler() {
       const f = (n.files || []).find((x) => x.id === el.dataset.filind);
       if (!f) return;
       const forladt = !!f.orphan_since;
-      const md = f.inline
-        ? `![${f.name.replace(/[[\]]/g, '')}](sagu:${f.id})`
-        : `[${f.name}](sagu:${f.id})`;
+      const md = filMarkdown(f);
       // Laeg den sidst i noten - dér, hvor man kan se den lande.
       n.body = `${n.body.replace(/\s*$/, '')}\n\n${md}\n`;
       markerBeskidt();
@@ -937,11 +959,10 @@ async function tilfoejFiler(filer) {
   let lagt = 0;
   for (const f of filer.slice(0, 20)) {
     const uploadet = await indsaetFil(f, null);
-    if (!uploadet) continue;
-    const md = uploadet.inline
-      ? `![${(f.name || 'image').replace(/[[\]]/g, '')}](sagu:${uploadet.id})`
-      : `[${uploadet.name}](sagu:${uploadet.id})`;
-    n.body = `${n.body.replace(/\s*$/, '')}\n\n${md}\n`;
+    if (!uploadet || !uploadet.markdown) continue;
+    // Markdownen kommer FRA `indsaetFil`. Den blev bygget her ogsaa, og saa
+    // stod valget mellem `![...]` og `[...]` to steder (F32).
+    n.body = `${n.body.replace(/\s*$/, '')}\n\n${uploadet.markdown}\n`;
     lagt++;
   }
   if (!lagt) return;

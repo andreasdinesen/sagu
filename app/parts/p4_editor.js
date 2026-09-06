@@ -2059,7 +2059,19 @@ function vaerktoejslinjeHtml() {
       tabindex="-1" title="${esc(g.navn)} (${esc(g.ord)}) — ${esc(g.eksempel)}"
       aria-label="${esc(g.navn)}">${o.vis}</button>` : '';
   };
-  return `<div class="blok-vaerktoej" id="blokVaerktoej">${VAERKTOEJER.map((v) => `
+  /*
+   * Vedhaeft staar FOERST.
+   *
+   * Paa en telefon er det den vigtigste knap i raekken - og stod den sidst,
+   * lagde den sig ind under hjaelpeknappen, som ligger absolut i hoejre
+   * hjoerne (maalt paa 420 px: to px overlap, selv med margen). Den vigtigste
+   * knap skal ikke vaere den, der bliver klemt.
+   */
+  return `<div class="blok-vaerktoej" id="blokVaerktoej">
+    <button type="button" class="vt-knap" data-fil="1" tabindex="-1"
+      title="Add an image or a file" aria-label="Add an image or a file">${icon('klips', 15)}</button>
+    <span class="vt-skel" aria-hidden="true"></span>
+    ${VAERKTOEJER.map((v) => `
     <button type="button" class="vt-knap" data-goer="${v.goer}" tabindex="-1"
       title="${esc(v.navn)}${v.tast ? ` (${v.tast})` : ''}"
       aria-label="${esc(v.navn)}">${v.vis}</button>`).join('')}
@@ -2331,9 +2343,54 @@ function liveFormatering(vaert) {
  * `<span style>`-suppe. Én mekanisme, to formaal; to ville kunne drive fra
  * hinanden.
  */
-function indsaetRent(e, vaert, b) {
-  const dt = e.clipboardData;
+/*
+ * Filer ind i den AABNE blok - fra indsaet, fra et traek, eller fra
+ * vedhaeft-knappen. Ét sted, saa de tre veje ikke kan komme til at goere
+ * hver sit.
+ */
+async function indsaetFilerIBlok(filer, vaert, b) {
+  let lagt = 0;
+  for (const f of filer.slice(0, 20)) {
+    const fil = await indsaetFil(f, null);
+    if (!fil || !fil.markdown) continue;
+    indsaetVedMarkoer(vaert, fil.markdown);
+    lagt += 1;
+  }
+  if (!lagt) return;
+  gemRigBlok(vaert, b);
+  /*
+   * Gentegn, saa billedet kan SES.
+   *
+   * Uden det stod der `![foto.png](sagu:...)` som raa tekst i en blok, hvis
+   * hele pointe er, at man ser noten, mens man skriver i den. Markoeren ryger
+   * til slutningen - det er prisen, og den er lille, naar man lige har lagt
+   * et billede ind.
+   */
+  tegnKrop();
+}
+
+async function indsaetRent(e, vaert, b) {
+  const dt = e.clipboardData || e.dataTransfer;
   if (!dt) return;
+
+  /*
+   * FILER foerst - billeder, der indsaettes eller traekkes ind (F32).
+   *
+   * Det raa felt har kunnet det siden F4; den rige blok fik det aldrig, saa
+   * »jeg kan ikke tilfoeje et billede via min iPhone« (Andreas, 2026-09-06).
+   * Paa en telefon er indsaet den ENESTE vej - man kan ikke traekke en fil,
+   * og en menu er langt vaek, naar tastaturet fylder halvdelen af skaermen.
+   *
+   * `indsaetFil()` bygger markdownen; vi laeser den bare tilbage. To steder
+   * at bygge `![...]` mod `[...]` ville kunne drive fra hinanden.
+   */
+  const filer = [...(dt.files || [])];
+  if (filer.length) {
+    e.preventDefault();
+    await indsaetFilerIBlok(filer, vaert, b);
+    return;
+  }
+
   e.preventDefault();
   const html = dt.getData('text/html');
   const ren = html ? saguRedigering.tilMarkdown(html) : dt.getData('text/plain');
@@ -2461,6 +2518,14 @@ function bindRigBlok(vaert, b) {
   });
 
   vaert.addEventListener('paste', (e) => indsaetRent(e, vaert, b));
+  // Traek-og-slip af en fil ind i blokken - samme vej som indsaet.
+  vaert.addEventListener('dragover', (e) => { e.preventDefault(); vaert.classList.add('traekker'); });
+  vaert.addEventListener('dragleave', () => vaert.classList.remove('traekker'));
+  vaert.addEventListener('drop', (e) => {
+    e.preventDefault();
+    vaert.classList.remove('traekker');
+    indsaetRent(e, vaert, b);
+  });
 
   vaert.addEventListener('keydown', (e) => {
     // Forslagslisten faar tasterne FOERST, naar den er aaben - ellers lukker
@@ -2502,6 +2567,35 @@ function bindRigBlok(vaert, b) {
 
   const linje = document.getElementById('blokVaerktoej');
   if (linje) {
+    /*
+     * Vedhaeft-knappen ved BLOKKEN.
+     *
+     * »Jeg kan ikke tilfoeje et billede via min iPhone« (Andreas, 2026-09-06).
+     * Indsaet virker nu - men paa en telefon har man sjaeldent billedet paa
+     * udklipsholderen; man vil VAELGE det. Punktet i `...`-menuen kan det, men
+     * det laegger filen nederst i noten, og menuen er rullet vaek, naar
+     * tastaturet fylder halvdelen af skaermen. Her lander filen dér, hvor
+     * markoeren staar.
+     */
+    const filKnap = linje.querySelector('[data-fil]');
+    if (filKnap) {
+      filKnap.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+      filKnap.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.multiple = true;
+        inp.style.display = 'none';
+        document.body.appendChild(inp);
+        inp.addEventListener('change', async () => {
+          const valgte = [...inp.files];
+          inp.remove();
+          if (valgte.length) await indsaetFilerIBlok(valgte, vaert, b);
+        });
+        inp.click();
+      });
+    }
     linje.querySelectorAll('[data-genvej]').forEach((k) => {
       k.addEventListener('mousedown', (e) => {
         e.preventDefault();

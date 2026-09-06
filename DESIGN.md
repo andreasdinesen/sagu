@@ -3574,6 +3574,42 @@ Fejlen kom af at ville dække et hjørnetilfælde (`<p><br></p>`) med et værkt�
 kan stille spørgsmålet. **Er selektoren ikke i stand til at spørge om det, du mener, så
 spørg et andet sted.**
 
+### Billeder kunne ikke lægges ind fra en telefon
+
+»Jeg kan ikke tilføje et billede via min iPhone« (Andreas, 2026-09-06).
+
+Det rå felt har kunnet indsætte og trække filer siden F4. Den rige blok fik det aldrig:
+dens indsæt-handler læste kun `text/html` og `text/plain` og **så aldrig på `dt.files`**.
+Tredje gang samme mønster — jeg flyttede kernen og glemte en hjælper.
+
+På en telefon er indsæt desuden ikke nok: man har sjældent billedet på udklipsholderen,
+man vil **vælge** det. Punktet i `…`-menuen kunne det, men det lægger filen **nederst i
+noten**, og menuen er rullet væk, når tastaturet fylder halvdelen af skærmen. Blokken har
+derfor fået sin egen vedhæft-knap, og dér lander filen, hvor markøren står.
+
+Tre veje ind — indsæt, træk, knap — går gennem **ét sted** (`indsaetFilerIBlok`), så de
+ikke kan komme til at gøre hver sit.
+
+**Og valget mellem `![…]` og `[…]` stod tre steder:** i uploaden, i »tilføj filer« og på
+»Insert« i vedhæftningslisten. Nu i én funktion, `filMarkdown()`. En prøve tæller
+forekomsterne, så en fjerde ikke kan snige sig ind.
+
+Knappen står **først** i værktøjslinjen. Stod den sidst, lagde den sig ind under
+hjælpeknappen, som ligger absolut i højre hjørne — målt på 420 px: to px overlap, selv
+med margen. Og på en telefon er det den vigtigste knap i rækken.
+
+### To svage prøver, fundet af sabotagerne
+
+En sabotage, der fjernede knappen, gav **grønt** — to gange, af to grunde:
+
+- Prøven kiggede på **bindingen** (`querySelector('[data-fil]')`), som bliver stående,
+  også når knappen er væk. Den kigger nu på markuppen.
+- Rækkefølge-prøven brugte `indexOf(a) < indexOf(b)` — og `-1` er mindre end alt. **Samme
+  fælde som i §38**, hvor jeg fandt den i låse-prøven og skrev den ned. Den kræver nu, at
+  begge led findes, før den sammenligner.
+
+*At have skrevet en fælde ned er ikke det samme som ikke at gå i den igen.*
+
 ### Pop-ud flyttet op
 
 »…op i menuen ved saved, så det er let at trykke på.« Den står nu i værktøjsrækken ved

@@ -1236,9 +1236,13 @@ kbd {
 
 .blok-vaerktoej {
   display: flex;
+  /* Bryder hellere til to raekker end at flyde ud over kanten. */
+  flex-wrap: wrap;
   gap: 2px;
   margin: 0 -6px 4px;
-  padding: 3px 4px;
+  /* Plads til hjaelpeknappen, som ligger ABSOLUT i hoejre hjoerne. Uden den
+     her margen gled den sidste knap ind under den (F32). */
+  padding: 3px 34px 3px 4px;
   border-left: 2px solid var(--accent);
   background: var(--card-hover);
 }
@@ -1263,7 +1267,7 @@ kbd {
 
 /* Paa en telefon staar linjen tættere - der er ikke plads til luft. */
 @media (max-width: 900px) {
-  .blok-vaerktoej { gap: 0; padding: 2px; }
+  .blok-vaerktoej { gap: 0; padding: 2px 32px 2px 2px; }
   .vt-knap { min-width: 34px; padding: 5px 6px; }
 }
 

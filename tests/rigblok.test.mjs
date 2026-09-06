@@ -221,6 +221,76 @@ test('pop-ud staar i vaerktoejsraekken - og KUN dér', () => {
   assert.ok(!/await/.test(h), 'der ventes paa noget foer window.open');
 });
 
+test('billeder kan komme ind i den rige blok - tre veje, ét sted', () => {
+  /*
+   * »Jeg kan ikke tilfoeje et billede via min iPhone« (Andreas, 2026-09-06).
+   *
+   * Det raa felt har kunnet indsaette og traekke filer siden F4; den rige
+   * blok fik det aldrig - dens indsaet-handler laeste kun `text/html` og
+   * `text/plain` og saa aldrig paa `dt.files`. Paa en telefon er indsaet
+   * desuden ikke nok: man vil VAELGE et foto, og derfor er der ogsaa en
+   * knap i blokkens vaerktoejslinje.
+   */
+  assert.match(p4, /function indsaetFilerIBlok/, 'der er ingen faelles vej for filer');
+  const i = p4.indexOf('function indsaetRent');
+  const stykke = p4.slice(i, p4.indexOf('\n}\n', i));
+  assert.match(stykke, /dt\.files/, 'indsaet ser ikke paa filer');
+  assert.match(stykke, /indsaetFilerIBlok\(filer, vaert, b\)/);
+  // Traek-og-slip skal gaa den SAMME vej.
+  const j = p4.indexOf('function bindRigBlok');
+  const bind = p4.slice(j, p4.indexOf('\n}\n', j));
+  assert.match(bind, /addEventListener\('drop'/, 'man kan ikke traekke en fil ind');
+  /*
+   * Knappen skal proeves paa MARKUPPEN, ikke paa bindingen: bindingen
+   * (`querySelector('[data-fil]')`) bliver staaende, ogsaa naar knappen er
+   * vaek - saa en sabotage, der fjernede knappen, gav groent.
+   */
+  const linje = p4.slice(p4.indexOf('function vaerktoejslinjeHtml'),
+    p4.indexOf('function omsluttendeTag'));
+  assert.match(linje, /data-fil="1"/, 'der er ingen vedhaeft-knap i vaerktoejslinjen');
+  assert.match(bind, /querySelector\('\[data-fil\]'\)/, 'knappen er ikke bundet');
+});
+
+test('markdownen for en fil bygges ÉT sted', () => {
+  /*
+   * Valget mellem `![...]` (et billede) og `[...]` (en vedhaeftning) stod
+   * tre steder: i `indsaetFil`, i `tilfoejFiler` og naesten i den rige blok.
+   * Nu returnerer `indsaetFil` den, og de andre laeser den.
+   */
+  const p6 = readFileSync(new URL('../app/parts/p6_blokke.js', import.meta.url), 'utf8');
+  assert.match(p6, /d\.file\.markdown = md;/, 'indsaetFil giver ikke markdownen tilbage');
+  assert.match(p6, /uploadet\.markdown/, 'tilfoejFiler bygger den stadig selv');
+  // Og den rige blok laeser den ogsaa.
+  assert.match(p4, /fil\.markdown/);
+  // ... og valget mellem `![` og `[` maa kun traeffes ÉT sted i hele fladen.
+  assert.match(p6, /function filMarkdown/, 'der er ingen faelles funktion');
+  const byg = (p4 + p6).match(/inline\s*\?\s*`!\[/g) || [];
+  assert.equal(byg.length, 1, `valget traeffes ${byg.length} steder`);
+});
+
+test('vedhaeft-knappen staar FOERST - den vigtigste maa ikke klemmes', () => {
+  /*
+   * Stod den sidst, lagde den sig ind under hjaelpeknappen, som ligger
+   * absolut i hoejre hjoerne (maalt paa 420 px: to px overlap). Og paa en
+   * telefon er det den vigtigste knap i raekken.
+   */
+  const i = p4.indexOf('id="blokVaerktoej"');
+  const stykke = p4.slice(i, i + 400);
+  const fil = stykke.indexOf('data-fil');
+  const resten = stykke.indexOf('VAERKTOEJER.map');
+  /*
+   * Begge skal FINDES, foer de sammenlignes. `indexOf` giver -1, og -1 er
+   * mindre end alt - saa proeven bestod netop den dag, knappen var vaek.
+   * Samme faelde som i »laasen tages foer begge grene« (F30).
+   */
+  assert.ok(fil > -1, 'vedhaeft-knappen findes ikke i vaerktoejslinjen');
+  assert.ok(resten > -1, 'de andre knapper findes ikke - ret proeven');
+  assert.ok(fil < resten, 'vedhaeft staar ikke foerst i vaerktoejslinjen');
+  const css = readFileSync(new URL('../app/public/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.blok-vaerktoej \{[^}]*flex-wrap: wrap/,
+    'linjen bryder ikke - paa en telefon ville knapper flyde ud over kanten');
+});
+
 test('hele-noten-kontakten siger, hvad man giver AFKALD paa', () => {
   /*
    * »Mine noter bliver stadigvaek lavet om til markdown naar jeg proever at
