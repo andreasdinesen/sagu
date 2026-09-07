@@ -274,8 +274,14 @@ test('vedhaeft-knappen staar FOERST - den vigtigste maa ikke klemmes', () => {
    * absolut i hoejre hjoerne (maalt paa 420 px: to px overlap). Og paa en
    * telefon er det den vigtigste knap i raekken.
    */
-  const i = p4.indexOf('id="blokVaerktoej"');
-  const stykke = p4.slice(i, i + 400);
+  /*
+   * Stykket hentes af FUNKTIONEN, ikke af den foerste `id="blokVaerktoej"`.
+   * Fra F33 tegnes raekken to gange - én for markdown med kun MD-knappen -
+   * og den foerste forekomst er nu den, der slet ingen vedhaeft-knap har.
+   * Proeven ville altsaa vaere blevet roed uden at noget var i stykker.
+   */
+  const i = p4.indexOf('function vaerktoejslinjeHtml(');
+  const stykke = p4.slice(i, p4.indexOf('\n}\n', i));
   const fil = stykke.indexOf('data-fil');
   const resten = stykke.indexOf('VAERKTOEJER.map');
   /*
@@ -472,8 +478,19 @@ test('blur lukker IKKE blokken, naar man trykker paa vaerktoejslinjen', () => {
   const i = p4.indexOf("vaert.addEventListener('blur'");
   assert.ok(i > -1, 'blur-lytteren paa den rige blok findes ikke');
   const stykke = p4.slice(i, p4.indexOf('});', i));
-  assert.match(stykke, /blokVaerktoej/, 'blur-vagten kender ikke vaerktoejslinjen');
-  assert.match(stykke, /blokRigt/, 'blur-vagten kender ikke feltet selv');
+  /*
+   * Fra F33 staar reglen ÉT sted for begge felter - se `fokusErIBlokken`.
+   * Den flytning var ikke pynt: hver af de to blur-vagter kendte kun sit
+   * eget felt, og MD-knappen lukkede derfor blokken i stedet for at skifte
+   * visning. Proeven spoerger derfor to ting: at blur bruger vagten, og at
+   * vagten kender linjen.
+   */
+  assert.match(stykke, /fokusErIBlokken\(\)/, 'blur spoerger ikke den faelles vagt');
+  const v = p4.indexOf('function fokusErIBlokken(');
+  assert.ok(v > -1, 'den faelles vagt findes ikke');
+  const vagt = p4.slice(v, p4.indexOf('\n}\n', v));
+  assert.match(vagt, /blokVaerktoej/, 'vagten kender ikke vaerktoejslinjen');
+  assert.match(vagt, /blokRigt/, 'vagten kender ikke feltet selv');
 });
 
 test('live-reglerne kraever et lukketegn OG et forskelligt tegn foran', () => {

@@ -27,9 +27,28 @@
 (function (global) {
   'use strict';
 
-  /* Tags, der udsendes af rendereren og oversaettes tilbage. Alt andet
-   * foldes ud som tekst - se `ud()` nedenfor. */
-  const TOM = new Set(['br', 'img', 'hr', 'wbr']);
+  /*
+   * Tags UDEN indhold. De kan aldrig faa boern, og et af dem paa stakken er
+   * et element, der aldrig lukker igen.
+   *
+   * Her stod fire: `br`, `img`, `hr`, `wbr` - dem rendereren selv udsender.
+   * Det raekker til vores egen HTML og slet ikke til UDKLIPSHOLDEREN. Baade
+   * Chrome og Safari laegger `<meta charset='utf-8'>` foerst i `text/html`,
+   * hver eneste gang der kopieres i en browser. Uden `meta` paa listen blev
+   * den lagt paa stakken - og da `meta` OGSAA staar i SLUGES (dens indhold
+   * skal vaek), blev alt det, man havde kopieret, kastet vaek sammen med den.
+   *
+   *   tilMarkdown("<meta charset='utf-8'>afsnit 1")  ->  ""
+   *
+   * Symptomet var, at ⌘V ikke gjorde noget som helst: »Jeg kan ikke markere
+   * en tekst og lave command+c og command+v« (Andreas, 2026-09-07).
+   *
+   * Listen er derfor HTML's egne tomme elementer - ikke dem, vi lige kom i
+   * tanke om. Det er den slags liste, der skal vaere fuldstaendig, fordi
+   * manglen aldrig ligner sig selv: den ser ud som tabt tekst.
+   */
+  const TOM = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img',
+    'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 
   /*
    * Tags, hvis INDHOLD skal vaek - ikke bare deres formatering.

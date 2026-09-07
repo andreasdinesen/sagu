@@ -294,3 +294,62 @@ test('fluebenets tilstand laeses af aria-checked, ikke af tegnet indeni', () => 
   assert.equal(R.tilMarkdown(html), '- [ ] aaben\n- [x] lukket');
   assert.match(html, /aria-checked="false"/);
 });
+
+/* ================================================ udklipsholderen ======= */
+
+/*
+ * »Jeg kan ikke markere en tekst og lave command+c og command+v« - og senere:
+ * »Det er kun et problem paa min mac. paa pc virker det fint«
+ * (Andreas, 2026-09-07).
+ *
+ * Den anden besked var svaret. Browserne skriver IKKE den samme HTML paa
+ * udklipsholderen: paa en Mac kommer `<meta charset='utf-8'>` foerst, paa
+ * Windows en hel lille side med CF_HTML's kommentarer. `<meta>` lukker
+ * aldrig, og stod den ikke paa listen over tomme elementer, aabnede den et
+ * element, der slugte resten - og da `meta` OGSAA er et af de tags, hvis
+ * indhold skal vaek, forsvandt hele indsaettet i tavshed.
+ *
+ * Proeverne her er de FORMER, der findes i virkeligheden. En proeve paa
+ * `<meta>` alene ville ikke have fanget det: den ville se rigtig ud i node og
+ * stadig tabe et indsaet fra en Mac.
+ */
+test('et indsaet fra en Mac beholder sine ord', () => {
+  assert.equal(R.tilMarkdown("<meta charset='utf-8'>afsnit 1 med noget"), 'afsnit 1 med noget');
+  assert.equal(
+    R.tilMarkdown('<meta charset="utf-8"><p>Dette er et afsnit.</p>').trim(),
+    'Dette er et afsnit.');
+  assert.equal(
+    R.tilMarkdown("<meta charset='utf-8'><b>fed</b> og <i>kursiv</i>"),
+    '**fed** og *kursiv*');
+});
+
+test('et indsaet fra Windows beholder ogsaa sine ord', () => {
+  assert.equal(
+    R.tilMarkdown('<html><body><!--StartFragment-->afsnit 1 med noget<!--EndFragment--></body></html>'),
+    'afsnit 1 med noget');
+});
+
+test('et indsaet fra Safari overlever sit hoved af stilark', () => {
+  /*
+   * Safari skriver et helt dokument med `<head>`, `<meta>` og et `<style>`.
+   * Hovedet skal vaek - dets indhold er CSS, ikke ord - og kroppen skal med.
+   */
+  const safari = '<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
+    + '<meta name="Generator" content="Cocoa HTML Writer">'
+    + '<style>p.p1 {margin: 0px;}</style></head>'
+    + '<body><p class="p1">Ordene her</p></body></html>';
+  assert.equal(R.tilMarkdown(safari).trim(), 'Ordene her');
+});
+
+test('alle HTML\'s tomme elementer er tomme - ikke bare dem vi udsender', () => {
+  /*
+   * Den her proeve er der, fordi manglen ALDRIG ligner sig selv: et tag, der
+   * mangler paa listen, ser ud som tabt tekst et helt andet sted. Derfor er
+   * det listen, der proeves, ikke symptomet.
+   */
+  for (const tag of ['area', 'base', 'br', 'col', 'embed', 'hr', 'img',
+    'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']) {
+    const ud = R.tilMarkdown(`<${tag}>ordene efter ${tag}`);
+    assert.match(ud, new RegExp(`ordene efter ${tag}`), `<${tag}> slugte teksten efter sig`);
+  }
+});

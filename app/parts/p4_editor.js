@@ -26,6 +26,9 @@ const editor = {
   parkeret: false,
   // Hvor markoeren skal staa, naar naeste blok aabnes ('start' | null).
   markoerTil: null,
+  // F33: har man selv bedt om at se blokken som markdown? Gaelder KUN den
+  // blok, der staar aaben - se `aabnBlok`.
+  raaBlok: false,
   beskidt: false,
   sidstGemt: 0,
   konflikt: null,
@@ -1807,10 +1810,18 @@ function tegnMedAabenBlok(host, n) {
    * tabeller, en blok med raa HTML - aabner raat som altid. Saa kan en fejl i
    * oversaettelsen aldrig omskrive tekst i tavshed.
    */
-  const rigt = kanRedigereRigt(raa, b);
+  /*
+   * `editor.raaBlok` er den, der har TRYKKET paa MD-knappen.
+   *
+   * Der er to grunde til, at en blok staar raa, og de skal ikke blandes:
+   * porten kan have sagt nej (en tabel, en kodeblok - dér er markdown den
+   * rigtige flade), eller man kan have bedt om det selv. Kun den anden kan
+   * fortrydes, og derfor faar kun den en vaerktoejslinje med vejen tilbage.
+   */
+  const rigt = !editor.raaBlok && kanRedigereRigt(raa, b);
   host.innerHTML = `${del(foer)}
     <div class="blok-redigering${rigt ? ' rig' : ''}">
-      ${rigt ? vaerktoejslinjeHtml() : ''}
+      ${rigt || editor.raaBlok ? vaerktoejslinjeHtml(rigt) : ''}
       ${rigt
     ? '<div class="blok-felt rig-felt" id="blokRigt"></div>'
     : `<textarea class="blok-felt" id="blokFelt" spellcheck="false"
@@ -1833,8 +1844,11 @@ function tegnMedAabenBlok(host, n) {
   // kan ikke traekke i det, man staar midt i at skrive. Resten kan.
   tegnGreb(host);
   // ÉT kaldested, foer feltet fyldes: begge veje - rig og raa - skal holdes
-  // i syne, og den ene maa ikke kunne glemme det.
+  // i syne, og den ene maa ikke kunne glemme det. Det samme gaelder
+  // MD-knappen: den findes i BEGGE tilstande og bindes derfor ikke inde i
+  // den ene af dem.
   holdBlokISyne(host);
+  bindMdKnap();
 
   const hj = document.getElementById('blokHjaelp');
   // `mousedown` med preventDefault, ikke `click`: et klik ville tage fokus
@@ -1954,10 +1968,10 @@ function tegnMedAabenBlok(host, n) {
 
   felt.addEventListener('blur', () => {
     // Kun hvis fokus forlod selve noten - ellers lukker et klik i en anden
-    // blok feltet, foer den nye blok naar at aabne.
+    // blok feltet, foer den nye blok naar at aabne. Vaerktoejslinjen taeller
+    // MED til feltet: fra F33 staar MD-knappen dér, ogsaa i markdown.
     setTimeout(() => {
-      const aktiv = document.activeElement;
-      if (aktiv && aktiv.id === 'blokFelt') return;
+      if (fokusErIBlokken()) return;
       lukWikiForslag();
       lukBlok();
     }, 0);
@@ -2055,7 +2069,32 @@ const DATOKNAPPER = [
   { ord: '/now', vis: 'Now' },
 ];
 
-function vaerktoejslinjeHtml() {
+/*
+ * MD-knappen: den samme blok, vist som markdown (F33).
+ *
+ * »kan du efter Now tilfoeje en knap som skifter visningen til markdown, saa
+ * man fx kan rette overskriften i et URL link« (Andreas, 2026-09-07).
+ *
+ * Den rige blok viser `[the docs](https://…)` som ordene »the docs«, og saa
+ * er der ikke noget at saette markoeren i, hvis det er NAVNET, man vil rette.
+ * Kilden er stadig markdown - den er bare gemt bag visningen - saa knappen
+ * viser den frem igen. Det er den samme raa blok, som en tabel eller en
+ * kodeblok altid har aabnet i; den er nu ogsaa noget, man kan VAELGE.
+ *
+ * Den staar sidst, efter Now, som han bad om - og den er den ENESTE knap i
+ * raekken, naar man staar i markdown, for B/I/U kan ikke noget dér.
+ */
+function mdKnapHtml(rigt) {
+  const navn = rigt ? 'Edit as Markdown' : 'Back to formatted text';
+  return `<button type="button" class="vt-knap vt-tekst vt-md" data-raa="1" tabindex="-1"
+      aria-pressed="${rigt ? 'false' : 'true'}"
+      title="${navn}" aria-label="${navn}">MD</button>`;
+}
+
+function vaerktoejslinjeHtml(rigt) {
+  // I markdown er der kun vejen tilbage. En fed-knap, der ikke kunne goere
+  // noget, ville vaere en knap, der loej.
+  if (!rigt) return `<div class="blok-vaerktoej" id="blokVaerktoej">${mdKnapHtml(false)}</div>`;
   const genvej = (o) => {
     const g = TEKSTGENVEJE.find((x) => x.ord === o.ord);
     return g ? `<button type="button" class="vt-knap vt-tekst" data-genvej="${g.ord}"
@@ -2078,8 +2117,11 @@ function vaerktoejslinjeHtml() {
     <button type="button" class="vt-knap" data-goer="${v.goer}" tabindex="-1"
       title="${esc(v.navn)}${v.tast ? ` (${v.tast})` : ''}"
       aria-label="${esc(v.navn)}">${v.vis}</button>`).join('')}
+    <button type="button" class="vt-knap" data-blokform="tjekliste" tabindex="-1"
+      title="Checklist" aria-label="Checklist">${icon('tjekboks', 15)}</button>
     <span class="vt-skel" aria-hidden="true"></span>
-    ${DATOKNAPPER.map(genvej).join('')}</div>`;
+    ${DATOKNAPPER.map(genvej).join('')}
+    ${mdKnapHtml(true)}</div>`;
 }
 
 /**
@@ -2372,6 +2414,24 @@ async function indsaetFilerIBlok(filer, vaert, b) {
   tegnKrop();
 }
 
+/*
+ * Hvad et indsaet skal skrive: HTML'en oversat - eller den bare tekst.
+ *
+ * Reglen i oversaetteren er, at et ukendt tag koster sin formatering, aldrig
+ * sine ord. Den kan kun holde, saa laenge oversaetteren forstaar formen -
+ * gjorde den ikke det, faldt HELE indsaettet paa gulvet i tavshed, og det
+ * saa ud, som om ⌘V ikke virkede (Andreas, 2026-09-07: »kun et problem paa
+ * min mac, paa pc virker det fint« - se `TOM` i redigering.js).
+ *
+ * Den fejl er rettet dér, hvor den var. Det her er vaernet mod den naeste,
+ * for udklipsholderens HTML kommer fra fremmede programmer og har ingen
+ * ende: en ren tekst i noten er et lille tab, et tomt indsaet er et helt.
+ */
+function indsatMarkdown(html, flad) {
+  const ren = html ? saguRedigering.tilMarkdown(html) : flad;
+  return String(ren || '').trim() ? ren : (flad || '');
+}
+
 async function indsaetRent(e, vaert, b) {
   const dt = e.clipboardData || e.dataTransfer;
   if (!dt) return;
@@ -2395,8 +2455,7 @@ async function indsaetRent(e, vaert, b) {
   }
 
   e.preventDefault();
-  const html = dt.getData('text/html');
-  const ren = html ? saguRedigering.tilMarkdown(html) : dt.getData('text/plain');
+  const ren = indsatMarkdown(dt.getData('text/html'), dt.getData('text/plain'));
   // Markdown indsaettes som TEKST og formateres af live-reglerne bagefter -
   // saa er der kun ét sted, der laver formatering.
   const sel = window.getSelection();
@@ -2538,6 +2597,105 @@ function holdBlokISyne(host) {
   }
 }
 
+/*
+ * Blokken bliver en tjekliste - eller holder op med at vaere det (F33).
+ *
+ * »Kan du tilfoeje checklist til skrive menuen foer Date?« (Andreas,
+ * 2026-09-07).
+ *
+ * Knappen arbejder paa MARKDOWNEN, ikke paa den viste HTML. Den kunne have
+ * pakket linjerne ind i `<li class="tjek">` og ladet oversaetteren om
+ * resten, men saa ville der vaere to steder, der bestemte, hvordan en
+ * tjekliste ser ud - og de to ville drive fra hinanden. Markdown er
+ * sandheden i databasen; saa er markdown ogsaa dét, knappen skriver.
+ *
+ * ── Én linje, ét punkt ────────────────────────────────────────────────────
+ *
+ * Alle linjer i blokken bliver til punkter, og en linje, der allerede baerer
+ * et maerke - et bullet, et nummer, en overskrift, et citattegn - lægger det
+ * fra sig foerst. Ellers ville et punkt hedde »## Onsdag« med to synlige
+ * havelaager, fordi en overskrift inde i et listepunkt ikke er en
+ * overskrift.
+ *
+ * Er ALLE linjer allerede tjekpunkter, tager knappen dem af igen. En knap,
+ * der kun kan én vej, er en knap, man ikke toer trykke paa.
+ */
+const TJEK_LINJE = /^(\s*)[-*+]\s+\[[ xX]\]\s+/;
+const BLOKMAERKE = /^(\s*)(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)?/;
+
+function skiftTjekliste(vaert, b) {
+  // Skriv blokken tilbage foerst: saa passer `b.til`, og der er kun ét sted,
+  // der oversaetter HTML til markdown.
+  gemRigBlok(vaert, b);
+  const linjer = editor.note.body.split('\n').slice(b.fra, b.til + 1);
+  const fyldte = linjer.filter((l) => l.trim());
+  const alle = fyldte.length > 0 && fyldte.every((l) => TJEK_LINJE.test(l));
+
+  const ny = linjer.map((l) => {
+    if (!l.trim()) return l;
+    if (alle) return l.replace(TJEK_LINJE, '$1');
+    /*
+     * Et punkt, der ALLEREDE er et tjekpunkt, maa ikke faa en boks til.
+     *
+     * `BLOKMAERKE` tager bullet'et og efterlader `[ ]` som almindelige tegn,
+     * og linjen blev til »- [ ] [ ] en«. Det sker kun, naar nogle af
+     * linjerne er punkter og andre ikke er - altsaa netop i den blok, man er
+     * midt i at lave om. Fundet af proeven, ikke af et oeje.
+     */
+    const uden = TJEK_LINJE.test(l) ? l.replace(TJEK_LINJE, '$1') : l.replace(BLOKMAERKE, '$1');
+    const indryk = (uden.match(/^\s*/) || [''])[0];
+    return `${indryk}- [ ] ${uden.slice(indryk.length)}`;
+  });
+
+  skrivBlokTilbage(ny.join('\n'), b);
+  // Blokken skifter SLAGS, og det kan kun ses ved at tegne den igen.
+  tegnKrop();
+}
+
+/*
+ * MD-knappen. Ét sted, fordi den findes baade i den rige og i den raa blok.
+ *
+ * `mousedown` med preventDefault og ikke `click`: et klik ville tage fokus
+ * fra feltet, og `blur` lukker blokken - saa var man ude af det, man skrev
+ * i, i stedet for at se det som markdown. Samme greb som resten af raekken.
+ */
+/*
+ * Er fokus stadig INDE i den blok, man skriver i?
+ *
+ * ÉT sted, fordi der er tre ting at staa i: det rige felt, det raa felt og
+ * vaerktoejslinjen. Reglen stod to steder - én gang ved hvert felt - og hver
+ * af dem kendte kun sit eget: den rige blok regnede `blokFelt` for »uden
+ * for noten«.
+ *
+ * Det gik godt, saa laenge man ikke kunne skifte felt uden at lukke
+ * blokken. Fra F33 kan man - MD-knappen goer netop det - og saa lukkede
+ * blokken i stedet for at skifte visning (maalt i browseren, 2026-09-07).
+ * To rigtige regler, der ikke vidste om hinanden; nu er der én.
+ */
+function fokusErIBlokken() {
+  const a = document.activeElement;
+  if (!a) return false;
+  return a.id === 'blokRigt' || a.id === 'blokFelt'
+    || (typeof a.closest === 'function' && !!a.closest('#blokVaerktoej'));
+}
+
+function bindMdKnap() {
+  const k = document.querySelector('#blokVaerktoej [data-raa]');
+  if (!k) return;
+  k.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    /*
+     * Der er intet at gemme foerst. Den rige blok skriver sig tilbage til
+     * noten ved hvert eneste tastetryk (`gemRigBlok` paa `input`), og det
+     * raa felt goer det samme - saa `editor.note.body` ER det, der staar paa
+     * skaermen, og optegningen kan ske paa stedet.
+     */
+    editor.raaBlok = !editor.raaBlok;
+    tegnKrop();
+  });
+}
+
 function bindRigBlok(vaert, b) {
   vaert.focus();
   // Markoeren i slutningen - eller i begyndelsen, hvis man kom hertil med
@@ -2601,8 +2759,7 @@ function bindRigBlok(vaert, b) {
 
   vaert.addEventListener('blur', () => {
     setTimeout(() => {
-      const aktiv = document.activeElement;
-      if (aktiv && (aktiv.id === 'blokRigt' || aktiv.closest('#blokVaerktoej'))) return;
+      if (fokusErIBlokken()) return;
       lukWikiForslag();
       lukBlok();
     }, 0);
@@ -2648,6 +2805,14 @@ function bindRigBlok(vaert, b) {
         if (indsaetVedMarkoer(vaert, g.lav(new Date()))) gemRigBlok(vaert, b);
       });
     });
+    const tjekKnap = linje.querySelector('[data-blokform="tjekliste"]');
+    if (tjekKnap) {
+      tjekKnap.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        skiftTjekliste(vaert, b);
+      });
+    }
     linje.querySelectorAll('[data-goer]').forEach((k) => {
       // `mousedown` + preventDefault, ikke `click`: et klik ville tage fokus
       // fra teksten, og `blur` lukker blokken - saa var markeringen vaek,
@@ -2666,6 +2831,10 @@ function aabnBlok(fra) {
   // En delt note, jeg kun maa laese, aabner ikke en raa markdown-blok. Uden
   // vagten ville teksten se ud til at kunne rettes (F11).
   if (!maaRette(editor.note)) return;
+  // »Vis mig markdown« gjaldt DEN blok, man stod i. En ny blok aabner, som
+  // noten ser ud - ellers ville ét tryk paa MD gøre resten af noten raa,
+  // uden at nogen bad om det.
+  if (fra !== editor.aabenBlok) editor.raaBlok = false;
   editor.aabenBlok = fra;
   tegnKrop();
 }
@@ -2797,6 +2966,7 @@ function gemSomPdf(n) {
 function lukBlok() {
   if (editor.aabenBlok === null) return;
   editor.aabenBlok = null;
+  editor.raaBlok = false;
   tegnKrop();
   planlaegGem();
   /*

@@ -1265,6 +1265,12 @@ kbd {
 .vt-knap i { font-style: italic; font-weight: 500; }
 .vt-knap u { font-weight: 500; }
 
+/* MD-knappen staar sidst og siger, hvilken tilstand man ER i - ikke bare
+   hvad et tryk goer. Uden den markering er der ingen forskel at se paa en
+   blok, man selv har gjort raa, og en, porten aldrig slap ind. */
+.vt-md { font-weight: 600; letter-spacing: .06em; }
+.vt-md[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
 /* Paa en telefon staar linjen tættere - der er ikke plads til luft. */
 @media (max-width: 900px) {
   .blok-vaerktoej { gap: 0; padding: 2px 32px 2px 2px; }
