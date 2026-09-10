@@ -3809,7 +3809,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 62;
+const APP_VERSION = 63;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -7427,6 +7427,19 @@ const editor = {
   // F33: har man selv bedt om at se blokken som markdown? Gaelder KUN den
   // blok, der staar aaben - se `aabnBlok`.
   raaBlok: false,
+  /*
+   * F34: har man bedt om at se HELE noten som markdown?
+   *
+   * »Mulighed for at lave hele noten til Markdown og ikke kun sektionen naar
+   * MD knappen benyttes« (Andreas, 2026-09-10).
+   *
+   * Den staar ved siden af `raaBlok` og ikke i stedet for: der er to
+   * spoergsmaal, ikke ét. `raaBlok` er FORMEN (markdown eller ej), den her er
+   * OMFANGET (denne blok eller hele noten) - og de kan slaas til og fra hver
+   * for sig. Begge doer, naar noten lukkes: det er et valg for lige nu, ikke
+   * en indstilling. Indstillingen findes allerede og hedder `editWhole`.
+   */
+  raaNote: false,
   beskidt: false,
   sidstGemt: 0,
   konflikt: null,
@@ -9214,12 +9227,17 @@ function tegnMedAabenBlok(host, n) {
    * Der er to grunde til, at en blok staar raa, og de skal ikke blandes:
    * porten kan have sagt nej (en tabel, en kodeblok - dér er markdown den
    * rigtige flade), eller man kan have bedt om det selv. Kun den anden kan
-   * fortrydes, og derfor faar kun den en vaerktoejslinje med vejen tilbage.
+   * fortrydes, og derfor faar kun den en MD-knap med vejen tilbage.
+   *
+   * »Hele noten« staar der til gengaeld BEGGE steder (F34). Den er ikke en
+   * vej tilbage, men et omfang - og netop i en tabel er det ofte hele noten,
+   * man er ude efter. Havde raekken vaeret helt vaek her, ville et klik i en
+   * tabel vaere den ene blok, man ikke kunne komme videre fra.
    */
   const rigt = !editor.raaBlok && kanRedigereRigt(raa, b);
   host.innerHTML = `${del(foer)}
     <div class="blok-redigering${rigt ? ' rig' : ''}">
-      ${rigt || editor.raaBlok ? vaerktoejslinjeHtml(rigt) : ''}
+      ${vaerktoejslinjeHtml(rigt, rigt || editor.raaBlok)}
       ${rigt
     ? '<div class="blok-felt rig-felt" id="blokRigt"></div>'
     : `<textarea class="blok-felt" id="blokFelt" spellcheck="false"
@@ -9489,10 +9507,35 @@ function mdKnapHtml(rigt) {
       title="${navn}" aria-label="${navn}">MD</button>`;
 }
 
-function vaerktoejslinjeHtml(rigt) {
-  // I markdown er der kun vejen tilbage. En fed-knap, der ikke kunne goere
-  // noget, ville vaere en knap, der loej.
-  if (!rigt) return `<div class="blok-vaerktoej" id="blokVaerktoej">${mdKnapHtml(false)}</div>`;
+/*
+ * »Hele noten« - MD-knappens omfang (F34).
+ *
+ * MD viser den blok, man staar i. Naar man skal flytte et afsnit op over et
+ * andet, rette en tabel eller klippe paa tvaers, er det ikke blokken, der er
+ * arbejdsemnet - det er noten. Den knap staar derfor KUN i markdown-raekken:
+ * »hele noten som markdown« giver kun mening, naar man allerede har sagt
+ * markdown, og i den rige raekke ville den vaere en tredje ting at forstaa.
+ *
+ * Den samme flade findes i forvejen som en indstilling (`editWhole`, »et
+ * klik aabner hele noten«). Forskellen er varigheden: indstillingen gaelder
+ * hver note, hver dag - knappen gaelder den note, man staar i nu.
+ */
+function helNoteKnapHtml() {
+  const hel = !!editor.raaNote;
+  const navn = hel ? 'Back to this paragraph' : 'Edit the whole note as Markdown';
+  return `<button type="button" class="vt-knap vt-tekst vt-hel" data-helnote="1" tabindex="-1"
+      aria-pressed="${hel}" title="${navn}" aria-label="${navn}">Whole note</button>`;
+}
+
+/**
+ * Raekken over blokken. `rigt` er visningen; `medMd` er, om der ER en vej
+ * tilbage til den formaterede tekst - en tabel har ingen.
+ */
+function vaerktoejslinjeHtml(rigt, medMd = true) {
+  // I markdown er der kun vejen tilbage og omfanget. En fed-knap, der ikke
+  // kunne goere noget, ville vaere en knap, der loej.
+  if (!rigt) return `<div class="blok-vaerktoej" id="blokVaerktoej">${
+    medMd ? mdKnapHtml(false) : ''}${helNoteKnapHtml()}</div>`;
   const genvej = (o) => {
     const g = TEKSTGENVEJE.find((x) => x.ord === o.ord);
     return g ? `<button type="button" class="vt-knap vt-tekst" data-genvej="${g.ord}"
@@ -10077,21 +10120,83 @@ function fokusErIBlokken() {
     || (typeof a.closest === 'function' && !!a.closest('#blokVaerktoej'));
 }
 
+/**
+ * Hvilken blok staar markoeren i - i det RAA felt?
+ *
+ * Bruges, naar man forlader hele-noten-visningen: man skal lande i det
+ * afsnit, man stod i, ikke i toppen af en note paa hundrede afsnit. Det er
+ * samme regel som den anden vej (`tegnHeleNoten` saetter markoeren ved
+ * `aabenBlok`), og uden den ville de to knapper vaere en rundtur, hvor man
+ * mister sin plads hver gang.
+ */
+function blokVedMarkoer(felt) {
+  if (!felt || typeof felt.selectionStart !== 'number') return editor.aabenBlok;
+  const foer = felt.value.slice(0, felt.selectionStart);
+  const linje = foer.split('\n').length - 1;
+  const b = saguMarkdown.blokke(felt.value).find((x) => x.fra <= linje && x.til >= linje);
+  // Ingen blok: markoeren staar paa en tom linje. DEN linje er saa maalet -
+  // `tegnMedAabenBlok` tager en tom linje som en tom blok.
+  return b ? b.fra : linje;
+}
+
+/*
+ * De to knapper i markdown-raekken - og hvorfor de er to.
+ *
+ * MD er FORMEN: markdown eller den formaterede tekst. »Whole note« er
+ * OMFANGET: denne blok eller hele noten. De to spoergsmaal er uafhaengige,
+ * saa de faar hver sin knap frem for tre tilstande paa én - en knap, der
+ * skifter mellem tre ting, kan man ikke se sig til.
+ *
+ * MD slukker BEGGE: vejen ud af markdown er ud, uanset hvor meget af noten
+ * man havde fremme. Ellers ville man skulle trykke to gange for at komme
+ * tilbage til det, man saa foer.
+ */
+/**
+ * Hvilken visning giver et tryk paa `knap` - regnet ud, ikke gættet.
+ *
+ * De to knapper er to spoergsmaal: MD er FORMEN (markdown eller den
+ * formaterede tekst), »Whole note« er OMFANGET (denne blok eller hele
+ * noten). Skiftene er den eneste rigtige logik i F34, saa de bor i en ren
+ * funktion, der kan proeves - resten er DOM.
+ *
+ * MD slukker BEGGE: vejen ud af markdown er ud, uanset hvor meget af noten
+ * man havde fremme. Ellers skulle man trykke to gange for at komme tilbage
+ * til det, man saa foer.
+ */
+function naesteVisning(nu, knap) {
+  if (knap === 'md') {
+    const iMarkdown = !!(nu.raaBlok || nu.raaNote);
+    return { raaBlok: !iMarkdown, raaNote: false };
+  }
+  const raaNote = !nu.raaNote;
+  // Slaar man hele noten FRA, er man stadig i markdown - bare paa blokken.
+  return { raaBlok: !raaNote, raaNote };
+}
+
 function bindMdKnap() {
-  const k = document.querySelector('#blokVaerktoej [data-raa]');
-  if (!k) return;
-  k.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    /*
-     * Der er intet at gemme foerst. Den rige blok skriver sig tilbage til
-     * noten ved hvert eneste tastetryk (`gemRigBlok` paa `input`), og det
-     * raa felt goer det samme - saa `editor.note.body` ER det, der staar paa
-     * skaermen, og optegningen kan ske paa stedet.
-     */
-    editor.raaBlok = !editor.raaBlok;
-    tegnKrop();
-  });
+  const rk = document.querySelector('#blokVaerktoej [data-raa]');
+  const hk = document.querySelector('#blokVaerktoej [data-helnote]');
+  const felt = () => document.getElementById('blokFelt');
+  /*
+   * Der er intet at gemme foerst. Den rige blok skriver sig tilbage til
+   * noten ved hvert eneste tastetryk (`gemRigBlok` paa `input`), og det raa
+   * felt goer det samme - saa `editor.note.body` ER det, der staar paa
+   * skaermen, og optegningen kan ske paa stedet.
+   */
+  const bind = (k, goer) => {
+    if (!k) return;
+    k.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Hvor man STOD, laeses foer optegningen - bagefter findes feltet ikke.
+      const staaende = editor.raaNote ? blokVedMarkoer(felt()) : editor.aabenBlok;
+      goer();
+      editor.aabenBlok = staaende;
+      tegnKrop();
+    });
+  };
+  bind(rk, () => Object.assign(editor, naesteVisning(editor, 'md')));
+  bind(hk, () => Object.assign(editor, naesteVisning(editor, 'helnote')));
 }
 
 function bindRigBlok(vaert, b) {
@@ -10233,6 +10338,9 @@ function aabnBlok(fra) {
   // noten ser ud - ellers ville ét tryk paa MD gøre resten af noten raa,
   // uden at nogen bad om det.
   if (fra !== editor.aabenBlok) editor.raaBlok = false;
+  // Hele noten er ikke en tilstand, man klikker sig ind i en enkelt blok fra
+  // - naar en blok aabnes ved et klik, er omfanget blokken.
+  editor.raaNote = false;
   editor.aabenBlok = fra;
   tegnKrop();
 }
@@ -10365,6 +10473,7 @@ function lukBlok() {
   if (editor.aabenBlok === null) return;
   editor.aabenBlok = null;
   editor.raaBlok = false;
+  editor.raaNote = false;
   tegnKrop();
   planlaegGem();
   /*
@@ -11239,12 +11348,21 @@ async function visHistorikPanel(note) {
  * hurtigere at lade være med at klikke.
  */
 function heleNoten() {
-  return !!(state.prefs && state.prefs.editWhole);
+  return !!(editor.raaNote || (state.prefs && state.prefs.editWhole));
 }
 
 /** Erstatter HELE noten med ét råt markdown-felt. */
 function tegnHeleNoten(host, n) {
+  /*
+   * Raekken staar her KUN, naar man selv har trykket sig hertil (F34).
+   *
+   * Er det indstillingen `editWhole`, der aabner hele noten raat, er der
+   * ingen vej tilbage at tilbyde: den formaterede visning findes ikke i den
+   * tilstand. En knap, der ikke kan det, den viser, er vaerre end ingen knap
+   * - samme regel som den, der holder MD ude af en tabel.
+   */
   host.innerHTML = `<div class="blok-redigering hel">
+      ${editor.raaNote ? vaerktoejslinjeHtml(false) : ''}
       <textarea class="blok-felt hel-felt" id="blokFelt" spellcheck="false"></textarea>
       <button class="blok-hjaelp" id="blokHjaelp" type="button" tabindex="-1"
         aria-label="How to write this" title="How to write this">?</button>
@@ -11253,6 +11371,7 @@ function tegnHeleNoten(host, n) {
   const felt = document.getElementById('blokFelt');
   felt.value = n.body;
   autoHoejde(felt);
+  bindMdKnap();
 
   const hj = document.getElementById('blokHjaelp');
   // `mousedown`, ikke `click`: et klik ville tage fokus fra feltet, og `blur`
@@ -11310,9 +11429,19 @@ function tegnHeleNoten(host, n) {
   });
 
   felt.addEventListener('blur', () => {
-    // Kun hvis fokus forlod feltet - et klik paa hjaelpeknappen holder det.
+    /*
+     * Kun hvis fokus forlod BLOKKEN - et klik paa hjaelpeknappen eller i
+     * vaerktoejsraekken holder den aaben.
+     *
+     * Her stod `activeElement.id === 'blokFelt'`, altsaa en TREDJE kopi af
+     * den regel, F33 samlede to andre af. Den var rigtig, saa laenge hele
+     * noten ikke havde en vaerktoejsraekke - og forkert i samme sekund, den
+     * fik én: MD-knappen ville lukke editoren i stedet for at skifte
+     * visning. Det er noejagtig den faelde, F33 skrev ned, og den laa ét sted
+     * mere end jeg ledte.
+     */
     setTimeout(() => {
-      if (document.activeElement && document.activeElement.id === 'blokFelt') return;
+      if (fokusErIBlokken()) return;
       lukWikiForslag();
       lukBlok();
     }, 0);

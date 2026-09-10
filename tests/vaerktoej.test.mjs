@@ -150,12 +150,21 @@ test('valget om markdown gaelder kun DEN blok, man staar i', () => {
     'valget overlever, at blokken lukkes');
 });
 
-test('BEGGE felters blur-vagt er den samme ene funktion', () => {
+/** Koden uden kommentarer - en proeve maa ikke laese en forklaring som kode. */
+const udenKommentarer = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+test('HVERT felts blur-vagt er den samme ene funktion', () => {
   /*
    * Den her proeve er selve fejlen skrevet ned. Reglen »er fokus stadig inde
    * i blokken?« stod to steder, og hver af dem kendte kun sit eget felt - saa
    * MD-knappen LUKKEDE blokken i stedet for at skifte visning, fordi den
    * rige blok regnede `blokFelt` for »uden for noten«.
+   *
+   * Den TALTE foer kaldene og kraevede praecis to. Det var det forkerte maal:
+   * da hele noten fik sin egen vaerktoejsraekke (F34), fandtes reglen ét sted
+   * mere - og proeven blev roed af, at fejlen blev rettet. Det, der skal
+   * gaelde, er ikke et antal, men at INGEN blur-vagt har sin egen liste. Saa
+   * vokser proeven med koden i stedet for at braekke af den.
    */
   const vagt = p4.indexOf('function fokusErIBlokken(');
   assert.ok(vagt > -1, 'fokusErIBlokken findes ikke');
@@ -164,11 +173,23 @@ test('BEGGE felters blur-vagt er den samme ene funktion', () => {
   assert.match(krop, /blokFelt/, 'vagten kender ikke det raa felt');
   assert.match(krop, /blokVaerktoej/, 'vagten kender ikke vaerktoejslinjen');
 
-  // Og ingen af de to blur-handlere maa have sin egen liste igen.
-  const kald = p4.match(/if \(fokusErIBlokken\(\)\) return;/g) || [];
-  assert.equal(kald.length, 2, 'begge felter skal spoerge den samme vagt');
-  assert.ok(!/aktiv\.id === 'blok(Rigt|Felt)' \|\| aktiv\.closest/.test(p4),
-    'et felt har faaet sin egen vagt tilbage');
+  /*
+   * HVER blur-handler, der LUKKER blokken, skal spoerge den - ikke sin egen
+   * liste. Det er dem, spoergsmaalet handler om; notens maerkefelt har ogsaa
+   * en blur, og den har intet med blokken at goere.
+   */
+  const steder = [...p4.matchAll(/addEventListener\('blur'/g)]
+    .map((m) => p4.slice(m.index, m.index + 700))
+    .filter((h) => h.includes('lukBlok()'));
+  assert.ok(steder.length >= 3, `forventede mindst tre blur-vagter, fandt ${steder.length}`);
+  for (const h of steder) {
+    assert.match(h, /fokusErIBlokken\(\)/,
+      `en blur-vagt spoerger ikke den faelles: ${h.slice(0, 90).replace(/\n/g, ' ')}`);
+    // KODEN, ikke kommentarerne: historien om fejlen staar netop dér, og en
+    // proeve, der laeser den som en fejl, ville forbyde at skrive den ned.
+    assert.ok(!/\.id === 'blok/.test(udenKommentarer(h)),
+      'en blur-vagt har faaet sin egen liste over felter tilbage');
+  }
 });
 
 /* ================================================== indsaettet ========== */

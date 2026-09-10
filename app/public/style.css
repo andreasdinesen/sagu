@@ -1269,7 +1269,8 @@ kbd {
    hvad et tryk goer. Uden den markering er der ingen forskel at se paa en
    blok, man selv har gjort raa, og en, porten aldrig slap ind. */
 .vt-md { font-weight: 600; letter-spacing: .06em; }
-.vt-md[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.vt-md[aria-pressed="true"],
+.vt-hel[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
 
 /* Paa en telefon staar linjen tættere - der er ikke plads til luft. */
 @media (max-width: 900px) {
