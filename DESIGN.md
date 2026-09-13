@@ -2263,6 +2263,20 @@ ville den femte vej ind mangle. Og en **nøgle** skriver ikke i sporet: en
 iOS-genvej, der henter en note som markdown, og en MCP-klient, der læser den
 for at svare på noget, er ikke mig, der var her.
 
+### Stjernede notesbøger — en kolonne, ikke en række i `favorites`
+
+Tilføjet 2026-09-13 (m18). En notesbog kan stjernes fra sin ⋯-menu og lægger sig
+så **øverst** i listen, i den rækkefølge bøgerne i forvejen havde. Stjernen er
+`notebooks.starred_at` og ikke en række i `favorites`: reglen ovenfor findes, fordi
+en *note* kan være delt, men en notesbog har altid netop én ejer, og træet viser kun
+ens egne bøger. Ejer og bruger er den samme, så et stempel på bogen *er* reglen.
+Kommer der delte notesbøger, skal stjernen flytte i en tabel for sig.
+
+Sorteringen ligger i `hentNotesboeger()` på serveren — ikke i sidebaren — så
+træet, flyt-ruden, søgefeltet og MCP'en ser den samme liste. Knappen står i
+menuen og ikke i rækken: rækken har allerede globus, plus og prikker, og en bog
+stjernes én gang.
+
 ### Et tidsstempel i en sorteringskolonne — fjerde gang
 
 `note_visits` sorterede først på `at`, og to noter åbnet i **samme sekund** gav

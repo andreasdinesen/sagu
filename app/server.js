@@ -816,6 +816,29 @@ const MIGRATIONS = [
      */
     d.exec('ALTER TABLE attachments ADD COLUMN orphan_since INTEGER');
   },
+
+  function m18(d) {
+    /*
+     * Stjernede notesboeger.
+     *
+     * »Kan du goere saa man ogsaa kan stjernemarkere en notesbog i stedet for
+     * kun noter? Disse maa godt bare laegge sig i toppen af notebook-listen«
+     * (Andreas, 2026-09-13).
+     *
+     * ── Hvorfor en kolonne og ikke en raekke i `favorites` ────────────────
+     *
+     * Reglen fra F13 er, at en stjerne er BRUGERENS, ikke tingens - fordi en
+     * note kan vaere delt, og min stjerne ikke maa dukke op hos kollegaen. En
+     * notesbog har derimod altid netop én ejer: den deles ikke mellem konti,
+     * og traeet viser kun ens egne boeger. Ejeren og brugeren er den samme,
+     * saa et stempel paa bogen er reglen, ikke en undtagelse fra den. Kommer
+     * der nogensinde delte notesboeger, skal stjernen flytte i en tabel for
+     * sig - og saa staar grunden her.
+     *
+     * Et tidsstempel og ikke et flag (DESIGN.md §4), som `archived_at`.
+     */
+    d.exec('ALTER TABLE notebooks ADD COLUMN starred_at INTEGER');
+  },
 ];
 
 /*
@@ -2813,13 +2836,19 @@ function hentNotesboeger(userId) {
    * kunne tegnes uden tretten ekstra forespoergsler (RUNE-ERFARINGER §4:
    * aldrig en forespoergsel pr. raekke).
    */
+  /*
+   * De stjernede foerst - i den raekkefoelge, de i forvejen havde. Sorteringen
+   * ligger HER og ikke i sidebaren, saa flyt-ruden, soegefeltet og MCP'en
+   * ser den samme liste som traeet.
+   */
   return db.prepare(`
-    SELECT b.id, b.name, b.icon, b.seq, b.archived_at, b.created_at, b.updated_at,
+    SELECT b.id, b.name, b.icon, b.seq, b.archived_at, b.starred_at, b.created_at, b.updated_at,
            EXISTS (SELECT 1 FROM shares s
                     WHERE s.notebook_id = b.id AND s.revoked_at IS NULL) AS udgivet
       FROM notebooks b WHERE b.user_id = ? AND b.deleted_at IS NULL
-     ORDER BY b.seq, b.name`).all(userId)
-    .map((b) => Object.assign({}, b, { published: !!b.udgivet, udgivet: undefined }));
+     ORDER BY (b.starred_at IS NULL), b.seq, b.name`).all(userId)
+    .map((b) => Object.assign({}, b,
+      { published: !!b.udgivet, starred: !!b.starred_at, udgivet: undefined }));
 }
 
 function opretNotesbog(userId, navn, ikon) {
@@ -5560,7 +5589,8 @@ const MOENSTRE = [
       if (har('name')) { saet.push('name = ?'); arg.push(str(body.name, 200) || 'Untitled'); }
       if (har('icon')) { saet.push('icon = ?'); arg.push(str(body.icon, 16)); }
       if (har('archived')) { saet.push('archived_at = ?'); arg.push(body.archived ? now() : null); }
-      if (!saet.length) { apiFejl(res, 400, 'nothing_to_change', 'Send a name, icon or archived flag.'); return; }
+      if (har('starred')) { saet.push('starred_at = ?'); arg.push(body.starred ? now() : null); }
+      if (!saet.length) { apiFejl(res, 400, 'nothing_to_change', 'Send a name, icon, archived or starred flag.'); return; }
       saet.push('updated_at = ?');
       arg.push(now());
       const r = db.prepare(`UPDATE notebooks SET ${saet.join(', ')}
@@ -5568,7 +5598,7 @@ const MOENSTRE = [
         .run(...arg, ctx.params[0], auth.user.id);
       if (!r.changes) { apiFejl(res, 404, 'not_found', 'No such notebook.'); return; }
       sendJson(res, 200, {
-        notebook: db.prepare(`SELECT id, name, icon, seq, archived_at, created_at, updated_at
+        notebook: db.prepare(`SELECT id, name, icon, seq, archived_at, starred_at, created_at, updated_at
                                 FROM notebooks WHERE id = ?`).get(ctx.params[0]),
       });
     },
@@ -6213,7 +6243,7 @@ function byggJsonEksport(userId, medFiler) {
   const ud = {
     sagu: 1,
     exportedAt: now(),
-    notebooks: db.prepare(`SELECT id, name, icon, seq, archived_at, created_at, updated_at
+    notebooks: db.prepare(`SELECT id, name, icon, seq, archived_at, starred_at, created_at, updated_at
                              FROM notebooks WHERE user_id = ? AND deleted_at IS NULL`).all(userId),
     notes: db.prepare(`SELECT id, notebook_id, parent_id, title, body_md, icon, seq, full_width,
                               ext_id, created_at, updated_at, archived_at
@@ -6258,10 +6288,10 @@ function gendanFraJson(userId, data) {
   // STRUKTUREN foerst: notesboeger og maerker, saa fremmednoeglerne findes,
   // naar noterne kommer (RUNE-ERFARINGER, doda F9).
   for (const b of data.notebooks || []) {
-    db.prepare(`INSERT INTO notebooks (id, user_id, name, icon, seq, archived_at, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`)
+    db.prepare(`INSERT INTO notebooks (id, user_id, name, icon, seq, archived_at, starred_at, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`)
       .run(b.id, userId, str(b.name, 200) || 'Untitled', str(b.icon, 16), b.seq || 0,
-        b.archived_at || null, b.created_at || t, b.updated_at || t);
+        b.archived_at || null, b.starred_at || null, b.created_at || t, b.updated_at || t);
     tal.notebooks++;
   }
   for (const g of data.tags || []) {

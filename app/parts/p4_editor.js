@@ -283,6 +283,7 @@ function traeHtml() {
             aria-label="Pick an icon">${esc(b.icon || '📓')}</button>
           <button class="tree-name" data-book="${esc(b.id)}" title="${esc(b.name)}">
             <span>${esc(b.name)}</span></button>
+          ${b.starred ? `<span class="tree-stjerne" title="Starred">${icon('stjerneFuld', 12)}</span>` : ''}
           <button class="tree-del${b.published ? ' paa' : ''}" data-udgivbog="${esc(b.id)}"
             data-navn="${esc(b.name)}"
             aria-label="${b.published ? 'Published on the web' : 'Publish this notebook'}"
@@ -291,7 +292,7 @@ function traeHtml() {
           <button class="tree-add" data-in="${esc(b.id)}" aria-label="New note here"
             title="New note here">${icon('plus', 13)}</button>
           <button class="tree-add" data-bogmenu="${esc(b.id)}" data-navn="${esc(b.name)}"
-            aria-label="More" title="Rename or delete">${icon('dots', 13)}</button>
+            aria-label="More" title="Star, rename or delete">${icon('dots', 13)}</button>
         </div>
         ${foldet ? '' : boern.map((x) => gren(x, 1)).join('')}
       </div>`;
@@ -353,7 +354,12 @@ function traeHtml() {
 }
 
 /*
- * Notesbogens menu: omdoeb og slet.
+ * Notesbogens menu: stjerne, omdoeb og slet.
+ *
+ * Stjernen bor HER og ikke som en knap i raekken (Andreas, 2026-09-13):
+ * raekken har allerede globus, plus og prikker, og en bog stjernes én gang -
+ * den skal ikke fylde i sidebaren hver dag. En stjernet bog laegger sig
+ * oeverst i listen; det goer serveren (`hentNotesboeger`).
  *
  * Serveren har kunnet begge dele siden F1 (`PATCH` og `DELETE` paa
  * `/api/v1/notebooks/:id`) - der var bare ingen vej derhen i fladen. Andreas
@@ -369,7 +375,10 @@ function visBogMenu(anker, id, navn) {
   const host = document.createElement('div');
   host.className = 'usermenu notemenu';
   host.id = 'bogMenu';
+  const stjernet = !!((state.notebooks || []).find((b) => b.id === id) || {}).starred;
   host.innerHTML = `
+    <button class="usermenu-item" data-do="stjerne">${icon(stjernet ? 'stjerneFuld' : 'stjerne', 16)}<span>${
+  stjernet ? 'Remove star' : 'Star this notebook'}</span></button>
     <button class="usermenu-item" data-do="navn">${icon('notes', 16)}<span>Rename…</span></button>
     <button class="usermenu-item" data-do="bog-udgiv">${icon('globe', 16)}<span>Publish this notebook</span></button>
     <button class="usermenu-item" data-do="flet">${icon('ind', 16)}<span>Merge into another…</span></button>
@@ -383,7 +392,9 @@ function visBogMenu(anker, id, navn) {
       const hvad = el.dataset.do;
       luk();
       try {
-        if (hvad === 'navn') {
+        if (hvad === 'stjerne') {
+          await api('PATCH', `/api/v1/notebooks/${id}`, { starred: !stjernet });
+        } else if (hvad === 'navn') {
           const nyt = prompt('Name of the notebook', navn);
           if (nyt === null || !nyt.trim()) return;
           await api('PATCH', `/api/v1/notebooks/${id}`, { name: nyt.trim() });

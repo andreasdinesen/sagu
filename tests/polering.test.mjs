@@ -219,3 +219,41 @@ test('en slettet note falder ud af begge lister', async () => {
   assert.ok(!(await a.kald('GET', '/api/v1/favorites')).data.notes.some((x) => x.id === n.id));
   assert.ok(!(await a.kald('GET', '/api/v1/recent?limit=50')).data.notes.some((x) => x.id === n.id));
 });
+
+/* ============================ stjernede notesbøger ==================== */
+
+test('en stjernet notesbog lægger sig øverst — i sin egen rækkefølge', async () => {
+  const navne = ['Bog A', 'Bog B', 'Bog C', 'Bog D'];
+  const boeger = [];
+  for (const navn of navne) {
+    boeger.push((await a.kald('POST', '/api/v1/notebooks', { name: navn })).data.notebook);
+  }
+  const mine = async () => (await a.kald('GET', '/api/v1/tree')).data.notebooks
+    .filter((x) => navne.includes(x.name));
+
+  assert.deepEqual((await mine()).map((x) => x.name), navne);
+
+  // D stjernes foer B - men B stod foerst, og det skal den blive ved med.
+  assert.equal((await a.kald('PATCH', `/api/v1/notebooks/${boeger[3].id}`, { starred: true })).status, 200);
+  assert.equal((await a.kald('PATCH', `/api/v1/notebooks/${boeger[1].id}`, { starred: true })).status, 200);
+  const efter = await mine();
+  assert.deepEqual(efter.map((x) => x.name), ['Bog B', 'Bog D', 'Bog A', 'Bog C'],
+    'de stjernede foerst, og inden for hver gruppe den raekkefoelge, brugeren havde');
+  assert.deepEqual(efter.map((x) => x.starred), [true, true, false, false]);
+
+  // Samme liste fra notesbogs-endepunktet: sorteringen bor paa serveren, ét sted.
+  const fraListe = (await a.kald('GET', '/api/v1/notebooks')).data.notebooks
+    .filter((x) => navne.includes(x.name)).map((x) => x.name);
+  assert.deepEqual(fraListe, efter.map((x) => x.name));
+
+  // Stjernen af igen: tilbage paa sin plads.
+  await a.kald('PATCH', `/api/v1/notebooks/${boeger[3].id}`, { starred: false });
+  assert.deepEqual((await mine()).map((x) => x.name), ['Bog B', 'Bog A', 'Bog C', 'Bog D']);
+});
+
+test('en anden konto kan ikke stjerne min notesbog', async () => {
+  const bog = (await a.kald('POST', '/api/v1/notebooks', { name: 'Kun min' })).data.notebook;
+  assert.equal((await b.kald('PATCH', `/api/v1/notebooks/${bog.id}`, { starred: true })).status, 404);
+  const hosMig = (await a.kald('GET', '/api/v1/tree')).data.notebooks.find((x) => x.id === bog.id);
+  assert.equal(hosMig.starred, false);
+});

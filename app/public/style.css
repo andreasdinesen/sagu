@@ -710,6 +710,7 @@ table.data td.center, table.data th.center { text-align: center; }
 
 .tree-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-icon { flex: none; font-size: 14px; line-height: 1; }
+.tree-stjerne { flex: none; display: flex; color: var(--accent-text); padding: 0 2px; }
 
 .tree-fold {
   flex: none;
