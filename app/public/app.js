@@ -3809,7 +3809,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 64;
+const APP_VERSION = 65;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -11627,7 +11627,7 @@ async function opdaterOmni() {
     omni.raekker = (state.tags || [])
       .filter((t) => !q || t.name.toLowerCase().includes(q))
       .slice(0, 10)
-      .map((t) => ({ slags: 'tag', id: t.id, etiket: `#${t.name}` }));
+      .map((t) => ({ slags: 'tag', id: t.id, etiket: `#${t.name}`, antal: t.notes }));
     /*
      * Findes maerket ikke, saa tilbyd at lave MAERKET.
      *
@@ -11732,6 +11732,8 @@ function tegnPanel() {
         <span class="omni-row-ikon">${r.ikon ? esc(r.ikon) : icon(ikon || 'book', 16)}</span>
         <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span>
           ${r.under ? `<span class="omni-row-uddrag">${esc(r.under)}</span>` : ''}</span>
+        ${typeof r.antal === 'number'
+    ? `<span class="omni-row-antal">${r.antal} note${r.antal === 1 ? '' : 's'}</span>` : ''}
       </button>`;
   }).join('');
   host.hidden = false;

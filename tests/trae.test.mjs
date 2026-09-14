@@ -468,3 +468,39 @@ test('MAERKER kan saettes, fjernes og oprettes undervejs', async () => {
   assert.equal(soeg.data.results.length, 1);
   assert.equal(soeg.data.results[0].id, m.id);
 });
+
+test('hvert mærke fortæller, hvor mange af MINE noter der ligger under det', async () => {
+  /*
+   * `#`-listen i soegefeltet viser tallet (Andreas, 2026-09-14). Det skal
+   * vaere det, `tag:navn` finder i mit eget arkiv: slettede noter taeller
+   * ikke, arkiverede goer, og en anden kontos noter med et maerke af samme
+   * navn roerer ikke mit tal.
+   */
+  const antal = async (kl, navn) => ((await kl.kald('GET', '/api/v1/state')).data.tags
+    .find((t) => t.name === navn) || {}).notes;
+  const note = async (kl, titel) => (await kl.kald('POST', '/api/v1/notes',
+    { title: titel, tags: ['taelles'] })).data.note;
+
+  const x = await note(a, 'Taelles 1');
+  await note(a, 'Taelles 2');
+  const arkiv = await note(a, 'Taelles 3');
+  assert.equal(await antal(a, 'taelles'), 3);
+
+  await a.kald('PATCH', `/api/v1/notes/${arkiv.id}`, { archived: true });
+  assert.equal(await antal(a, 'taelles'), 3, 'en arkiveret note er stadig under maerket');
+
+  await a.kald('DELETE', `/api/v1/notes/${x.id}`);
+  assert.equal(await antal(a, 'taelles'), 2, 'en note i papirkurven taeller ikke');
+
+  // Et tomt maerke staar der med 0 - ikke uden tal.
+  await a.kald('POST', '/api/v1/tags', { name: 'tomt-maerke' });
+  assert.equal(await antal(a, 'tomt-maerke'), 0);
+
+  // Bob har sit eget »taelles«. Det er to maerker, og tallene er hver sit.
+  await a.kald('POST', '/api/v1/admin', { allowRegistration: true });
+  const b = klient(srv.base);
+  await b.opret('bob-taeller', 'kodeord-1234');
+  await note(b, 'Bobs');
+  assert.equal(await antal(b, 'taelles'), 1);
+  assert.equal(await antal(a, 'taelles'), 2);
+});

@@ -1532,6 +1532,9 @@ a.omni-row { text-decoration: none; }
 
 .omni-row-uddrag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; padding: 0 2px; }
 .omni-row-meta { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-top: 3px; }
+/* Antallet under et maerke. Ikke `.omni-row-meta`: den skjules paa en telefon,
+   og tallet er lige saa nyttigt dér. */
+.omni-row-antal { flex: none; padding-top: 3px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .omni-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 

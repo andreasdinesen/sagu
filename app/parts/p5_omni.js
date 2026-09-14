@@ -163,7 +163,7 @@ async function opdaterOmni() {
     omni.raekker = (state.tags || [])
       .filter((t) => !q || t.name.toLowerCase().includes(q))
       .slice(0, 10)
-      .map((t) => ({ slags: 'tag', id: t.id, etiket: `#${t.name}` }));
+      .map((t) => ({ slags: 'tag', id: t.id, etiket: `#${t.name}`, antal: t.notes }));
     /*
      * Findes maerket ikke, saa tilbyd at lave MAERKET.
      *
@@ -268,6 +268,8 @@ function tegnPanel() {
         <span class="omni-row-ikon">${r.ikon ? esc(r.ikon) : icon(ikon || 'book', 16)}</span>
         <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span>
           ${r.under ? `<span class="omni-row-uddrag">${esc(r.under)}</span>` : ''}</span>
+        ${typeof r.antal === 'number'
+    ? `<span class="omni-row-antal">${r.antal} note${r.antal === 1 ? '' : 's'}</span>` : ''}
       </button>`;
   }).join('');
   host.hidden = false;

@@ -2650,9 +2650,27 @@ function senesteNoter(userId, graense) {
   return raekker.map((r) => Object.assign(formNote(r, false, userId), { visitedAt: r.besoegt }));
 }
 
-/** Maerkerne, i navneorden. Brugt af /state og af MCP'ens list_tags. */
+/**
+ * Maerkerne, i navneorden. Brugt af /state og af MCP'ens list_tags.
+ *
+ * Med antallet af noter under hvert (Andreas, 2026-09-14): i `#`-listen i
+ * soegefeltet er »#drift« og »#Drift« ellers to ens raekker, og man kan ikke
+ * se, hvilket af dem der er det, man bruger. ÉT opslag med GROUP BY - ikke
+ * et opslag pr. maerke (RUNE-ERFARINGER §4).
+ *
+ * Taellingen er MINE noter, ikke slettede, arkiverede med - det samme som
+ * `tag:navn` finder i mit eget arkiv. Et maerke tilhoerer ejeren af noten,
+ * saa en side, andre har delt med mig, baerer deres maerker og ikke mine.
+ */
 function hentMaerker(userId) {
-  return db.prepare('SELECT id, name FROM tags WHERE user_id = ? ORDER BY name').all(userId);
+  return db.prepare(`
+    SELECT t.id, t.name, COUNT(n.id) AS notes
+      FROM tags t
+      LEFT JOIN note_tags nt ON nt.tag_id = t.id
+      LEFT JOIN notes n ON n.id = nt.note_id AND n.deleted_at IS NULL AND n.user_id = t.user_id
+     WHERE t.user_id = ?
+     GROUP BY t.id
+     ORDER BY t.name`).all(userId);
 }
 
 /* ==================================================== deling (F11) ====== */
