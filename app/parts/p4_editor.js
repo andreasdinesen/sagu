@@ -2707,6 +2707,82 @@ function skiftTjekliste(vaert, b) {
 }
 
 /*
+ * Code over flere linjer bliver en KODEBLOK, ikke inline-kode.
+ *
+ * »jeg proevede at lave noget tekst ind og lave det til en kode. men det
+ * virkede ikke rigtigt« (Andreas, 2026-09-14). Et PowerShell-script paa
+ * tolv linjer blev pakket i ét par backticks. Inline-kode kan ikke gaa over
+ * en linje - hverken i markdown eller i `inline()`, der kun finder
+ * `[^`\n]+` - saa backtickerne stod der bare som tegn, og scriptet blev
+ * vist som almindelig tekst med `__` og `*` klar til at blive formatering.
+ *
+ * Knappen svarer derfor paa det, man markerede: inden for én linje er det
+ * et ord eller en kommando (inline), over flere linjer er det et stykke kode
+ * (en blok). Én knap, der goer det rigtige, frem for en knap mere, man skal
+ * vide at vaelge.
+ *
+ * ── Koden er KILDEN - ikke det, den rige blok viste ──────────────────────
+ *
+ * Foerste udgave tog markeringens tekst (`Selection.toString()`), og i
+ * browseren mistede scriptet sin indrykning: HTML viser ikke mellemrum i
+ * starten af en linje, saa markeringen har dem heller ikke. `**fed**` blev
+ * til »fed«. I kode er begge dele en del af koden. Markdownen er det, man
+ * skrev eller indsatte - tegn for tegn - og det er dén, blokken skal have.
+ *
+ * Den findes ved at saette to maerker i DOM'en, lade den ene oversaetter
+ * (`gemRigBlok`) skrive blokken, og skaere ved maerkerne: foer, kode, efter.
+ */
+const KODE_START = '\uE000';
+const KODE_SLUT = '\uE001';
+
+function markeringOverFlereLinjer() {
+  const sel = window.getSelection();
+  return !!(sel && sel.rangeCount && !sel.isCollapsed && sel.toString().replace(/\n+$/, '').includes('\n'));
+}
+
+/** Ren tekst ind, ren tekst ud: blokkens nye markdown. */
+function kodeblokMarkdown(foer, kode, efter) {
+  // Tomme linjer i kanterne vaek, men ikke mellemrummene foran foerste
+  // linje: de er indrykning.
+  const krop = String(kode).replace(/\r\n?/g, '\n').replace(/^[ \t]*\n+/, '').replace(/\s+$/, '');
+  const dele = [];
+  if (String(foer).trim()) dele.push(String(foer).replace(/\s+$/, ''));
+  dele.push(`\`\`\`\n${krop}\n\`\`\``);
+  if (String(efter).trim()) dele.push(String(efter).replace(/^\s+/, ''));
+  // Tomme linjer omkring: kodeblokken er sin egen blok, og teksten omkring
+  // den bliver de afsnit, den var.
+  return dele.join('\n\n');
+}
+
+function lavKodeblok(vaert, b) {
+  const sel = window.getSelection();
+  const r = sel.getRangeAt(0);
+  const slut = r.cloneRange();
+  slut.collapse(false);
+  slut.insertNode(document.createTextNode(KODE_SLUT));
+  r.insertNode(document.createTextNode(KODE_START));
+
+  gemRigBlok(vaert, b);
+  const md = editor.note.body.split('\n').slice(b.fra, b.til + 1).join('\n');
+  const i = md.indexOf(KODE_START);
+  const j = md.indexOf(KODE_SLUT);
+  const rens = (s) => s.split(KODE_START).join('').split(KODE_SLUT).join('');
+  if (i < 0 || j < i) {
+    // Maerkerne kom ikke igennem oversaetteren. Saa hellere intet end en
+    // halv blok: tag dem ud igen og lad teksten staa, som den stod.
+    skrivBlokTilbage(rens(md), b);
+    lukBlok();
+    return;
+  }
+  skrivBlokTilbage(kodeblokMarkdown(rens(md.slice(0, i)), rens(md.slice(i + 1, j)),
+    rens(md.slice(j + 1))), b);
+  // Blokken skifter SLAGS og bliver til flere. Luk den, saa noten tegnes af
+  // den nye markdown - `lukBlok` skriver ikke DOM'en tilbage, saa maerkerne
+  // kan ikke komme med ud.
+  lukBlok();
+}
+
+/*
  * MD-knappen. Ét sted, fordi den findes baade i den rige og i den raa blok.
  *
  * `mousedown` med preventDefault og ikke `click`: et klik ville tage fokus
@@ -2936,6 +3012,10 @@ function bindRigBlok(vaert, b) {
       k.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (k.dataset.goer === 'code' && markeringOverFlereLinjer()) {
+          lavKodeblok(vaert, b);
+          return;
+        }
         omslut(vaert, k.dataset.goer);
         gemRigBlok(vaert, b);
       });

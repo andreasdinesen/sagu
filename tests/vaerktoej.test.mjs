@@ -223,3 +223,59 @@ test('er der hverken HTML eller tekst, indsaettes ingenting', () => {
   assert.equal(indsat('', ''), '');
   assert.equal(indsat(undefined, undefined), '');
 });
+
+/* ======================================= Code over flere linjer ========== */
+
+/*
+ * »jeg proevede at lave noget tekst ind og lave det til en kode. men det
+ * virkede ikke rigtigt« (Andreas, 2026-09-14). Tolv linjer PowerShell blev
+ * pakket i ét par backticks. Markeringen over flere linjer skal give en
+ * kodeblok - og teksten omkring den skal blive staaende.
+ */
+function hentKodeblok() {
+  const i = p4.indexOf('function kodeblokMarkdown(');
+  assert.ok(i > -1, 'kodeblokMarkdown findes ikke laengere');
+  // eslint-disable-next-line no-new-func
+  return new Function(`${p4.slice(i, p4.indexOf('\n}', i) + 2)}\nreturn kodeblokMarkdown;`)();
+}
+const kodeblok = hentKodeblok();
+const md = (await import('../app/shared/markdown.js')).default;
+
+test('hele blokken markeret: én kodeblok, intet andet', () => {
+  const kode = '$c = Get-Content x.json -Raw\nforeach ($p in $liste) {\n  $p.value__\n}';
+  const ud = kodeblok('', kode, '');
+  assert.equal(ud, '```\n' + kode + '\n```');
+  const b = md.blokke(ud);
+  assert.equal(b.length, 1);
+  assert.equal(b[0].slags, 'kode');
+  assert.equal(b[0].tekst, kode, 'koden skal staa ordret - ogsaa __ og * og $');
+});
+
+test('tekst før og efter bliver sine egne afsnit', () => {
+  const ud = kodeblok('Kør det her:\n', 'linje 1\nlinje 2', '\nog se svaret.');
+  const b = md.blokke(ud);
+  assert.deepEqual(b.map((x) => x.slags), ['afsnit', 'kode', 'afsnit']);
+  assert.equal(b[1].tekst, 'linje 1\nlinje 2');
+  assert.ok(ud.startsWith('Kør det her:\n\n```'));
+  assert.ok(ud.endsWith('```\n\nog se svaret.'));
+});
+
+test('tomme linjer i kanten af markeringen kommer ikke med i blokken', () => {
+  assert.equal(kodeblok('', '\n\nen\nto\n\n', ''), '```\nen\nto\n```');
+});
+
+test('Code-knappen spørger om flere linjer, FØR den pakker ind', () => {
+  // Formregel: uden den gaar knappen tilbage til ét par backticks om det hele.
+  const knap = p4.slice(p4.indexOf("linje.querySelectorAll('[data-goer]')"));
+  const spoerg = knap.indexOf('markeringOverFlereLinjer()');
+  const pak = knap.indexOf('omslut(vaert, k.dataset.goer)');
+  assert.ok(spoerg > -1 && spoerg < pak);
+});
+
+test('indrykningen bliver — også på første linje', () => {
+  // Foerste udgave tog det, den rige blok VISTE, og HTML viser ikke
+  // mellemrum i starten af en linje: scriptet mistede sin indrykning.
+  const kode = '  if ($a) {\n    $b = 1\n  }';
+  assert.equal(kodeblok('', kode, ''), '```\n' + kode + '\n```');
+  assert.equal(md.blokke(kodeblok('', kode, ''))[0].tekst, kode);
+});
