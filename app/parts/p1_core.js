@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 65;
+const APP_VERSION = 66;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -1392,11 +1392,9 @@ function fortsaetTilConnector() {
   if (state.user && navigator.onLine) synkKoe(true);
   aabnFraAdressen();
   // Feltet skal have fokus ved opstart - man aabner et arkiv for at finde
-  // noget. Ikke paa mobil: dér ville tastaturet daekke halve skaermen.
-  if (state.user && state.view === 'search' && !smalSkaerm()) {
-    const o = omniEl();
-    if (o) o.focus();
-  }
+  // noget. Ikke paa mobil: dér ville tastaturet daekke halve skaermen. Og
+  // uden listen: den daekkede hele forsiden (se fokusVedOpstart).
+  if (state.user && state.view === 'search' && !smalSkaerm()) fokusVedOpstart();
 })();
 
 /**

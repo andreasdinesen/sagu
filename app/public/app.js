@@ -3809,7 +3809,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 65;
+const APP_VERSION = 66;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -5196,11 +5196,9 @@ function fortsaetTilConnector() {
   if (state.user && navigator.onLine) synkKoe(true);
   aabnFraAdressen();
   // Feltet skal have fokus ved opstart - man aabner et arkiv for at finde
-  // noget. Ikke paa mobil: dér ville tastaturet daekke halve skaermen.
-  if (state.user && state.view === 'search' && !smalSkaerm()) {
-    const o = omniEl();
-    if (o) o.focus();
-  }
+  // noget. Ikke paa mobil: dér ville tastaturet daekke halve skaermen. Og
+  // uden listen: den daekkede hele forsiden (se fokusVedOpstart).
+  if (state.user && state.view === 'search' && !smalSkaerm()) fokusVedOpstart();
 })();
 
 /**
@@ -11510,6 +11508,7 @@ const omni = {
   soeger: false,
   fallback: false,
   seneste: [],
+  stilleFokus: false,
 };
 
 const omniEl = () => document.getElementById('omni');
@@ -11875,6 +11874,33 @@ function ryd() {
   tegnPanel();
 }
 
+/**
+ * Fokus ved opstart - UDEN listen.
+ *
+ * »Kan du lave saa naar man starter Sagu, saa skal den ikke vise listen fra
+ * soegefeltet, da det fylder det hele?« (Andreas, 2026-09-14). Tomt felt og
+ * fokus gav »senest aendrede« som en rullegardin-liste, der daekkede hele
+ * forsiden - og forsiden viser i forvejen de samme noter under »Recently
+ * changed«. Fokus bliver, for man aabner et arkiv for at finde noget: der
+ * kan skrives med det samme, og det foerste tegn aabner listen.
+ */
+function fokusVedOpstart() {
+  const el = omniEl();
+  if (!el) return;
+  /*
+   * Flaget nulstilles IKKE lige efter `focus()`.
+   *
+   * Aabnes Sagu i en baggrundsfane, har dokumentet ikke fokus, og feltets
+   * `focus`-haendelse kommer foerst, naar man skifter til fanen - og saa
+   * ville listen alligevel staa der. Flaget lever derfor, til brugeren selv
+   * goer noget - en tast eller et tryk HVOR SOM HELST. Ikke kun i feltet:
+   * `/`, Esc og genvejene naar feltet ad andre veje, og de skal alle vise
+   * listen som foer.
+   */
+  omni.stilleFokus = true;
+  el.focus();
+}
+
 /* -------------------------------------------------------------- binding */
 
 function bindOmni() {
@@ -11882,7 +11908,19 @@ function bindOmni() {
   if (!el) return;
 
   el.addEventListener('input', () => { omni.valgt = 0; opdaterOmni(); });
-  el.addEventListener('focus', () => { if (!omni.raekker.length) opdaterOmni(); });
+  el.addEventListener('focus', () => { if (!omni.raekker.length && !omni.stilleFokus) opdaterOmni(); });
+  /*
+   * Et klik i feltet, der ALLEREDE har fokus, aabner listen.
+   *
+   * Opstarten giver feltet fokus uden at aabne den (`fokusVedOpstart`), og
+   * saa kommer der ingen `focus`-haendelse, naar man klikker i det bagefter.
+   * Uden det her ville »klik i feltet« vise listen hver gang - undtagen den
+   * allerfoerste, og det er netop dén, man proever.
+   */
+  el.addEventListener('click', () => {
+    const p = document.getElementById('omniPanel');
+    if (p && p.hidden) opdaterOmni();
+  });
 
   el.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); omni.valgt++; tegnPanel(); return; }
@@ -11920,6 +11958,17 @@ function bindOmni() {
     if (p) p.hidden = true;
   });
 }
+
+/*
+ * Brugeren har gjort noget - saa er opstartens stille fokus forbi.
+ *
+ * Paa topniveau og ikke i `bindOmni()`, som koeres ved hver optegning af
+ * skallen. I opfangningsfasen, saa flaget er vaek, FOER `/`-genvejen
+ * nedenfor giver feltet fokus.
+ */
+const slutStilleFokus = () => { omni.stilleFokus = false; };
+document.addEventListener('keydown', slutStilleFokus, true);
+document.addEventListener('pointerdown', slutStilleFokus, true);
 
 /*
  * `/` giver feltet fokus fra hvor som helst.

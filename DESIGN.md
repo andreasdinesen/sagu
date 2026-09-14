@@ -761,6 +761,20 @@ altid fange. Sagu: man leder oftere, end man opretter. Derfor står træfferne
 flytter den op på førstepladsen, og uden træffere er den den eneste række, så
 Enter opretter igen. Den regel kan man forudsige uden at lære den.
 
+### Fokus ved opstart — uden listen
+
+Tilføjet 2026-09-14. Feltet får stadig fokus, når appen starter (ikke på en telefon),
+men listen med seneste noter åbner **ikke**: den dækkede hele forsiden, og forsiden
+viser de samme noter under »Recently changed«. Første tegn, et klik i feltet, `/`
+eller en genvej viser listen som før.
+
+Stilheden er et flag (`omni.stilleFokus`), der lever, **til brugeren trykker på en tast
+eller klikker hvor som helst** — ikke til lige efter `focus()`. Åbnes Sagu i en
+baggrundsfane, kommer feltets `focus`-hændelse først, når man skifter til fanen, og
+et flag, der var nulstillet med det samme, ville åbne listen dér. Og fordi feltet
+allerede har fokus, giver et klik i det ingen `focus`-hændelse: derfor åbner et
+`click` i feltet også listen.
+
 ### Søgesyntaksen er ét delt modul
 
 `app/shared/soeg.js` tolker linjen for browseren (chips, uden netværkskald),
