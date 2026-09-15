@@ -92,6 +92,37 @@ const GENVEJE = [
     tast: 'g', vis: 'G', hvad: 'Back to all notes',
     gør: () => gaaTil('notes'),
   },
+  /*
+   * Fanerne (F35). Enkelttaster, som resten - `Ctrl+W`, `Ctrl+Tab` og
+   * `Ctrl+1-9` hoerer browseren til paa Windows, hvor Sagu koerer som
+   * webside, og kan ikke engang stoppes dér. `,` og `.` er valgt, fordi de
+   * ligger uden Alt paa et dansk tastatur - `[` og `]` goer ikke, og
+   * genvejene afviser Alt med vilje.
+   */
+  {
+    tast: 'w', vis: 'W', hvad: 'Close this tab',
+    naar: () => noteFanerAktive() && state.view === 'note'
+      && noteFaner.liste.some((t) => t.id === state.openNote),
+    gør: () => lukNoteFane(state.openNote),
+  },
+  {
+    tast: ',', vis: ',', hvad: 'Previous tab',
+    naar: () => noteFanerAktive() && noteFaner.liste.length > 0,
+    gør: () => skiftNoteFane(-1),
+  },
+  {
+    tast: '.', vis: '.', hvad: 'Next tab',
+    naar: () => noteFanerAktive() && noteFaner.liste.length > 0,
+    gør: () => skiftNoteFane(1),
+  },
+  {
+    // Et klik, ikke en tast - men den skal STAA paa listen, ellers findes
+    // fanerne kun for den, der har laest koden.
+    tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`,
+    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree it selects — use '
+      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click there`,
+    kunVist: true,
+  },
   {
     tast: 'Escape', vis: 'Esc', hvad: 'Close what is open',
     // Escape håndteres af den enkelte rude, som skal lukkes — hver rude
@@ -184,7 +215,7 @@ function visGenvejsPanel() {
           </tr>`).join('')}
         </tbody></table></div>
         <p class="meta saetning">Greyed-out shortcuts do something on other screens.
-        None of them use ⌘ or Ctrl — those belong to the browser.</p>
+        Apart from ${esc(modTast())}K, no key uses ⌘ or Ctrl — those belong to the browser.</p>
       </div>
     </div>`;
   document.body.appendChild(host);

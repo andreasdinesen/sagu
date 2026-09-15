@@ -3378,3 +3378,99 @@ body.fokus .topbar { position: static; }
    formular — det er stadig teksten, man kigger på. */
 .blok-redigering.hel { margin: 0; }
 .hel-felt { min-height: 60vh; }
+
+/* ================================================= noter i faner (F35)
+ *
+ * »er det muligt at lave i sagu at man kan have flere noter åbne i tabs som
+ * det fx er muligt at gøre i notion« (Andreas, 2026-09-15).
+ *
+ * Bjælken står INDE i den klæbende topbar, under tællerne og over feltet.
+ * Tællerne folder sig væk, når siden rulles (`body.rullet .toprow`) - fanerne
+ * gør ikke: dem vil man kunne nå midt i en lang note.
+ *
+ * Den ruller vandret i sig selv, når fanerne ikke kan være der. Aldrig siden:
+ * en vandret rulning af hele appen er en fejl, ikke en funktion.
+ *
+ * Under 900 px findes den ikke (»det er for småt på telefonen«). JS'en
+ * tegner den heller ikke dér - reglen her er for et vindue, der trækkes
+ * smalt, før lytteren har nået at tegne om.
+ */
+.notefaner {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0 2px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  min-width: 0;
+}
+.notefane {
+  position: relative;
+  flex: 0 1 200px;
+  min-width: 96px;
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--muted);
+  transition: background .12s, color .12s;
+}
+.notefane:hover { background: var(--card-hover); color: var(--text); }
+/* Den, man står i: et kort, som søgefeltet under den. */
+.notefane.vises {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+/* Den, et almindeligt klik vil skifte ud, mens man står på en liste. */
+.notefane.aktiv { border-color: var(--border); border-style: dashed; }
+.notefane-knap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 4px 6px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.notefane-knap svg { flex: none; opacity: .7; }
+.notefane-ikon { flex: none; font-size: 13px; line-height: 1; }
+.notefane-titel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notefane-luk {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  /* Krydset ses på den fane, man står i, og når musen er over en anden -
+     ellers er bjælken en række krydser. Med tastaturet skal det kunne nås. */
+  opacity: 0;
+}
+.notefane.vises .notefane-luk,
+.notefane:hover .notefane-luk,
+.notefane-luk:focus-visible { opacity: .7; }
+.notefane-luk:hover { opacity: 1; background: var(--border-soft); }
+.notefane-knap:focus-visible, .notefane-luk:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+body.solo .notefaner { display: none; }
+
+@media (max-width: 900px) {
+  .notefaner { display: none; }
+}

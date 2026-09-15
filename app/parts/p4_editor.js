@@ -236,6 +236,8 @@ async function hentTrae() {
     state.notebooks = d.notebooks;
     state.tree = d.notes;
     foldNyeBoeger();
+    // Kun her, hvor hentningen LYKKEDES - se ryddNoteFaner().
+    ryddNoteFaner();
   } catch (ex) {
     if (ex.status !== 401) toast(ex.message);
     state.tree = state.tree || [];
@@ -1190,6 +1192,12 @@ async function aabnNote(id, tving) {
    */
   document.body.classList.remove('navopen');
   /*
+   * Fanen afgoeres HER, foer vagten (F35): et klik paa den note, man allerede
+   * staar i, skal stadig goere dens fane til den aktive. En opfriskning
+   * (`tving`) er ikke et skridt og roerer ikke fanerne.
+   */
+  if (!tving) noteFaneVedAabning(id);
+  /*
    * `tving` springer vagten over - og den findes, fordi vagten ellers goer en
    * OPFRISKNING til ingenting.
    *
@@ -1244,6 +1252,7 @@ async function aabnNote(id, tving) {
     opdaterNav();
     tegnTrae();
     tegnSide();
+    noteFaneEfterIndlaesning(editor.note);
     /*
      * Sporet opfriskes EFTER optegningen, ikke foer (F13).
      *
@@ -1254,6 +1263,7 @@ async function aabnNote(id, tving) {
     hentGenveje().then(tegnGenveje);
   } catch (ex) {
     editor.indlaeser = null;
+    noteFaneFejl(id, ex);
     toast(ex.message);
     gaaTil('notes');
   }
@@ -3333,6 +3343,7 @@ function bindNoteSide() {
       // men foerst naar man forlader feltet, saa man kan slette og skrive om.
       n.title = titel.value;
       markerBeskidt();
+      opdaterNoteFaneTitel(n.id, titel.value);
     });
     titel.addEventListener('blur', () => {
       /*

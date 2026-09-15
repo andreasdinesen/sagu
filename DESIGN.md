@@ -3669,3 +3669,87 @@ Billeder i en anden størrelse end deres egen er **fravalgt** (Andreas, 2026-09-
 Markdown har ingen syntaks for det, så det ville kræve en udvidelse af sproget, som skulle
 bæres gennem rundturen og kendes af wiki-rendereren — og den ville stå i noterne for
 altid. Billeder vises i naturlig størrelse, begrænset af spaltens bredde.
+
+## 40 · F35 · Noter i faner
+
+»er det muligt at lave i sagu at man kan have flere noter åbne i tabs som det fx er
+muligt at gøre i notion« (Andreas, 2026-09-15). Rammerne, han satte bagefter: **kun
+noter** i en fane, fanerne **huskes**, og **kun på computeren** — »det er for småt på
+telefonen«. Han bruger Sagu som installeret app på Mac'en og som webside på Windows.
+
+### Faner inde i appen, ikke browserens
+
+I den installerede app findes der ingen fanelinje, så `⌘↵` sendte noten ud i browseren.
+Og hver browserfane er hele appen én gang til: eget opslag, egen opfriskning — og en
+offline-kø i localStorage, der læses én gang og skrives i sin helhed, så to kopier kan
+skrive oven i hinanden.
+
+### Én editor
+
+En fane er et **note-id, en titel og en rulleposition** — ikke en editor. At skifte fane
+er `aabnNote()`, som i forvejen gemmer den ventende rettelse, før den går videre. Så skal
+gemningen, konfliktvagten og offline-køen ikke kende til faner, og der kan aldrig stå to
+editorer på én tekst. Prisen: markøren og en åben blok huskes ikke over et faneskift —
+kun hvor langt man havde rullet.
+
+### Hvad et klik gør
+
+| Handling | Resultat |
+|---|---|
+| Almindeligt klik på en note | Skifter den **aktive** fane ud — som i Notion. Står noten allerede i en fane, skiftes der til den. |
+| ⌘/Ctrl-klik, midterklik, ⌘↵ i søgefeltet | Ny fane **i baggrunden**, som browseren gør med et link. |
+| ⌥/Alt-klik | Det samme. Nødvendig i træet, se nedenfor. |
+| `#note-<id>` i adressen | **Ny** fane — et link udefra må ikke skifte en fane ud. |
+| Krydset, midterklik på fanen, `W` | Lukker. Naboen til højre tager over, ellers til venstre; den sidste lukket → Search. |
+| `,` og `.` | Forrige og næste fane, rundt i ring. |
+
+**I træet er ⌘-klik »vælg flere«**, og det har Andreas selv bedt om (2026-09-01). Dér er
+vejen ⌥-klik eller midterklik. Et menupunkt var planen, men træet har ingen menu pr.
+note, og en Mac-trackpad har ingen midterknap.
+
+Klikkene fanges af **én lytter i fangst-fasen** på hele dokumentet, ikke af en gren i
+hver af de ti handlere, der åbner en note — den ellevte ville mangle.
+
+### Genvejene: enkelttaster, og ikke `[` `]`
+
+`Ctrl+W`, `Ctrl+Tab` og `Ctrl+1-9` hører browseren til på Windows og kan ikke engang
+stoppes dér. `[` og `]` kræver Alt på et dansk tastatur, og genvejene afviser Alt med
+vilje. `,` og `.` ligger frit på begge.
+
+### Husket pr. enhed og pr. bruger
+
+`sagu_faner:<bruger-id>` i localStorage — samme begrundelse som de foldede notesbøger:
+hvad man har åbent, hører til skærmen foran én. Bruger-id'et er med, fordi en fanetitel
+tit er hele indholdet, og to konti kan dele en browser.
+
+**Ved opstart er ingen fane aktiv.** Ellers ville det første klik efter en genstart
+skifte en fane ud, man ikke kunne se, at man »stod i«. Står man på en liste, er den
+aktive fane stiplet: det er den, et almindeligt klik skifter ud.
+
+Flere vinduer med Sagu deler lageret, og den sidste, der skriver, vinder. Det er ikke
+en synkronisering og skal ikke være det.
+
+### Lukkede noter
+
+Træet er **alle mine noter**, også de arkiverede. Står en af MINE noter i en fane, men
+ikke længere i træet, er den slettet — i menuen, med notesbogen eller i en markering —
+og fanen lukkes. Det sker kun efter en hentning, der **lykkedes**, og aldrig offline:
+træet fra cachen er gammelt, og fejlgrenen efterlader en tom liste, som ville lukke alle
+faner på én gang. En delt note står aldrig i træet; dens fane lukkes af en **404** —
+ikke af en fejl uden net, for en note, man ikke kan nå, er ikke væk.
+
+### To fælder, fundet i browseren
+
+**`p15_` samles FØR `p1_core`.** `sorted()` sætter `'5'` før `'_'`, så filens egen top
+kører, før `SMAL_SKAERM` findes. Appen startede sort. En prøve holder nu p15's top fri
+for p1's navne.
+
+**Rullepositionen landede 96 px for højt.** Den første rulning folder tællerne i
+topbaren sammen (`body.rullet`), og browseren flytter positionen med. Der rulles derfor
+to gange — og ikke i en `requestAnimationFrame`, som slet ikke kører i et vindue, der
+ikke vises.
+
+### Hvad der ikke er gjort
+
+Træk-og-slip af faner, fastgjorte faner, historik pr. fane (tilbage-knappen er fælles)
+og faner på telefonen.

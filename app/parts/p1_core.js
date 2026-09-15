@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 68;
+const APP_VERSION = 69;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -561,6 +561,9 @@ function shellHtml() {
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
           ${temaKnapHtml()}
         </div>
+        <!-- Fyldes af tegnNoteFaner() (F35). Staar under taellerne, saa den
+             bliver, naar de folder sig vaek ved rulning. -->
+        <div class="notefaner" id="noteFaner" role="tablist" aria-label="Open notes" hidden></div>
         <div class="topraekke">
           <button class="btn navtoggle" id="navToggle" aria-label="Menu">${icon('menu')}</button>
           <div class="topraekke-felt">${omniHtml()}</div>
@@ -675,6 +678,7 @@ function bindShell() {
    */
   tegnGenveje();
   tegnTrae();
+  klargoerNoteFaner();
   document.getElementById('userBtn').addEventListener('click', visBrugerMenu);
   saetNavSkjult(navErSkjult());
 
@@ -868,6 +872,8 @@ function opdaterNav() {
   if (host) { host.innerHTML = navHtml(); bindNav(); }
   // Trash bor mellem favoritterne og skal have sin taeller og markering med.
   if (typeof tegnGenveje === 'function') tegnGenveje();
+  // Fanen, man staar i, skal lyse - og slukke, naar man gaar til en liste.
+  if (typeof tegnNoteFaner === 'function') tegnNoteFaner();
   const stats = document.getElementById('statsHost');
   if (stats) stats.innerHTML = statsHtml();
   // Settings staar ikke i navigationen - brugerknappen er indgangen, og saa
@@ -1419,7 +1425,8 @@ function fortsaetTilConnector() {
 function aabnFraAdressen() {
   if (!state.user) return;
   const m = String(location.hash || '').match(/^#note-([a-f0-9]{32})$/);
-  if (m) aabnNote(m[1]);
+  // I en NY fane: et link udefra maa ikke skifte en fane ud (F35).
+  if (m) aabnNoteFraAdresseIFane(m[1]);
 }
 
 window.addEventListener('hashchange', aabnFraAdressen);

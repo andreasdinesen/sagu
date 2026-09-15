@@ -282,6 +282,10 @@ function tegnPanel() {
        * ⌘/Ctrl-klik, midterklik og shift-klik er browserens egne. Kalder vi
        * `preventDefault()` paa dem, aabner den nye fane aldrig - og saa har
        * linket kun set ud som et link.
+       *
+       * Med Sagus egne faner (F35) naar ⌘-klik og midterklik aldrig hertil:
+       * lytteren i p15_faner.js tager dem i fangst-fasen. Grenen her er
+       * derfor telefonens og sidevinduets.
        */
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
       e.preventDefault();
@@ -468,10 +472,14 @@ function bindOmni() {
       /*
        * ⌘/Ctrl+Enter aabner i en ny fane og lader soegningen staa. Det er
        * tastaturets udgave af ⌘-klik, og linjen under feltet lover det.
+       *
+       * Fanen er Sagus EGEN (F35) - i den installerede app paa Mac'en er der
+       * ingen browserfaner at aabne i. Uden faner (telefon, sidevindue) er
+       * det stadig browserens.
        */
       if (e.metaKey || e.ctrlKey) {
         const r = omni.raekker[omni.valgt];
-        if (r && r.slags === 'note' && r.id) { window.open(`#note-${r.id}`, '_blank'); return; }
+        if (r && r.slags === 'note' && r.id) { aabnIBaggrunden(r.id, r.etiket); return; }
       }
       vaelgRaekke(omni.valgt);
       return;
