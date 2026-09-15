@@ -1627,7 +1627,7 @@ const SKRIVBAR = `(n.user_id = ? OR ${ARVET(" AND a.level = 'write'", 'n')})`;
 const EJET = '(n.user_id = ?)';
 
 const NOTE_LISTE_FELTER = `n.id, n.user_id, n.notebook_id, n.parent_id, n.title, n.icon,
-  n.seq, n.full_width, n.archived_at, n.created_at, n.updated_at, n.updated_by`;
+  n.seq, n.full_width, n.archived_at, n.deleted_at, n.created_at, n.updated_at, n.updated_by`;
 
 function naesteSeq(tabel, hvor, ...arg) {
   // seq er et LOEBENUMMER, ikke et tidsstempel. Skriver man now() i
@@ -1685,11 +1685,20 @@ function hentNoter(userId, filter) {
   }
   if (!f.medArkiverede) hvor.push('n.archived_at IS NULL');
   const graense = Math.min(Number(f.limit) || 500, 2000);
+  /*
+   * Papirkurven sorteres paa HVORNAAR noten blev slettet, nyeste foerst.
+   *
+   * Den arvede »seq, updated_at«, og seq er noteraekkefoelgen i notesbogen -
+   * derfor stod »yesterday« midt imellem noter fra sidste maaned. Og det skal
+   * ske i SQL: LIMIT klipper foer, saa en liste sorteret bagefter i klienten
+   * ville mangle netop de senest slettede (RUNE-ERFARINGER, doda).
+   */
+  const orden = f.slettede ? 'n.deleted_at DESC, n.id' : 'n.seq, n.updated_at DESC';
   const raekker = db.prepare(`
     SELECT ${NOTE_LISTE_FELTER}, (n.user_id = ?) AS er_ejer
       FROM notes n
      WHERE ${hvor.join(' AND ')}
-     ORDER BY n.seq, n.updated_at DESC
+     ORDER BY ${orden}
      LIMIT ${graense}`).all(userId, ...arg);
   return medFilantal(medMaerker(raekker.map((r) => formNote(r, false, userId))));
 }
@@ -1708,6 +1717,9 @@ function formNote(r, medKrop, laeser) {
     // vaek?", mens en visning af papirkurv eller arkiv vil vide HVORNAAR.
     archived: !!r.archived_at,
     archivedAt: r.archived_at || null,
+    // Papirkurven viser og sorterer paa sletningen. updated_at er IKKE det
+    // samme: den flytter sig, naar noget andet skriver i raekken.
+    deletedAt: r.deleted_at || null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     updatedBy: r.updated_by,

@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 67;
+const APP_VERSION = 68;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -288,7 +288,10 @@ const VIEWS = [
   { id: 'tags', label: 'Tags', icon: 'tag', group: 2 },
   { id: 'comments', label: 'Comments', icon: 'comment', group: 2, tael: 'pendingComments' },
   { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared' },
-  { id: 'trash', label: 'Trash', icon: 'trash', group: 3, tael: 'trash' },
+  // underFavoritter: tegnes af `tegnGenveje()` mellem »Favourites« og »Recent«,
+  // ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
+  // skubbede favoritterne ned (Andreas, 2026-09-15).
+  { id: 'trash', label: 'Trash', icon: 'trash', group: 3, tael: 'trash', underFavoritter: true },
   // group: 0 = staar IKKE i navigationen. Import og eksport er noget, man goer
   // et par gange i en apps levetid - den hoerer i brugermenuen ved siden af
   // Settings, ikke i den daglige liste (Andreas, 2026-08-21).
@@ -486,16 +489,19 @@ function bindGate() {
 
 /* --------------------------------------------------------------- skal */
 
+function navPunktHtml(v) {
+  const antal = v.tael ? (state.counts[v.tael] || 0) : 0;
+  return `<button class="nav-item" data-view="${v.id}" ${v.id === state.view ? 'aria-current="page"' : ''}>
+      ${icon(v.icon)}<span>${esc(v.label)}</span>
+      ${antal ? `<span class="nav-count">${antal}</span>` : ''}
+    </button>`;
+}
+
 function navHtml() {
-  const iNav = VIEWS.filter((v) => v.group > 0);
+  const iNav = VIEWS.filter((v) => v.group > 0 && !v.underFavoritter);
   const grupper = [...new Set(iNav.map((v) => v.group))];
-  return grupper.map((g) => `<nav class="nav">${iNav.filter((v) => v.group === g).map((v) => {
-    const antal = v.tael ? (state.counts[v.tael] || 0) : 0;
-    return `<button class="nav-item" data-view="${v.id}" ${v.id === state.view ? 'aria-current="page"' : ''}>
-        ${icon(v.icon)}<span>${esc(v.label)}</span>
-        ${antal ? `<span class="nav-count">${antal}</span>` : ''}
-      </button>`;
-  }).join('')}</nav>`).join('');
+  return grupper.map((g) => `<nav class="nav">${iNav.filter((v) => v.group === g)
+    .map(navPunktHtml).join('')}</nav>`).join('');
 }
 
 /*
@@ -634,8 +640,13 @@ function bindTemaKnap() {
   el.addEventListener('click', () => { anvendTema(el.dataset.naeste); opdaterTemaKnap(); });
 }
 
+/*
+ * Binder KUN `#navHost`. Trash staar i `#navGenveje` og bindes af
+ * `bindGenveje()` - en vaelger over hele dokumentet ville give den en handler
+ * mere, hver gang navigationen blev tegnet om.
+ */
 function bindNav() {
-  document.querySelectorAll('.nav-item[data-view]').forEach((el) => {
+  document.querySelectorAll('#navHost .nav-item[data-view]').forEach((el) => {
     el.addEventListener('click', () => gaaTil(el.dataset.view));
   });
 }
@@ -855,6 +866,8 @@ function tilToppen() {
 function opdaterNav() {
   const host = document.getElementById('navHost');
   if (host) { host.innerHTML = navHtml(); bindNav(); }
+  // Trash bor mellem favoritterne og skal have sin taeller og markering med.
+  if (typeof tegnGenveje === 'function') tegnGenveje();
   const stats = document.getElementById('statsHost');
   if (stats) stats.innerHTML = statsHtml();
   // Settings staar ikke i navigationen - brugerknappen er indgangen, og saa

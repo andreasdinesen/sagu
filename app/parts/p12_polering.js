@@ -281,13 +281,20 @@ function genvejeHtml() {
     </nav>`;
   };
 
+  // Papirkurven staar under favoritterne, ikke i toppen (Andreas, 2026-09-15).
+  // Den tegnes og bindes HER, saa den foelger med, hver gang listen tegnes om.
+  const nederst = VIEWS.filter((v) => v.underFavoritter);
   return liste('Favourites', SEKTION_FAV, sidebarListe.favoritter)
+    + (nederst.length ? `<nav class="nav navnederst">${nederst.map(navPunktHtml).join('')}</nav>` : '')
     + liste('Recent', SEKTION_SENESTE, sidebarListe.seneste);
 }
 
 function bindGenveje() {
   document.querySelectorAll('[data-genvej]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.genvej));
+  });
+  document.querySelectorAll('#navGenveje .nav-item[data-view]').forEach((el) => {
+    el.addEventListener('click', () => gaaTil(el.dataset.view));
   });
   document.querySelectorAll('[data-foldsektion]').forEach((el) => {
     el.addEventListener('click', () => {

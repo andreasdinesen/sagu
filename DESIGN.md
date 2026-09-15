@@ -2291,6 +2291,25 @@ træet, flyt-ruden, søgefeltet og MCP'en ser den samme liste. Knappen står i
 menuen og ikke i rækken: rækken har allerede globus, plus og prikker, og en bog
 stjernes én gang.
 
+### Trash står under Favourites — og papirkurven sorteres på sletningen
+
+Tilføjet 2026-09-15. **Trash** er flyttet fra sin egen gruppe i toppen af
+sidebaren ned mellem »Favourites« og »Recent«. Papirkurven er noget, man sjældent
+går i, og den skubbede favoritterne ned. Punktet har flaget `underFavoritter` i
+`VIEWS` og tegnes **og bindes** af `tegnGenveje()`, ikke af `navHtml()` — og
+`bindNav()` binder derfor kun `#navHost`. En vælger over hele dokumentet ville
+give Trash en handler mere, hver gang navigationen blev tegnet om. `opdaterNav()`
+tegner genvejene med, så tælleren og markeringen følger med.
+
+Papirkurven kan sorteres på **Title** og **Deleted** som All Notes, men har sit
+eget valg (`trashSortering`): der er ingen »Updated« i papirkurven, og at sortere
+den på titel skal ikke vende ens egen noteliste. Standarden er senest slettede
+først. Kolonnen viser `deletedAt`, som API'et nu sender med på hver note —
+`updatedAt` er ikke det samme, den flytter sig, når noget andet skriver i rækken.
+Serveren leverer papirkurven i den orden (`deleted_at DESC`) før `LIMIT`; den
+arvede notesbogens `seq`, så en note slettet i går stod midt imellem noter fra
+sidste måned.
+
 ### Et tidsstempel i en sorteringskolonne — fjerde gang
 
 `note_visits` sorterede først på `at`, og to noter åbnet i **samme sekund** gav

@@ -566,3 +566,41 @@ test('taellerne i sidebaren skal matche det, listerne VISER', async () => {
     s2.stop();
   }
 });
+
+test('papirkurven kommer i sletterækkefølge, senest slettede først', async () => {
+  // Listen arvede notesbogens »seq, updated_at«, saa en note slettet i gaar
+  // stod midt imellem noter fra sidste maaned (Andreas, 2026-09-15).
+  // Raekkerne oprettes i MODSAT orden af den ventede, og updated_at vendes
+  // modsat deleted_at: ellers kan testen ikke skelne en sortering paa den
+  // rigtige kolonne fra en, der tilfaeldigvis giver det samme (doda v74).
+  const s2 = await startServer();
+  try {
+    const x = klient(s2.base);
+    await x.opret('skraldesortering', 'kodeord-1234');
+    const noter = [];
+    for (const t of ['foerst oprettet', 'midt', 'sidst oprettet']) {
+      const n = (await x.kald('POST', '/api/v1/notes', { title: t })).data.note;
+      await x.kald('DELETE', `/api/v1/notes/${n.id}`);
+      noter.push(n);
+    }
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(path.join(s2.dataDir, 'sagu.db'));
+    const t0 = 1_800_000_000;
+    // Den sidst oprettede er den senest slettede - seq giver den modsatte
+    // orden, og det goer updated_at ogsaa.
+    noter.forEach((n, i) => db.prepare('UPDATE notes SET deleted_at = ?, updated_at = ? WHERE id = ?')
+      .run(t0 - (2 - i) * 86400, t0 - i * 86400, n.id));
+    db.close();
+
+    const skrald = (await x.kald('GET', '/api/v1/notes?trash=1')).data.notes;
+    assert.deepEqual(skrald.map((n) => n.title), ['sidst oprettet', 'midt', 'foerst oprettet']);
+    assert.deepEqual(skrald.map((n) => n.deletedAt), [t0, t0 - 86400, t0 - 2 * 86400],
+      'papirkurven skal kende sletningens tidspunkt, ikke kun updated_at');
+
+    // En note, der IKKE er slettet, har intet slettetidspunkt.
+    const levende = (await x.kald('POST', '/api/v1/notes', { title: 'levende' })).data.note;
+    assert.equal(levende.deletedAt, null);
+  } finally {
+    s2.stop();
+  }
+});

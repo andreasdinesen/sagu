@@ -2938,13 +2938,20 @@ function genvejeHtml() {
     </nav>`;
   };
 
+  // Papirkurven staar under favoritterne, ikke i toppen (Andreas, 2026-09-15).
+  // Den tegnes og bindes HER, saa den foelger med, hver gang listen tegnes om.
+  const nederst = VIEWS.filter((v) => v.underFavoritter);
   return liste('Favourites', SEKTION_FAV, sidebarListe.favoritter)
+    + (nederst.length ? `<nav class="nav navnederst">${nederst.map(navPunktHtml).join('')}</nav>` : '')
     + liste('Recent', SEKTION_SENESTE, sidebarListe.seneste);
 }
 
 function bindGenveje() {
   document.querySelectorAll('[data-genvej]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.genvej));
+  });
+  document.querySelectorAll('#navGenveje .nav-item[data-view]').forEach((el) => {
+    el.addEventListener('click', () => gaaTil(el.dataset.view));
   });
   document.querySelectorAll('[data-foldsektion]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -3809,7 +3816,7 @@ function byggKlip(konfig) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 67;
+const APP_VERSION = 68;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -4092,7 +4099,10 @@ const VIEWS = [
   { id: 'tags', label: 'Tags', icon: 'tag', group: 2 },
   { id: 'comments', label: 'Comments', icon: 'comment', group: 2, tael: 'pendingComments' },
   { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared' },
-  { id: 'trash', label: 'Trash', icon: 'trash', group: 3, tael: 'trash' },
+  // underFavoritter: tegnes af `tegnGenveje()` mellem »Favourites« og »Recent«,
+  // ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
+  // skubbede favoritterne ned (Andreas, 2026-09-15).
+  { id: 'trash', label: 'Trash', icon: 'trash', group: 3, tael: 'trash', underFavoritter: true },
   // group: 0 = staar IKKE i navigationen. Import og eksport er noget, man goer
   // et par gange i en apps levetid - den hoerer i brugermenuen ved siden af
   // Settings, ikke i den daglige liste (Andreas, 2026-08-21).
@@ -4290,16 +4300,19 @@ function bindGate() {
 
 /* --------------------------------------------------------------- skal */
 
+function navPunktHtml(v) {
+  const antal = v.tael ? (state.counts[v.tael] || 0) : 0;
+  return `<button class="nav-item" data-view="${v.id}" ${v.id === state.view ? 'aria-current="page"' : ''}>
+      ${icon(v.icon)}<span>${esc(v.label)}</span>
+      ${antal ? `<span class="nav-count">${antal}</span>` : ''}
+    </button>`;
+}
+
 function navHtml() {
-  const iNav = VIEWS.filter((v) => v.group > 0);
+  const iNav = VIEWS.filter((v) => v.group > 0 && !v.underFavoritter);
   const grupper = [...new Set(iNav.map((v) => v.group))];
-  return grupper.map((g) => `<nav class="nav">${iNav.filter((v) => v.group === g).map((v) => {
-    const antal = v.tael ? (state.counts[v.tael] || 0) : 0;
-    return `<button class="nav-item" data-view="${v.id}" ${v.id === state.view ? 'aria-current="page"' : ''}>
-        ${icon(v.icon)}<span>${esc(v.label)}</span>
-        ${antal ? `<span class="nav-count">${antal}</span>` : ''}
-      </button>`;
-  }).join('')}</nav>`).join('');
+  return grupper.map((g) => `<nav class="nav">${iNav.filter((v) => v.group === g)
+    .map(navPunktHtml).join('')}</nav>`).join('');
 }
 
 /*
@@ -4438,8 +4451,13 @@ function bindTemaKnap() {
   el.addEventListener('click', () => { anvendTema(el.dataset.naeste); opdaterTemaKnap(); });
 }
 
+/*
+ * Binder KUN `#navHost`. Trash staar i `#navGenveje` og bindes af
+ * `bindGenveje()` - en vaelger over hele dokumentet ville give den en handler
+ * mere, hver gang navigationen blev tegnet om.
+ */
 function bindNav() {
-  document.querySelectorAll('.nav-item[data-view]').forEach((el) => {
+  document.querySelectorAll('#navHost .nav-item[data-view]').forEach((el) => {
     el.addEventListener('click', () => gaaTil(el.dataset.view));
   });
 }
@@ -4659,6 +4677,8 @@ function tilToppen() {
 function opdaterNav() {
   const host = document.getElementById('navHost');
   if (host) { host.innerHTML = navHtml(); bindNav(); }
+  // Trash bor mellem favoritterne og skal have sin taeller og markering med.
+  if (typeof tegnGenveje === 'function') tegnGenveje();
   const stats = document.getElementById('statsHost');
   if (stats) stats.innerHTML = statsHtml();
   // Settings staar ikke i navigationen - brugerknappen er indgangen, og saa
@@ -5340,7 +5360,8 @@ async function tegnSideIndhold() {
    * er vaerre end ingen undertekst - saa hellere lade siden sige, hvad den
    * FAKTISK viser.
    */
-  const beskrivelse = state.view === 'notes' ? noteListeUndertekst() : (BESKRIVELSER[v.id] || '');
+  const beskrivelse = state.view === 'notes' ? noteListeUndertekst()
+    : state.view === 'trash' ? trashUndertekst() : (BESKRIVELSER[v.id] || '');
   const hoved = `<h1>${esc(v.label)}</h1><p class="lead">${esc(beskrivelse)}</p>`;
 
   try {
@@ -5453,12 +5474,40 @@ const SORTERINGER = {
 
 const sortering = { felt: 'aendret', ned: true };
 
-function sorterNoter(liste) {
-  const s = SORTERINGER[sortering.felt];
+/*
+ * Papirkurven har sin EGEN sortering.
+ *
+ * »Lav det muligt at sortere på slette dato under trash« (Andreas,
+ * 2026-09-15). Den deler maskineriet med All Notes, men ikke valget: der er
+ * ingen »Updated« i papirkurven, og at sortere den paa titel skal ikke vende
+ * ens egen noteliste om. Standarden er den senest slettede oeverst - den, man
+ * fortryder, er naesten altid den, man lige har slettet.
+ */
+const TRASH_SORTERINGER = {
+  titel: SORTERINGER.titel,
+  slettet: {
+    navn: 'Deleted',
+    sammenlign: (a, b) => (a.deletedAt || 0) - (b.deletedAt || 0),
+    stigendeFoerst: false,
+    tekst: (ned) => (ned ? 'most recently deleted first.' : 'oldest deletions first.'),
+  },
+};
+
+const trashSortering = { felt: 'slettet', ned: true };
+
+/** Hvilke overskrifter en liste har, og hvad der er valgt i den. */
+const SORTERLISTER = {
+  noter: { sorteringer: SORTERINGER, valg: sortering },
+  trash: { sorteringer: TRASH_SORTERINGER, valg: trashSortering },
+};
+
+function sorterNoter(liste, hvilken = 'noter') {
+  const { sorteringer, valg } = SORTERLISTER[hvilken];
+  const s = sorteringer[valg.felt];
   if (!s) return liste;
   const ud = liste.slice().sort((a, b) => {
     const r = s.sammenlign(a, b);
-    if (r !== 0) return sortering.ned ? -r : r;
+    if (r !== 0) return valg.ned ? -r : r;
     // Uafgjort brydes ALTID paa samme maade, ellers hopper raekker rundt
     // mellem to optegninger af den samme liste.
     return String(a.id).localeCompare(String(b.id));
@@ -5471,18 +5520,42 @@ function sorterNoter(liste) {
 }
 
 /** Overskriften som en knap, med pilen der viser hvad der sker. */
-function sorterTh(felt, ekstra) {
-  const s = SORTERINGER[felt];
-  const paa = sortering.felt === felt;
-  const pil = paa ? (sortering.ned ? '↓' : '↑') : '';
+function sorterTh(felt, ekstra, hvilken = 'noter') {
+  const { sorteringer, valg } = SORTERLISTER[hvilken];
+  const s = sorteringer[felt];
+  const paa = valg.felt === felt;
+  const pil = paa ? (valg.ned ? '↓' : '↑') : '';
   return `<th${ekstra || ''}><button class="sorterknap${paa ? ' paa' : ''}" data-sorter="${felt}"
-    aria-label="Sort by ${esc(s.navn)}">${esc(s.navn)}<span class="sorterpil">${pil}</span></button></th>`;
+    data-sorterliste="${hvilken}" aria-label="Sort by ${esc(s.navn)}">${esc(s.navn)}<span class="sorterpil">${pil}</span></button></th>`;
 }
 
 /** Underteksten skal sige, hvad listen FAKTISK viser. */
 function noteListeUndertekst() {
   const s = SORTERINGER[sortering.felt];
   return `Everything you have written, ${s.tekst(sortering.ned)}`;
+}
+
+function trashUndertekst() {
+  const s = TRASH_SORTERINGER[trashSortering.felt];
+  return `Deleted notes, ${s.tekst(trashSortering.ned)} They are removed for good after 30 days.`;
+}
+
+/*
+ * Et klik paa en overskrift. Samme overskrift igen vender listen. En NY
+ * overskrift begynder med den retning, folk mener med netop den: titler fra
+ * A, datoer fra nyeste. Alt andet foeles som om knappen gjorde noget
+ * tilfaeldigt.
+ */
+function bindSorter() {
+  document.querySelectorAll('[data-sorter]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const { sorteringer, valg } = SORTERLISTER[el.dataset.sorterliste || 'noter'];
+      const felt = el.dataset.sorter;
+      if (valg.felt === felt) valg.ned = !valg.ned;
+      else { valg.felt = felt; valg.ned = !sorteringer[felt].stigendeFoerst; }
+      tegnSide();
+    });
+  });
 }
 
 async function sideNoter(opt) {
@@ -5517,17 +5590,7 @@ async function sideNoter(opt) {
 }
 
 function bindNoteliste() {
-  document.querySelectorAll('[data-sorter]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const felt = el.dataset.sorter;
-      // Samme overskrift igen vender listen. En NY overskrift begynder med
-      // den retning, folk mener med netop den: titler fra A, datoer fra
-      // nyeste. Alt andet foeles som om knappen gjorde noget tilfaeldigt.
-      if (sortering.felt === felt) sortering.ned = !sortering.ned;
-      else { sortering.felt = felt; sortering.ned = !SORTERINGER[felt].stigendeFoerst; }
-      tegnSide();
-    });
-  });
+  bindSorter();
   const ny = document.getElementById('nyNote');
   if (ny) ny.addEventListener('click', () => opretOgAaben({}));
   document.querySelectorAll('[data-aabn]').forEach((el) => {
@@ -5564,10 +5627,10 @@ async function sideTrash() {
       <p class="meta saetning">Deleted notes land here and are removed for good after 30 days.</p></div>`;
   }
   return `<div class="card"><div class="tablewrap"><table class="data">
-      <thead><tr><th>Title</th><th class="num">Deleted</th><th></th></tr></thead>
-      <tbody>${d.notes.map((n) => `<tr>
+      <thead><tr>${sorterTh('titel', '', 'trash')}${sorterTh('slettet', ' class="num"', 'trash')}<th></th></tr></thead>
+      <tbody>${sorterNoter(d.notes, 'trash').map((n) => `<tr>
         <td>${esc(n.title || 'Untitled')}</td>
-        <td class="num">${esc(visTid(n.updatedAt))}</td>
+        <td class="num">${esc(visTid(n.deletedAt || n.updatedAt))}</td>
         <td style="text-align:right;white-space:nowrap">
           <button class="btn ghost" data-gendan="${esc(n.id)}">Restore</button></td>
       </tr>`).join('')}</tbody>
@@ -5577,6 +5640,7 @@ async function sideTrash() {
 }
 
 function bindTrash() {
+  bindSorter();
   document.querySelectorAll('[data-gendan]').forEach((el) => {
     el.addEventListener('click', async () => {
       try {
