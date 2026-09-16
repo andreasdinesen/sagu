@@ -244,6 +244,37 @@ async function hentTrae() {
   }
 }
 
+/**
+ * Vis en notesbog i sidebaren: fold den ud, og rul den frem.
+ *
+ * Bogens egen foldning er ikke nok - er HELE sektionen foldet sammen
+ * (`SEKTION_BOEGER`), er bogen der stadig ikke. To foldninger, ét ønske.
+ *
+ * Der rulles KUN i sidebaren, som har sin egen rullekasse. `scrollIntoView()`
+ * ville tage vinduet med og kaste én ned i noten, man netop står i.
+ */
+function visBogITraeet(bogId) {
+  const varFoldet = editor.foldede.has(bogId) || editor.foldede.has(SEKTION_BOEGER);
+  editor.foldede.delete(SEKTION_BOEGER);
+  editor.foldede.delete(bogId);
+  if (varFoldet) gemFoldede();
+  tegnTrae();
+  // Paa en telefon ligger sidebaren bag menuknappen - ellers aabner man en
+  // bog, man ikke kan se.
+  if (smalSkaerm()) document.body.classList.add('navopen');
+  const raekke = document.querySelector(`.tree-row.book[data-bograekke="${bogId}"]`);
+  const skaerm = document.querySelector('.sidebar');
+  if (!raekke || !skaerm) return;
+  const r = raekke.getBoundingClientRect();
+  const s = skaerm.getBoundingClientRect();
+  if (r.top < s.top + 8) skaerm.scrollTop += r.top - s.top - 8;
+  else if (r.bottom > s.bottom - 8) skaerm.scrollTop += r.bottom - s.bottom + 8;
+  // Et kort glimt, saa oejet finder raekken. Var bogen allerede foldet ud og
+  // synlig, er glimtet det eneste, der sker - uden det ligner knappen doed.
+  raekke.classList.add('fremhaevet');
+  setTimeout(() => raekke.classList.remove('fremhaevet'), 1200);
+}
+
 /** Boern af én foraelder, i den raekkefoelge brugeren har sat. */
 function boernAf(foraelderId, notesbogId) {
   return (state.tree || []).filter((n) => n.parentId === foraelderId
@@ -1290,20 +1321,41 @@ function tilbageKnapHtml() {
     title="Back to “${esc(navn)}”" aria-label="Back to ${esc(navn)}">${icon('tilbage', 16)}</button>`;
 }
 
+function notesbog(id) {
+  return (state.notebooks || []).find((x) => x.id === id) || null;
+}
+
 function notesbogNavn(id) {
-  const b = (state.notebooks || []).find((x) => x.id === id);
+  const b = notesbog(id);
   return b ? b.name : null;
 }
 
-/** Broedkrummer: hvor i traeet er jeg? */
+/*
+ * Broedkrummer: hvor i traeet er jeg?
+ *
+ * »jeg vil gerne have tilfoejet at naar jeg staar i en note at den saa viser
+ * lige ved navnet hvilke notebook den ligger under og navnet skal man kunne
+ * klikke paa for at aabne den notebook i venstre menuen« (Andreas,
+ * 2026-09-16). Bogen STOD der - som doed tekst. Nu er den en knap, der
+ * folder bogen ud i sidebaren og ruller den frem.
+ *
+ * Den foerer ikke til en LISTE over bogens noter: kravet er »aabne den
+ * notebook i venstre menuen«, og sidebaren er i forvejen det sted, man
+ * bladrer i en bog. En knap, der ogsaa skiftede side, ville flytte én vaek
+ * fra den note, man staar i.
+ */
 function broedkrummer(note) {
   const kort = new Map((state.tree || []).map((n) => [n.id, n]));
   const sti = [];
   let cur = kort.get(note.parentId);
   for (let i = 0; i < 32 && cur; i++) { sti.unshift(cur); cur = kort.get(cur.parentId); }
-  const bog = notesbogNavn(note.notebookId);
+  const bog = notesbog(note.notebookId);
   const dele = [];
-  if (bog) dele.push(`<span>${esc(bog)}</span>`);
+  if (bog) {
+    dele.push(`<button class="krumme-bog" data-bogkrumme="${esc(bog.id)}"
+      title="Show “${esc(bog.name)}” in the sidebar">${bog.icon
+  ? `<span class="krumme-ikon">${esc(bog.icon)}</span>` : icon('book', 13)}${esc(bog.name)}</button>`);
+  }
   for (const s of sti) dele.push(`<button data-krumme="${esc(s.id)}">${esc(s.title || 'Untitled')}</button>`);
   return dele.length ? `<nav class="krummer meta saetning">${dele.join('<span class="sep">/</span>')}</nav>` : '';
 }
@@ -3452,6 +3504,9 @@ function bindNoteSide() {
 
   document.querySelectorAll('[data-krumme]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.krumme));
+  });
+  document.querySelectorAll('[data-bogkrumme]').forEach((el) => {
+    el.addEventListener('click', () => visBogITraeet(el.dataset.bogkrumme));
   });
 
   if (editor.konflikt) {

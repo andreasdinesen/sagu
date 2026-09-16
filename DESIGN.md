@@ -3753,3 +3753,30 @@ ikke vises.
 
 Træk-og-slip af faner, fastgjorte faner, historik pr. fane (tilbage-knappen er fælles)
 og faner på telefonen.
+
+### Notesbogen i brødkrummen er en knap
+
+Tilføjet 2026-09-16. »jeg vil gerne have tilføjet at når jeg står i en note at den så
+viser lige ved navnet hvilke notebook den ligger under og navnet skal man kunne klikke
+på for at åbne den notebook i venstre menuen« (Andreas).
+
+Bogen **stod der allerede** i krummelinjen over titlen — som et `<span>`. Det er den
+dyreste slags flade: den ser rigtig ud og gør ingenting. Nu er den en knap med bogens
+eget ikon, og den folder bogen ud i sidebaren.
+
+Den fører **ikke** til en liste over bogens noter. Ønsket er »åbne den notebook i venstre
+menuen«, og sidebaren er i forvejen dér, man bladrer i en bog — en knap, der også
+skiftede side, ville flytte én væk fra den note, man står i.
+
+**To foldninger, ét ønske:** bogens egen (`editor.foldede.has(id)`) og hele
+notebooks-sektionens (`SEKTION_BOEGER`). Foldes kun den første ud, sker der intet den dag,
+sektionen er lukket — og fejlen er usynlig, så længe den står åben. Foldningen gemmes kun,
+når den faktisk ændrede sig.
+
+**Der rulles kun i sidebaren**, som har sin egen rullekasse. `scrollIntoView()` ville tage
+vinduet med og kaste én ned i noten, man netop står i. Målt i ruden: sidebaren rullede
+404 px, vinduet stod stille. Og på en telefon åbnes sidemenuen (`navopen`) — ellers folder
+man en bog ud, man ikke kan se.
+
+Rækken får et **glimt** (`.tree-row.fremhaevet`) i 1,2 sekunder. Stod bogen allerede åben
+og synlig, er glimtet det eneste, der sker, og uden det ligner knappen død.

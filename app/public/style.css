@@ -3474,3 +3474,12 @@ body.solo .notefaner { display: none; }
 @media (max-width: 900px) {
   .notefaner { display: none; }
 }
+
+/* Notesbogen i brødkrummen er en KNAP (2026-09-16): den folder bogen ud i
+   sidebaren. Ikonet hører sammen med navnet, så knappen er én ting at ramme. */
+.krumme-bog { display: inline-flex; align-items: center; gap: 5px; }
+.krumme-bog svg { opacity: .8; }
+.krumme-ikon { font-size: 13px; line-height: 1; }
+
+/* Glimtet, der siger »her er den«. */
+.tree-row.fremhaevet { background: var(--accent-soft); transition: background .4s; }
