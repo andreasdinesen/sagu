@@ -604,3 +604,57 @@ test('papirkurven kommer i sletterækkefølge, senest slettede først', async ()
     s2.stop();
   }
 });
+
+test('»Recent« er de senest RETTEDE, ogsaa naar de ligger bagerst i bogen', async () => {
+  // limit=8 klippede efter »seq«, saa en note, man lige havde rettet, kom
+  // aldrig med i soegefeltets liste (Andreas, 2026-09-16). Noterne oprettes,
+  // saa den senest rettede har den HOEJESTE seq - modsat det ventede.
+  const s2 = await startServer();
+  try {
+    const x = klient(s2.base);
+    await x.opret('senestrettet', 'kodeord-1234');
+    const noter = [];
+    for (let i = 0; i < 10; i++) {
+      noter.push((await x.kald('POST', '/api/v1/notes', { title: `note ${i}` })).data.note);
+    }
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(path.join(s2.dataDir, 'sagu.db'));
+    const t0 = 1_800_000_000;
+    noter.forEach((n, i) => db.prepare('UPDATE notes SET seq = ?, updated_at = ? WHERE id = ?')
+      .run(i, t0 + i, n.id));
+    db.close();
+
+    const seneste = (await x.kald('GET', '/api/v1/notes?limit=3&sort=updated')).data.notes;
+    assert.deepEqual(seneste.map((n) => n.title), ['note 9', 'note 8', 'note 7']);
+  } finally {
+    s2.stop();
+  }
+});
+
+test('All Notes faar HELE arkivet, ogsaa ud over 500 noter', async () => {
+  // Loftet paa 500 klippede efter »seq«, og listen sorteres foerst i klienten
+  // - med 909 noter manglede ca. 400, ogsaa nyere (Andreas, 2026-09-16).
+  // Den nyeste note faar den HOEJESTE seq, saa den ville falde af.
+  const s2 = await startServer();
+  try {
+    const x = klient(s2.base);
+    await x.opret('heltarkiv', 'kodeord-1234');
+    const forste = (await x.kald('POST', '/api/v1/notes', { title: 'skabelon' })).data.note;
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(path.join(s2.dataDir, 'sagu.db'));
+    const { user_id: uid } = db.prepare('SELECT user_id FROM notes WHERE id = ?').get(forste.id);
+    const t0 = 1_800_000_000;
+    const ind = db.prepare(`INSERT INTO notes (id, user_id, title, seq, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`);
+    for (let i = 0; i < 600; i++) ind.run(`masse${i}`, uid, `masse ${i}`, i, t0, t0 + i);
+    db.close();
+
+    const alle = (await x.kald('GET', '/api/v1/notes?all=1&sort=updated')).data.notes;
+    assert.equal(alle.length, 601);
+    assert.equal(alle[0].title, 'masse 599', 'den senest rettede skal staa foerst');
+    // Uden `all` gaelder loftet stadig - det er de andre listers vaern.
+    assert.equal((await x.kald('GET', '/api/v1/notes')).data.notes.length, 500);
+  } finally {
+    s2.stop();
+  }
+});

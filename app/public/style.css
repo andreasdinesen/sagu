@@ -3078,9 +3078,23 @@ html, body { overscroll-behavior-y: contain; }
  */
 /* `#pageHost.bred` er vaek: den bredde er nu standarden for alt. */
 
-/* Titlen må gerne tage pladsen; datoen og knappen skal ikke ombrydes. */
-.notetabel td:first-child { width: 55%; }
-.notetabel td:first-child .linkknap { white-space: normal; text-align: left; }
+/*
+ * Notelisten skal passe til VINDUET, ikke til sin længste række.
+ *
+ * `min-width: max-content` fra .tablewrap gjorde tabellen lige så bred som den
+ * længste titel plus alle mærkerne på én linje - og `max-width` på en
+ * tabelcelle ignorerer browseren. En importeret note med syv mærker gjorde
+ * tabellen 1218 px bred i en ramme på 614, så »Updated« og »Delete« stod uden
+ * for skærmen. Nu er kolonnerne faste: dato og knap har deres bredde, mærkerne
+ * en andel, og titlen tager resten og ombrydes. Under 32rem ruller den vandret
+ * som alle andre tabeller (med titlen klistret fast).
+ */
+.tablewrap table.notetabel { table-layout: fixed; min-width: 32rem; }
+.tablewrap table.notetabel td, .tablewrap table.notetabel th { max-width: none; }
+.notetabel th:nth-child(2) { width: 30%; }
+.notetabel th:nth-child(3) { width: 6.5rem; }
+.notetabel th:nth-child(4) { width: 5.5rem; }
+.notetabel td:first-child .linkknap { white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .notetabel td.num { white-space: nowrap; }
 
 /* Overskriften er en knap, og den skal ses at være det. */

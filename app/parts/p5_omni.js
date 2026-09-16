@@ -539,9 +539,22 @@ document.addEventListener('keydown', (e) => {
 /** De senest aendrede noter - svaret paa et tomt felt. */
 async function hentSeneste() {
   try {
-    const d = await api('GET', '/api/v1/notes?limit=8');
-    omni.seneste = d.notes.slice()
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 8);
+    // Serveren sorterer FOER den klipper - at sortere de otte bagefter
+    // giver bare de forkerte otte i den rigtige orden.
+    const d = await api('GET', '/api/v1/notes?limit=8&sort=updated');
+    omni.seneste = d.notes;
   } catch { omni.seneste = []; }
+}
+
+/*
+ * En gemt note lægges øverst i »Recent« uden en rundtur: gemningen sker
+ * hvert sekund, man skriver, og listen er kun en tilgift. Titlen følger med,
+ * så en omdøbt note ikke står under sit gamle navn.
+ */
+function flytTilSeneste(note) {
+  // Listen er MINE noter, som serverens - en delt side hører ikke til dér.
+  if (note.mine === false) return;
+  const gammel = omni.seneste.find((n) => n.id === note.id);
+  const ny = { ...(gammel || note), title: note.title, updatedAt: note.updatedAt };
+  omni.seneste = [ny, ...omni.seneste.filter((n) => n.id !== note.id)].slice(0, 8);
 }

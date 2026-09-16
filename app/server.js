@@ -1688,7 +1688,13 @@ function hentNoter(userId, filter) {
     else { hvor.push('n.parent_id = ?'); arg.push(f.parent); }
   }
   if (!f.medArkiverede) hvor.push('n.archived_at IS NULL');
-  const graense = Math.min(Number(f.limit) || 500, 2000);
+  /*
+   * `alle`: All Notes sorterer selv i klienten og skal derfor have HELE
+   * arkivet. Med loftet paa 500 og »seq« foerst manglede Andreas' 909 noter
+   * ca. 400 - og »newest first« kunne vaere uden de nyeste (2026-09-16).
+   * Listefelterne er smaa; kroppen er ikke med.
+   */
+  const graense = f.alle ? -1 : Math.min(Number(f.limit) || 500, 2000);
   /*
    * Papirkurven sorteres paa HVORNAAR noten blev slettet, nyeste foerst.
    *
@@ -1697,7 +1703,14 @@ function hentNoter(userId, filter) {
    * ske i SQL: LIMIT klipper foer, saa en liste sorteret bagefter i klienten
    * ville mangle netop de senest slettede (RUNE-ERFARINGER, doda).
    */
-  const orden = f.slettede ? 'n.deleted_at DESC, n.id' : 'n.seq, n.updated_at DESC';
+  /*
+   * Og »Recent« i soegefeltet er de senest RETTEDE - ogsaa det i SQL. Med
+   * »seq« foerst gav limit=8 de otte foerste i notesbogsraekkefoelgen, og en
+   * note, man lige havde rettet, kom aldrig med (Andreas, 2026-09-16).
+   */
+  let orden = 'n.seq, n.updated_at DESC';
+  if (f.slettede) orden = 'n.deleted_at DESC, n.id';
+  else if (f.senestRettet) orden = 'n.updated_at DESC, n.id';
   const raekker = db.prepare(`
     SELECT ${NOTE_LISTE_FELTER}, (n.user_id = ?) AS er_ejer
       FROM notes n
@@ -4073,6 +4086,8 @@ const ROUTES = {
     if (q.has('parent')) filter.parent = q.get('parent') || null;
     if (q.get('trash') === '1') filter.slettede = true;
     if (q.get('archived') === '1') filter.medArkiverede = true;
+    if (q.get('sort') === 'updated') filter.senestRettet = true;
+    if (q.get('all') === '1') filter.alle = true;
     sendJson(res, 200, { notes: hentNoter(auth.user.id, filter) });
   },
 

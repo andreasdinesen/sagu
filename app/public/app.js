@@ -4324,7 +4324,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 73;
+const APP_VERSION = 74;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -4606,7 +4606,10 @@ const VIEWS = [
   { id: 'search', label: 'Search', icon: 'search', group: 1 },
   { id: 'tags', label: 'Tags', icon: 'tag', group: 2 },
   { id: 'comments', label: 'Comments', icon: 'comment', group: 2, tael: 'pendingComments' },
-  { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared' },
+  // skjulTom: punktet staar kun i navigationen, naar nogen har delt noget med
+  // en. Et tomt »Shared with me« er stoej for den, der bruger Sagu alene
+  // (Andreas, 2026-09-16).
+  { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared', skjulTom: true },
   // underFavoritter: tegnes af `tegnGenveje()` mellem »Favourites« og »Recent«,
   // ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
   // skubbede favoritterne ned (Andreas, 2026-09-15).
@@ -4817,7 +4820,9 @@ function navPunktHtml(v) {
 }
 
 function navHtml() {
-  const iNav = VIEWS.filter((v) => v.group > 0 && !v.underFavoritter);
+  // Staar man PAA siden, bliver punktet - ellers forsvinder markeringen under en.
+  const iNav = VIEWS.filter((v) => v.group > 0 && !v.underFavoritter
+    && !(v.skjulTom && !state.counts[v.tael] && state.view !== v.id));
   const grupper = [...new Set(iNav.map((v) => v.group))];
   return grupper.map((g) => `<nav class="nav">${iNav.filter((v) => v.group === g)
     .map(navPunktHtml).join('')}</nav>`).join('');
@@ -6099,7 +6104,9 @@ function bindSorter() {
 }
 
 async function sideNoter(opt) {
-  const q = opt.trash ? '?trash=1' : '';
+  // Hele arkivet: listen sorteres her, og et loft ville klippe tilfaeldige
+  // noter bort (se `alle` i hentNoter).
+  const q = opt.trash ? '?trash=1' : '?all=1&sort=updated';
   const d = await api('GET', `/api/v1/notes${q}`);
   state.notes = d.notes;
 
@@ -11325,6 +11332,7 @@ async function gemNu() {
     n.backlinks = d.note.backlinks;
     editor.beskidt = false;
     editor.sidstGemt = Date.now();
+    flytTilSeneste(n);
     // Titlen kan vaere aendret - traeet skal foelge med.
     const t = (state.tree || []).find((x) => x.id === n.id);
     if (t && t.title !== n.title) { t.title = n.title; tegnTrae(); }
@@ -12784,11 +12792,24 @@ document.addEventListener('keydown', (e) => {
 /** De senest aendrede noter - svaret paa et tomt felt. */
 async function hentSeneste() {
   try {
-    const d = await api('GET', '/api/v1/notes?limit=8');
-    omni.seneste = d.notes.slice()
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 8);
+    // Serveren sorterer FOER den klipper - at sortere de otte bagefter
+    // giver bare de forkerte otte i den rigtige orden.
+    const d = await api('GET', '/api/v1/notes?limit=8&sort=updated');
+    omni.seneste = d.notes;
   } catch { omni.seneste = []; }
+}
+
+/*
+ * En gemt note lægges øverst i »Recent« uden en rundtur: gemningen sker
+ * hvert sekund, man skriver, og listen er kun en tilgift. Titlen følger med,
+ * så en omdøbt note ikke står under sit gamle navn.
+ */
+function flytTilSeneste(note) {
+  // Listen er MINE noter, som serverens - en delt side hører ikke til dér.
+  if (note.mine === false) return;
+  const gammel = omni.seneste.find((n) => n.id === note.id);
+  const ny = { ...(gammel || note), title: note.title, updatedAt: note.updatedAt };
+  omni.seneste = [ny, ...omni.seneste.filter((n) => n.id !== note.id)].slice(0, 8);
 }
 
 /* ---- p6_blokke.js ---- */

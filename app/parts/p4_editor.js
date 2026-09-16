@@ -3324,6 +3324,7 @@ async function gemNu() {
     n.backlinks = d.note.backlinks;
     editor.beskidt = false;
     editor.sidstGemt = Date.now();
+    flytTilSeneste(n);
     // Titlen kan vaere aendret - traeet skal foelge med.
     const t = (state.tree || []).find((x) => x.id === n.id);
     if (t && t.title !== n.title) { t.title = n.title; tegnTrae(); }

@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 73;
+const APP_VERSION = 74;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -287,7 +287,10 @@ const VIEWS = [
   { id: 'search', label: 'Search', icon: 'search', group: 1 },
   { id: 'tags', label: 'Tags', icon: 'tag', group: 2 },
   { id: 'comments', label: 'Comments', icon: 'comment', group: 2, tael: 'pendingComments' },
-  { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared' },
+  // skjulTom: punktet staar kun i navigationen, naar nogen har delt noget med
+  // en. Et tomt »Shared with me« er stoej for den, der bruger Sagu alene
+  // (Andreas, 2026-09-16).
+  { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared', skjulTom: true },
   // underFavoritter: tegnes af `tegnGenveje()` mellem »Favourites« og »Recent«,
   // ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
   // skubbede favoritterne ned (Andreas, 2026-09-15).
@@ -498,7 +501,9 @@ function navPunktHtml(v) {
 }
 
 function navHtml() {
-  const iNav = VIEWS.filter((v) => v.group > 0 && !v.underFavoritter);
+  // Staar man PAA siden, bliver punktet - ellers forsvinder markeringen under en.
+  const iNav = VIEWS.filter((v) => v.group > 0 && !v.underFavoritter
+    && !(v.skjulTom && !state.counts[v.tael] && state.view !== v.id));
   const grupper = [...new Set(iNav.map((v) => v.group))];
   return grupper.map((g) => `<nav class="nav">${iNav.filter((v) => v.group === g)
     .map(navPunktHtml).join('')}</nav>`).join('');

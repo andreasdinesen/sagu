@@ -238,7 +238,9 @@ function bindSorter() {
 }
 
 async function sideNoter(opt) {
-  const q = opt.trash ? '?trash=1' : '';
+  // Hele arkivet: listen sorteres her, og et loft ville klippe tilfaeldige
+  // noter bort (se `alle` i hentNoter).
+  const q = opt.trash ? '?trash=1' : '?all=1&sort=updated';
   const d = await api('GET', `/api/v1/notes${q}`);
   state.notes = d.notes;
 
