@@ -273,8 +273,11 @@ function visBogITraeet(bogId) {
   if (varFoldet) gemFoldede();
   tegnTrae();
   // Paa en telefon ligger sidebaren bag menuknappen - ellers aabner man en
-  // bog, man ikke kan se.
-  if (smalSkaerm()) document.body.classList.add('navopen');
+  // bog, man ikke kan se. Det samme gaelder en sidebar, der er foldet vaek
+  // paa en stor skaerm: dér er den ogsaa et overlay.
+  if (smalSkaerm() || document.body.classList.contains('navskjult')) {
+    document.body.classList.add('navopen');
+  }
   const raekke = document.querySelector(loes
     ? '.tree-row.book[data-loeseraekke]' : `.tree-row.book[data-bograekke="${bogId}"]`);
   const skaerm = document.querySelector('.sidebar');

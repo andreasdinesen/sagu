@@ -3461,9 +3461,13 @@ body.fokus .topbar { position: static; }
   display: flex;
   align-items: center;
   border-radius: var(--r-sm);
-  border: 1px solid transparent;
+  /* Alle faner har en ramme - uden den var de baggrundsfaner bare tekst, der
+     svaevede over feltet, og man kunne ikke se, hvor én sluttede (Andreas,
+     2026-09-16). Den er `--border`, ikke `--border-soft`: den bloede
+     forsvinder mod baggrunden i begge temaer. */
+  border: 1px solid var(--border);
   color: var(--muted);
-  transition: background .12s, color .12s;
+  transition: background .12s, color .12s, border-color .12s;
 }
 .notefane:hover { background: var(--card-hover); color: var(--text); }
 /* Den, man står i: et kort, som søgefeltet under den. */

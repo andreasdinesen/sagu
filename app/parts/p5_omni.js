@@ -328,7 +328,17 @@ async function vaelgRaekke(i) {
     } catch (ex) { toast(ex.message); }
     return;
   }
-  if (r.slags === 'bog') { ryd(); gaaTil('notes', { notebook: r.id }); return; }
+  /*
+   * En notesbog »aabnes« ved at folde den ud i sidebaren - som broedkrummen
+   * goer. Sagu har ingen side for en bog; `gaaTil('notes', { notebook })`
+   * landede derfor bare paa All Notes, og Enter lignede en doed tast
+   * (Andreas, 2026-09-16).
+   */
+  if (r.slags === 'bog') {
+    ryd();
+    visBogITraeet(r.id);
+    return;
+  }
   if (r.slags === 'nytag') {
     try {
       await api('POST', '/api/v1/tags', { name: r.tekst });

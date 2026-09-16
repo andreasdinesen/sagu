@@ -135,7 +135,7 @@ test('klikket folder BAADE bogen og hele notesbogs-sektionen ud', () => {
     gemFoldede: () => { gemt += 1; },
     tegnTrae: () => { tegnet += 1; },
     smalSkaerm: () => false,
-    document: { querySelector: () => null },
+    document: { body: { classList: { contains: () => false, add: () => {} } }, querySelector: () => null },
     setTimeout: () => {},
   })(BOG);
   assert.deepEqual([...foldede], ['en-anden-bog'], 'kun DEN bog og sektionen foldes ud');
@@ -152,7 +152,7 @@ test('en bog, der allerede staar aaben, skriver ikke i lageret igen', () => {
     gemFoldede: () => { gemt += 1; },
     tegnTrae: () => {},
     smalSkaerm: () => false,
-    document: { querySelector: () => null },
+    document: { body: { classList: { contains: () => false, add: () => {} } }, querySelector: () => null },
     setTimeout: () => {},
   })(BOG);
   assert.equal(gemt, 0);
@@ -160,20 +160,28 @@ test('en bog, der allerede staar aaben, skriver ikke i lageret igen', () => {
 
 test('paa en telefon aabnes sidemenuen - ellers folder man en bog ud, man ikke kan se', () => {
   const klasser = [];
-  const koer = (smal) => hent(p4, 'visBogITraeet', {
+  const koer = (smal, skjult = false) => hent(p4, 'visBogITraeet', {
     editor: { foldede: new Set() },
     SEKTION_BOEGER: 'sektion:notebooks',
     SEKTION_LOESE: 'sektion:loose',
     gemFoldede: () => {},
     tegnTrae: () => {},
     smalSkaerm: () => smal,
-    document: { body: { classList: { add: (k) => klasser.push(k) } }, querySelector: () => null },
+    document: {
+      body: { classList: { contains: (k) => skjult && k === 'navskjult', add: (k) => klasser.push(k) } },
+      querySelector: () => null,
+    },
     setTimeout: () => {},
   })(BOG);
   koer(false);
   assert.deepEqual(klasser, [], 'paa en bred skaerm staar menuen der i forvejen');
   koer(true);
   assert.deepEqual(klasser, ['navopen']);
+  // En sidebar, der er foldet vaek paa en stor skaerm, er ogsaa et overlay -
+  // Enter paa en notesbog i soegefeltet skal kunne ses (2026-09-16).
+  klasser.length = 0;
+  koer(false, true);
+  assert.deepEqual(klasser, ['navopen'], 'en skjult sidebar paa en bred skaerm aabnes ogsaa');
 });
 
 test('den loese gren kan ogsaa aabnes - og den roerer ikke bogsektionens fold', () => {
@@ -188,7 +196,7 @@ test('den loese gren kan ogsaa aabnes - og den roerer ikke bogsektionens fold', 
     gemFoldede: () => {},
     tegnTrae: () => {},
     smalSkaerm: () => false,
-    document: { querySelector: (v) => { soegte.push(v); return null; } },
+    document: { body: { classList: { contains: () => false, add: () => {} } }, querySelector: (v) => { soegte.push(v); return null; } },
     setTimeout: () => {},
   })('sektion:loose');
   assert.deepEqual([...foldede], ['sektion:notebooks'], 'kun den loese gren foldes ud');
@@ -216,4 +224,24 @@ test('der rulles KUN i sidebaren - aldrig i vinduet', () => {
 test('glimtet findes i CSS\'en og forsvinder igen', () => {
   assert.match(css, /\.tree-row\.fremhaevet \{[^}]*background: var\(--accent-soft\)/);
   assert.match(krop(p4, 'visBogITraeet'), /setTimeout\(\(\) => raekke\.classList\.remove\('fremhaevet'\)/);
+});
+
+test('Enter paa en notesbog i soegefeltet folder den ud i sidebaren', async () => {
+  // `/navn` + Enter gik til All Notes med et `notebook`, som ingen side
+  // laeser - tasten lignede en doed knap (Andreas, 2026-09-16).
+  const p5 = readFileSync(new URL('../app/parts/p5_omni.js', import.meta.url), 'utf8');
+  const kald = [];
+  // `hent` klipper fra »function« og taber `async` - funktionen venter selv.
+  const afh = {
+    omni: { raekker: [{ slags: 'bog', id: BOG, etiket: 'Kaffe' }] },
+    omniEl: () => null,
+    ryd: () => kald.push('ryd'),
+    visBogITraeet: (id) => kald.push(`vis:${id}`),
+    gaaTil: (v) => kald.push(`gaaTil:${v}`),
+  };
+  // eslint-disable-next-line no-new-func
+  const vaelg = new Function(...Object.keys(afh),
+    `return async ${krop(p5, 'vaelgRaekke')}`)(...Object.values(afh));
+  await vaelg(0);
+  assert.deepEqual(kald, ['ryd', `vis:${BOG}`]);
 });

@@ -177,6 +177,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **76** | **`/navn` + Enter åbner notesbogen** — den foldes ud i sidebaren, som når man klikker på bogen i brødkrummen. Før gik Enter til All Notes, fordi Sagu ingen side har for en bog. Er sidebaren foldet væk på en stor skærm, glider den frem. **Fanerne over søgefeltet har fået en kant**, så man kan se dem i både lyst og mørkt tema. |
 | **75** | **Ny rækkefølge i venstre menu:** Favourites, Recent, notesbøgerne — og Trash nederst. **»Recent« i søgefeltet og »Recently changed« viser fem noter** i stedet for otte; tallet står ét sted, så de to lister altid følges ad. |
 | **74** | **All Notes viser hele arkivet.** Listen hentede højst 500 noter, valgt efter notesbogsrækkefølgen, og sorterede først bagefter — med 909 noter manglede omkring 400, også nye. **»Recent« i søgefeltet er de senest rettede:** serveren klippede til otte efter samme rækkefølge, så en note, man lige havde rettet, kom aldrig med; nu sorteres der før klipningen, og en gemt note lægges straks øverst. **Notelisten passer til vinduet** — en lang titel eller mange mærker skubbede »Updated« og »Delete« ud over kanten; kolonnerne er nu faste, og titlen ombrydes. **»Shared with me« er skjult**, indtil nogen har delt noget med dig. |
 | **73** | **Login-spærringen kan ikke længere omgås** ved at sende en opdigtet IP-adresse i `X-Forwarded-For`, og sikkerhedsloggen viser nu den adresse, forbindelsen faktisk kom fra. Det gælder også kodeordet på wiki-udgivelser og kommentarformularen. |

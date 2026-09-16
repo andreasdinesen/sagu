@@ -4334,7 +4334,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 75;
+const APP_VERSION = 76;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -8293,8 +8293,11 @@ function visBogITraeet(bogId) {
   if (varFoldet) gemFoldede();
   tegnTrae();
   // Paa en telefon ligger sidebaren bag menuknappen - ellers aabner man en
-  // bog, man ikke kan se.
-  if (smalSkaerm()) document.body.classList.add('navopen');
+  // bog, man ikke kan se. Det samme gaelder en sidebar, der er foldet vaek
+  // paa en stor skaerm: dér er den ogsaa et overlay.
+  if (smalSkaerm() || document.body.classList.contains('navskjult')) {
+    document.body.classList.add('navopen');
+  }
   const raekke = document.querySelector(loes
     ? '.tree-row.book[data-loeseraekke]' : `.tree-row.book[data-bograekke="${bogId}"]`);
   const skaerm = document.querySelector('.sidebar');
@@ -12593,7 +12596,17 @@ async function vaelgRaekke(i) {
     } catch (ex) { toast(ex.message); }
     return;
   }
-  if (r.slags === 'bog') { ryd(); gaaTil('notes', { notebook: r.id }); return; }
+  /*
+   * En notesbog »aabnes« ved at folde den ud i sidebaren - som broedkrummen
+   * goer. Sagu har ingen side for en bog; `gaaTil('notes', { notebook })`
+   * landede derfor bare paa All Notes, og Enter lignede en doed tast
+   * (Andreas, 2026-09-16).
+   */
+  if (r.slags === 'bog') {
+    ryd();
+    visBogITraeet(r.id);
+    return;
+  }
   if (r.slags === 'nytag') {
     try {
       await api('POST', '/api/v1/tags', { name: r.tekst });
