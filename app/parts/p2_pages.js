@@ -337,7 +337,7 @@ function bindTrash() {
 /* ------------------------------------------------------------ soegning */
 
 function sideSoeg() {
-  const seneste = (omni.seneste || []).slice(0, 8);
+  const seneste = (omni.seneste || []).slice(0, ANTAL_SENESTE);
   return `
     <div class="hjem">
       <h1>${esc(state.config.appName || 'Sagu')}</h1>

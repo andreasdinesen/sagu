@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 74;
+const APP_VERSION = 75;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -291,8 +291,8 @@ const VIEWS = [
   // en. Et tomt »Shared with me« er stoej for den, der bruger Sagu alene
   // (Andreas, 2026-09-16).
   { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared', skjulTom: true },
-  // underFavoritter: tegnes af `tegnGenveje()` mellem »Favourites« og »Recent«,
-  // ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
+  // underFavoritter: tegnes af `tegnGenveje()` i `#navBund` under
+  // notesboegerne, ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
   // skubbede favoritterne ned (Andreas, 2026-09-15).
   { id: 'trash', label: 'Trash', icon: 'trash', group: 3, tael: 'trash', underFavoritter: true },
   // group: 0 = staar IKKE i navigationen. Import og eksport er noget, man goer
@@ -543,6 +543,8 @@ function shellHtml() {
       <!-- Fyldes af tegnGenveje() i bindShell, praecis som traeet nedenfor. -->
       <div id="navGenveje"></div>
       <div id="treeHost" class="treehost"></div>
+      <!-- Papirkurven, under notesboegerne. Fyldes ogsaa af tegnGenveje(). -->
+      <div id="navBund" class="navbund"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
           ${BAG_BRUGEREN.has(state.view) ? 'aria-current="page"' : ''}>${icon('settings')}<span>${esc(pentBruger(state.user.username))}</span></button>
@@ -649,7 +651,7 @@ function bindTemaKnap() {
 }
 
 /*
- * Binder KUN `#navHost`. Trash staar i `#navGenveje` og bindes af
+ * Binder KUN `#navHost`. Trash staar i `#navBund` og bindes af
  * `bindGenveje()` - en vaelger over hele dokumentet ville give den en handler
  * mere, hver gang navigationen blev tegnet om.
  */
@@ -875,7 +877,7 @@ function tilToppen() {
 function opdaterNav() {
   const host = document.getElementById('navHost');
   if (host) { host.innerHTML = navHtml(); bindNav(); }
-  // Trash bor mellem favoritterne og skal have sin taeller og markering med.
+  // Trash bor under notesboegerne og skal have sin taeller og markering med.
   if (typeof tegnGenveje === 'function') tegnGenveje();
   // Fanen, man staar i, skal lyse - og slukke, naar man gaar til en liste.
   if (typeof tegnNoteFaner === 'function') tegnNoteFaner();

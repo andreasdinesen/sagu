@@ -536,12 +536,19 @@ document.addEventListener('keydown', (e) => {
   el.select();
 });
 
+/*
+ * Hvor mange »Recent« der vises - i soegefeltet og under »Recently changed«.
+ * Fem, ikke otte: listen skal kunne overskues med et blik (Andreas,
+ * 2026-09-16). Ét tal, saa de to steder ikke kan komme ud af trit.
+ */
+const ANTAL_SENESTE = 5;
+
 /** De senest aendrede noter - svaret paa et tomt felt. */
 async function hentSeneste() {
   try {
-    // Serveren sorterer FOER den klipper - at sortere de otte bagefter
+    // Serveren sorterer FOER den klipper - at sortere de fem bagefter
     // giver bare de forkerte otte i den rigtige orden.
-    const d = await api('GET', '/api/v1/notes?limit=8&sort=updated');
+    const d = await api('GET', `/api/v1/notes?limit=${ANTAL_SENESTE}&sort=updated`);
     omni.seneste = d.notes;
   } catch { omni.seneste = []; }
 }
@@ -556,5 +563,5 @@ function flytTilSeneste(note) {
   if (note.mine === false) return;
   const gammel = omni.seneste.find((n) => n.id === note.id);
   const ny = { ...(gammel || note), title: note.title, updatedAt: note.updatedAt };
-  omni.seneste = [ny, ...omni.seneste.filter((n) => n.id !== note.id)].slice(0, 8);
+  omni.seneste = [ny, ...omni.seneste.filter((n) => n.id !== note.id)].slice(0, ANTAL_SENESTE);
 }

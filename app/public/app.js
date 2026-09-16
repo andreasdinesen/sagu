@@ -2969,19 +2969,27 @@ function genvejeHtml() {
     </nav>`;
   };
 
-  // Papirkurven staar under favoritterne, ikke i toppen (Andreas, 2026-09-15).
-  // Den tegnes og bindes HER, saa den foelger med, hver gang listen tegnes om.
-  const nederst = VIEWS.filter((v) => v.underFavoritter);
   return liste('Favourites', SEKTION_FAV, sidebarListe.favoritter)
-    + (nederst.length ? `<nav class="nav navnederst">${nederst.map(navPunktHtml).join('')}</nav>` : '')
     + liste('Recent', SEKTION_SENESTE, sidebarListe.seneste);
+}
+
+/*
+ * Papirkurven staar NEDERST - under notesboegerne, i sit eget element
+ * (`#navBund`). Foerst stod den i toppen, saa under favoritterne
+ * (2026-09-15); nu skal baade »Recent« og notesboegerne over den (Andreas,
+ * 2026-09-16). Den tegnes og bindes stadig af `tegnGenveje()`, saa den
+ * foelger med, hver gang listerne tegnes om.
+ */
+function bundHtml() {
+  const nederst = VIEWS.filter((v) => v.underFavoritter);
+  return nederst.length ? `<nav class="nav navnederst">${nederst.map(navPunktHtml).join('')}</nav>` : '';
 }
 
 function bindGenveje() {
   document.querySelectorAll('[data-genvej]').forEach((el) => {
     el.addEventListener('click', () => aabnNote(el.dataset.genvej));
   });
-  document.querySelectorAll('#navGenveje .nav-item[data-view]').forEach((el) => {
+  document.querySelectorAll('#navBund .nav-item[data-view]').forEach((el) => {
     el.addEventListener('click', () => gaaTil(el.dataset.view));
   });
   document.querySelectorAll('[data-foldsektion]').forEach((el) => {
@@ -3001,6 +3009,8 @@ function tegnGenveje() {
   const host = document.getElementById('navGenveje');
   if (!host) return;
   host.innerHTML = genvejeHtml();
+  const bund = document.getElementById('navBund');
+  if (bund) bund.innerHTML = bundHtml();
   bindGenveje();
 }
 
@@ -4324,7 +4334,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 74;
+const APP_VERSION = 75;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -4610,8 +4620,8 @@ const VIEWS = [
   // en. Et tomt »Shared with me« er stoej for den, der bruger Sagu alene
   // (Andreas, 2026-09-16).
   { id: 'shared', label: 'Shared with me', icon: 'shared', group: 2, tael: 'shared', skjulTom: true },
-  // underFavoritter: tegnes af `tegnGenveje()` mellem »Favourites« og »Recent«,
-  // ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
+  // underFavoritter: tegnes af `tegnGenveje()` i `#navBund` under
+  // notesboegerne, ikke her i toppen. Papirkurven er noget, man sjaeldent gaar i, og den
   // skubbede favoritterne ned (Andreas, 2026-09-15).
   { id: 'trash', label: 'Trash', icon: 'trash', group: 3, tael: 'trash', underFavoritter: true },
   // group: 0 = staar IKKE i navigationen. Import og eksport er noget, man goer
@@ -4862,6 +4872,8 @@ function shellHtml() {
       <!-- Fyldes af tegnGenveje() i bindShell, praecis som traeet nedenfor. -->
       <div id="navGenveje"></div>
       <div id="treeHost" class="treehost"></div>
+      <!-- Papirkurven, under notesboegerne. Fyldes ogsaa af tegnGenveje(). -->
+      <div id="navBund" class="navbund"></div>
       <div class="sidebar-foot">
         <button class="nav-item" id="userBtn"
           ${BAG_BRUGEREN.has(state.view) ? 'aria-current="page"' : ''}>${icon('settings')}<span>${esc(pentBruger(state.user.username))}</span></button>
@@ -4968,7 +4980,7 @@ function bindTemaKnap() {
 }
 
 /*
- * Binder KUN `#navHost`. Trash staar i `#navGenveje` og bindes af
+ * Binder KUN `#navHost`. Trash staar i `#navBund` og bindes af
  * `bindGenveje()` - en vaelger over hele dokumentet ville give den en handler
  * mere, hver gang navigationen blev tegnet om.
  */
@@ -5194,7 +5206,7 @@ function tilToppen() {
 function opdaterNav() {
   const host = document.getElementById('navHost');
   if (host) { host.innerHTML = navHtml(); bindNav(); }
-  // Trash bor mellem favoritterne og skal have sin taeller og markering med.
+  // Trash bor under notesboegerne og skal have sin taeller og markering med.
   if (typeof tegnGenveje === 'function') tegnGenveje();
   // Fanen, man staar i, skal lyse - og slukke, naar man gaar til en liste.
   if (typeof tegnNoteFaner === 'function') tegnNoteFaner();
@@ -6203,7 +6215,7 @@ function bindTrash() {
 /* ------------------------------------------------------------ soegning */
 
 function sideSoeg() {
-  const seneste = (omni.seneste || []).slice(0, 8);
+  const seneste = (omni.seneste || []).slice(0, ANTAL_SENESTE);
   return `
     <div class="hjem">
       <h1>${esc(state.config.appName || 'Sagu')}</h1>
@@ -12789,12 +12801,19 @@ document.addEventListener('keydown', (e) => {
   el.select();
 });
 
+/*
+ * Hvor mange »Recent« der vises - i soegefeltet og under »Recently changed«.
+ * Fem, ikke otte: listen skal kunne overskues med et blik (Andreas,
+ * 2026-09-16). Ét tal, saa de to steder ikke kan komme ud af trit.
+ */
+const ANTAL_SENESTE = 5;
+
 /** De senest aendrede noter - svaret paa et tomt felt. */
 async function hentSeneste() {
   try {
-    // Serveren sorterer FOER den klipper - at sortere de otte bagefter
+    // Serveren sorterer FOER den klipper - at sortere de fem bagefter
     // giver bare de forkerte otte i den rigtige orden.
-    const d = await api('GET', '/api/v1/notes?limit=8&sort=updated');
+    const d = await api('GET', `/api/v1/notes?limit=${ANTAL_SENESTE}&sort=updated`);
     omni.seneste = d.notes;
   } catch { omni.seneste = []; }
 }
@@ -12809,7 +12828,7 @@ function flytTilSeneste(note) {
   if (note.mine === false) return;
   const gammel = omni.seneste.find((n) => n.id === note.id);
   const ny = { ...(gammel || note), title: note.title, updatedAt: note.updatedAt };
-  omni.seneste = [ny, ...omni.seneste.filter((n) => n.id !== note.id)].slice(0, 8);
+  omni.seneste = [ny, ...omni.seneste.filter((n) => n.id !== note.id)].slice(0, ANTAL_SENESTE);
 }
 
 /* ---- p6_blokke.js ---- */
