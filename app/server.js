@@ -39,6 +39,8 @@ const dodaModul = require('./doda.js');
  */
 const totp = require('./totp.js');
 const qr = require('./qr.js');
+// Ogsaa kopieret RAAT, til alle runer: hvem er klienten bag en proxy.
+const { klientIp } = require('./klientip.js');
 const ghShared = require('./shared/github.js');
 const zipmod = require('./zip.js');
 
@@ -1011,9 +1013,11 @@ function sessionCookie(req, token, maxAge) {
   return bits.join('; ');
 }
 
+// Aldrig den foerste vaerdi i X-Forwarded-For: den vaelger klienten selv, og
+// saa kunne login-spaerringen og loftene omgaas (app/klientip.js). wiki.js
+// laaner funktionen gennem `srv`, saa der er én regel.
 function clientIp(req) {
-  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return fwd || req.socket.remoteAddress || 'ukendt';
+  return klientIp(req);
 }
 
 /* ------------------------------------------------------------ http-svar */
