@@ -3780,3 +3780,15 @@ man en bog ud, man ikke kan se.
 
 Rækken får et **glimt** (`.tree-row.fremhaevet`) i 1,2 sekunder. Stod bogen allerede åben
 og synlig, er glimtet det eneste, der sker, og uden det ligner knappen død.
+
+**»Not in a notebook« siger den også** (Andreas, samme dag): en note uden bog hører til
+den grenen i træet, og krummen bærer dens navn og folder den ud. Navnet står **ét sted**
+i koden (`LOESE_NAVN`) — to afskrifter er to navne at lære den dag, den ene rettes. Og
+rækken får `data-loeseraekke`, **ikke** `data-bograekke`: sidstnævnte er trækkets
+slip-mål, og en note sluppet dér ville forsøge at flytte ind i en »notesbog« ved navn
+`sektion:loose`.
+
+Vagten har to halvdele, og den anden fandt en sabotage: der siges kun »Not in a
+notebook«, når noten **er min** og `notebookId` er **tom**. Står der et bog-id, jeg ikke
+kender — en andens bog bag en deling, eller et træ, der ikke er hentet endnu — er svaret
+ikke »ingen bog«, det er »det ved jeg ikke«, og så står der ingenting.

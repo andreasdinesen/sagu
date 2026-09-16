@@ -45,6 +45,8 @@ const esc = (s) => String(s === undefined || s === null ? '' : s)
 const krummer = (note, st) => hent(p4, 'broedkrummer', {
   state: st,
   esc,
+  SEKTION_LOESE: 'sektion:loose',
+  LOESE_NAVN: 'Not in a notebook',
   icon: (navn, stoerrelse) => `<svg data-ikon="${navn}" data-stoerrelse="${stoerrelse}"></svg>`,
   notesbog: hent(p4, 'notesbog', { state: st }),
 })(note);
@@ -66,10 +68,35 @@ test('bogens eget ikon vinder over standardikonet', () => {
   assert.ok(!html.includes('data-ikon="book"'));
 });
 
-test('en note UDEN notesbog faar ingen bog-krumme', () => {
-  // De loese noter hoerer ikke til en bog, og en tom krumme ville bare vaere
-  // en streg over titlen.
-  assert.equal(krummer({ notebookId: null, parentId: null }, { notebooks: [], tree: [] }), '');
+test('en note uden notesbog siger »Not in a notebook« - med sidebarens egne ord', () => {
+  // »Den maa gerne sige naar noten ligger i not in a notebook« (Andreas,
+  // 2026-09-16). To navne til den samme gren ville vaere to ting at laere.
+  const html = krummer({ notebookId: null, parentId: null, mine: true }, { notebooks: [], tree: [] });
+  assert.match(html, /<button[^>]*data-bogkrumme="sektion:loose"/);
+  assert.match(html, />Not in a notebook</);
+  // Navnet staar ÉT sted i koden: traeets raekke og krummen deler konstanten,
+  // saa de ikke kan komme til at sige hver sit.
+  assert.equal((p4.match(/'Not in a notebook'/g) || []).length, 1, 'navnet skal vaere én konstant');
+  assert.match(p4, /const LOESE_NAVN = 'Not in a notebook';/);
+  assert.equal((p4.match(/\$\{LOESE_NAVN\}/g) || []).length, 3, 'traeet (navn + title) og krummen bruger den');
+});
+
+test('en note, en ANDEN har delt, siger ingenting - ikke »Not in a notebook«', () => {
+  // Den ligger i EJERENS bog, som ikke staar i mine notesboeger. »Not in a
+  // notebook« ville vaere et svar, der er direkte forkert.
+  const fremmed = { notebookId: 'x'.repeat(32), parentId: null, mine: false };
+  assert.equal(krummer(fremmed, { notebooks: [], tree: [] }), '');
+});
+
+test('en ukendt notesbog siger heller ikke »Not in a notebook«', () => {
+  /*
+   * Vagten har TO halvdele, og den anden er den, en sabotage afsloerede:
+   * `mine` alene er ikke nok. Staar der et bog-id, jeg bare ikke kender -
+   * traeet er ikke hentet endnu, eller bogen er en andens - er svaret ikke
+   * »ingen bog«. Det er »det ved jeg ikke«, og saa staar der ingenting.
+   */
+  const ukendt = { notebookId: 'x'.repeat(32), parentId: null };
+  assert.equal(krummer(ukendt, { notebooks: [], tree: [] }), '');
 });
 
 test('foraeldrene staar stadig efter bogen, og de aabner noten', () => {
@@ -104,6 +131,7 @@ test('klikket folder BAADE bogen og hele notesbogs-sektionen ud', () => {
   hent(p4, 'visBogITraeet', {
     editor: { foldede },
     SEKTION_BOEGER: 'sektion:notebooks',
+    SEKTION_LOESE: 'sektion:loose',
     gemFoldede: () => { gemt += 1; },
     tegnTrae: () => { tegnet += 1; },
     smalSkaerm: () => false,
@@ -120,6 +148,7 @@ test('en bog, der allerede staar aaben, skriver ikke i lageret igen', () => {
   hent(p4, 'visBogITraeet', {
     editor: { foldede: new Set() },
     SEKTION_BOEGER: 'sektion:notebooks',
+    SEKTION_LOESE: 'sektion:loose',
     gemFoldede: () => { gemt += 1; },
     tegnTrae: () => {},
     smalSkaerm: () => false,
@@ -134,6 +163,7 @@ test('paa en telefon aabnes sidemenuen - ellers folder man en bog ud, man ikke k
   const koer = (smal) => hent(p4, 'visBogITraeet', {
     editor: { foldede: new Set() },
     SEKTION_BOEGER: 'sektion:notebooks',
+    SEKTION_LOESE: 'sektion:loose',
     gemFoldede: () => {},
     tegnTrae: () => {},
     smalSkaerm: () => smal,
@@ -144,6 +174,34 @@ test('paa en telefon aabnes sidemenuen - ellers folder man en bog ud, man ikke k
   assert.deepEqual(klasser, [], 'paa en bred skaerm staar menuen der i forvejen');
   koer(true);
   assert.deepEqual(klasser, ['navopen']);
+});
+
+test('den loese gren kan ogsaa aabnes - og den roerer ikke bogsektionens fold', () => {
+  // »Not in a notebook« ligger UDEN for notesbogs-sektionen i traeet. Foldede
+  // den ogsaa den op, ville et klik her pakke tredive boeger ud.
+  const foldede = new Set(['sektion:notebooks', 'sektion:loose']);
+  const soegte = [];
+  hent(p4, 'visBogITraeet', {
+    editor: { foldede },
+    SEKTION_BOEGER: 'sektion:notebooks',
+    SEKTION_LOESE: 'sektion:loose',
+    gemFoldede: () => {},
+    tegnTrae: () => {},
+    smalSkaerm: () => false,
+    document: { querySelector: (v) => { soegte.push(v); return null; } },
+    setTimeout: () => {},
+  })('sektion:loose');
+  assert.deepEqual([...foldede], ['sektion:notebooks'], 'kun den loese gren foldes ud');
+  assert.ok(soegte.some((v) => v.includes('data-loeseraekke')), 'raekken skal kunne findes');
+});
+
+test('den loese raekke er ikke et traek-maal', () => {
+  // `bindTraeTraek` bruger `.tree-row.book[data-bograekke]` som maal. Fik den
+  // loese raekke det attribut, ville en note slippet dér forsoege at flytte
+  // ind i en »notesbog« ved navn sektion:loose.
+  const i = p4.indexOf('data-loeseraekke="1"');
+  assert.ok(i > -1, 'den loese raekke skal kunne findes af krummen');
+  assert.ok(!p4.slice(i - 200, i + 200).includes('data-bograekke'), 'men ikke som traek-maal');
 });
 
 test('der rulles KUN i sidebaren - aldrig i vinduet', () => {

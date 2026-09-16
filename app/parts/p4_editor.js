@@ -91,6 +91,13 @@ const SEKTION_BOEGER = 'sektion:notebooks';
 const SEKTION_LOESE = 'sektion:loose';
 
 /*
+ * Grenens navn ÉT sted. Det staar baade i traeets raekke og i broedkrummen
+ * over en note uden bog, og to afskrifter er to navne at laere den dag, den
+ * ene bliver rettet.
+ */
+const LOESE_NAVN = 'Not in a notebook';
+
+/*
  * Notens to bilag - vedhaeftninger og kommentarer - i det SAMME saet.
  *
  * »Kan du lave saa Attachments og comments kan foldes sammen. Men skal vise
@@ -250,19 +257,26 @@ async function hentTrae() {
  * Bogens egen foldning er ikke nok - er HELE sektionen foldet sammen
  * (`SEKTION_BOEGER`), er bogen der stadig ikke. To foldninger, ét ønske.
  *
+ * `bogId` kan også være `SEKTION_LOESE` - »Not in a notebook« er den gren,
+ * en note uden bog hører til.
+ *
  * Der rulles KUN i sidebaren, som har sin egen rullekasse. `scrollIntoView()`
  * ville tage vinduet med og kaste én ned i noten, man netop står i.
  */
 function visBogITraeet(bogId) {
-  const varFoldet = editor.foldede.has(bogId) || editor.foldede.has(SEKTION_BOEGER);
-  editor.foldede.delete(SEKTION_BOEGER);
+  // Den loese gren er ikke en bog og ligger UDEN for notesbogs-sektionen -
+  // dens fold er derfor den eneste, der skal aabnes.
+  const loes = bogId === SEKTION_LOESE;
+  const varFoldet = editor.foldede.has(bogId) || (!loes && editor.foldede.has(SEKTION_BOEGER));
+  if (!loes) editor.foldede.delete(SEKTION_BOEGER);
   editor.foldede.delete(bogId);
   if (varFoldet) gemFoldede();
   tegnTrae();
   // Paa en telefon ligger sidebaren bag menuknappen - ellers aabner man en
   // bog, man ikke kan se.
   if (smalSkaerm()) document.body.classList.add('navopen');
-  const raekke = document.querySelector(`.tree-row.book[data-bograekke="${bogId}"]`);
+  const raekke = document.querySelector(loes
+    ? '.tree-row.book[data-loeseraekke]' : `.tree-row.book[data-bograekke="${bogId}"]`);
   const skaerm = document.querySelector('.sidebar');
   if (!raekke || !skaerm) return;
   const r = raekke.getBoundingClientRect();
@@ -367,12 +381,17 @@ function traeHtml() {
      * (RUNE-ERFARINGER, tovo v11).
      */
     const foldet = editor.foldede.has(SEKTION_LOESE);
+    /*
+     * `data-loeseraekke` og IKKE `data-bograekke`: krummen skal kunne finde
+     * raekken, men et traek, der slippes her, ville ellers forsoege at flytte
+     * noten ned i en notesbog, der hedder »sektion:loose« (se bindTraeTraek).
+     */
     return `<div class="tree-book${foldet ? '' : ' open'}">
-        <div class="tree-row book">
+        <div class="tree-row book" data-loeseraekke="1">
           <button class="tree-fold${foldet ? '' : ' open'}" data-fold="${SEKTION_LOESE}"
             aria-label="${foldet ? 'Expand' : 'Collapse'}">${icon('caret', 12)}</button>
           <button class="tree-name meta" data-fold="${SEKTION_LOESE}"
-            title="Not in a notebook"><span>Not in a notebook</span></button>
+            title="${LOESE_NAVN}"><span>${LOESE_NAVN}</span></button>
           ${foldet ? `<span class="tree-antal">${loese.length}</span>` : ''}
         </div>
         ${foldet ? '' : loese.map((x) => gren(x, 1)).join('')}</div>`;
@@ -1355,6 +1374,19 @@ function broedkrummer(note) {
     dele.push(`<button class="krumme-bog" data-bogkrumme="${esc(bog.id)}"
       title="Show “${esc(bog.name)}” in the sidebar">${bog.icon
   ? `<span class="krumme-ikon">${esc(bog.icon)}</span>` : icon('book', 13)}${esc(bog.name)}</button>`);
+  } else if (!note.notebookId && note.mine !== false) {
+    /*
+     * »Den maa gerne sige naar noten ligger i not in a notebook« (Andreas,
+     * 2026-09-16). Ordene er sidebarens egne - to navne til den samme gren
+     * ville vaere to ting at laere.
+     *
+     * KUN mine egne noter. En note, en anden har delt, ligger i EJERENS bog,
+     * som ikke staar i mine `notebooks` - og saa ville »Not in a notebook«
+     * vaere et svar, der er direkte forkert. Dér staar der ingenting, som
+     * hidtil.
+     */
+    dele.push(`<button class="krumme-bog" data-bogkrumme="${SEKTION_LOESE}"
+      title="Show the loose notes in the sidebar">${LOESE_NAVN}</button>`);
   }
   for (const s of sti) dele.push(`<button data-krumme="${esc(s.id)}">${esc(s.title || 'Untitled')}</button>`);
   return dele.length ? `<nav class="krummer meta saetning">${dele.join('<span class="sep">/</span>')}</nav>` : '';
