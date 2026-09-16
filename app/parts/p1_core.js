@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 71;
+const APP_VERSION = 72;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -1220,6 +1220,31 @@ function rulletNed() {
   return Math.max(window.scrollY || 0,
     document.body.scrollTop || 0,
     document.documentElement.scrollTop || 0);
+}
+
+/**
+ * Den boks, der FAKTISK ruller: dokumentet, eller body under 900 px.
+ *
+ * `document.scrollingElement` alene er den forkerte probe - under 900 px
+ * peger den paa `documentElement`, som IKKE ruller (scrollHeight =
+ * clientHeight), mens body gør (RUNE-ERFARINGER §4).
+ */
+function rulleBoks() {
+  const d = document.scrollingElement || document.documentElement;
+  return d.scrollHeight > d.clientHeight ? d : document.body;
+}
+
+/**
+ * Rul til en vilkaarlig y.
+ *
+ * Til NUL kan man bare saette alle tre (`tilToppen()`), men ikke til 700:
+ * saa ruller den forkerte boks med. Derfor peges der paa ÉN. Ruller
+ * dokumentet, er det `window.scrollTo` som hidtil - desktop er uaendret.
+ */
+function rulTil(y) {
+  const boks = rulleBoks();
+  if (boks === document.body) boks.scrollTop = y;
+  else window.scrollTo(0, y);
 }
 
 /** Hvor meget er der overhovedet at rulle i? */

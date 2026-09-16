@@ -195,6 +195,82 @@ test('en fejlet hentning lukker kun fanen ved 404 - ikke uden net', () => {
   assert.deepEqual(kaldt, [A]);
 });
 
+/*
+ * Rullepositionen - paa BEGGE slags rulleboks.
+ *
+ * Paa desktop ruller dokumentet. Under 900 px goer `html, body { height:
+ * 100% }` + `overflow-x: hidden` body til rulleboksen, og saa er
+ * `window.scrollY` altid 0, og `window.scrollTo()` flytter ingenting
+ * (RUNE-ERFARINGER §4). Fanerne er slaaet fra dér i dag, saa fejlen var
+ * latent - men hjaelperne skal vaere de rigtige, den dag de ikke er.
+ *
+ * Browser-ruden kan ikke drive rulningen (test-quirk 3), saa de to verdener
+ * bygges her med de maalte egenskaber, og koden hentes UD AF KILDEN.
+ */
+function rulleVerden(bred) {
+  const html = { scrollTop: 0, scrollHeight: bred ? 5000 : 812, clientHeight: 812 };
+  const body = { scrollTop: 0, scrollHeight: 5000, clientHeight: 812 };
+  const kald = [];
+  const window = {
+    scrollY: 0,
+    scrollTo(x, y) {
+      kald.push([x, y]);
+      // Under 900 px er det body, der ruller - saa flytter window intet.
+      if (bred) { this.scrollY = y; html.scrollTop = y; }
+    },
+  };
+  const document = { scrollingElement: html, documentElement: html, body };
+  return {
+    window, document, kald,
+    saet(y) { if (bred) { window.scrollY = y; html.scrollTop = y; } else body.scrollTop = y; },
+    y: () => (bred ? window.scrollY : body.scrollTop),
+  };
+}
+
+for (const bred of [true, false]) {
+  test(`en fane husker og genskaber sin rulning - ${bred ? 'dokumentet ruller (desktop)' : 'body ruller (under 900 px)'}`, () => {
+    const v = rulleVerden(bred);
+    const { window, document } = v;
+    const rulletNed = hent(p1, 'rulletNed', { window, document });
+    const rulleBoks = hent(p1, 'rulleBoks', { document });
+    const rulTil = hent(p1, 'rulTil', { window, document, rulleBoks });
+    const f = { liste: [{ id: A, titel: '', ikon: null, mine: true, rul: 0 }], aktiv: A, rulTil: null };
+    const faelles = { noteFaner: f, rulletNed, rulTil, window, document };
+
+    v.saet(1200);
+    hent(p15, 'gemNoteFaneRul', { ...faelles, state: { view: 'note', openNote: A } })();
+    assert.equal(f.liste[0].rul, 1200, 'positionen blev gemt');
+
+    v.saet(0);
+    f.rulTil = 1200;
+    hent(p15, 'noteFaneEfterIndlaesning', {
+      ...faelles,
+      state: { openNote: A },
+      noteFanerAktive: () => true,
+      gemNoteFaner: () => {},
+      tegnNoteFaner: () => {},
+      setTimeout: (fn) => fn(),
+    })({ id: A, title: 'x', mine: true });
+    assert.equal(v.y(), 1200, 'og genskabt i den boks, der ruller');
+    assert.equal(rulletNed(), 1200);
+
+    if (bred) {
+      // Desktop er uaendret: det er stadig window.scrollTo, der goer det.
+      assert.deepEqual(v.kald, [[0, 1200]]);
+      assert.equal(document.body.scrollTop, 0, 'body roeres ikke, naar dokumentet ruller');
+    } else {
+      assert.equal(document.documentElement.scrollTop, 0, 'den forkerte boks ruller ikke med');
+    }
+  });
+}
+
+test('p15 maaler og ruller KUN gennem hjaelperne', () => {
+  // Grep efter hvad der MAALES (RUNE-ERFARINGER §4), ikke efter et navn.
+  const kode = p15.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!/scrollY|pageYOffset|scrollTop|scrollTo\(/.test(kode),
+    'brug rulletNed() til at laese og rulTil() til at skrive');
+});
+
 test('ryddNoteFaner lukker ingenting offline eller fra et tomt trae efter en fejl', () => {
   const faner = () => ({ bruger: 1, aktiv: A, liste: [
     { id: A, titel: 'min', ikon: null, mine: true, rul: 0 },
@@ -282,12 +358,8 @@ test('fanegenvejene er enkelttaster uden Alt paa et dansk tastatur', () => {
   assert.ok(!p12.slice(i, i + 300).includes('modifikator'), 'W maa ikke tage Ctrl+W fra browseren');
 });
 
-test('p15 roerer ingen konstant fra p1 i sin egen top - den samles FOER p1_core', () => {
-  // `sorted()` i build_rune.py: 'p15_' < 'p1_c', fordi '5' < '_'. Appen
-  // startede sort, da matchMedia-linjen stod oeverst og laeste SMAL_SKAERM.
-  const top = p15.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
-    .split('\n').filter((l) => l && !/^\s/.test(l) && !/^[})\]]/.test(l));
-  for (const l of top) {
-    assert.ok(!/SMAL_SKAERM|state\.|VIEWS|editor\./.test(l), `koerer ved indlaesning: ${l}`);
-  }
-});
+/*
+ * At p15 ikke roerer en konstant fra p1 i sin egen top, vogtes nu af en
+ * GENEREL formregel i form.test.mjs: alle dele, der sorterer foer p1_core.js,
+ * koeres i build'ets orden.
+ */

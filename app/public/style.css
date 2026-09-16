@@ -1,6 +1,41 @@
 /* Sagu - samme designsprog som doda (som selv foelger tingdo.app).
    Tokens og begrundelser: DESIGN.md. */
 
+/*
+ * ── z-index-lagene · ÉT sted (RUNE-ERFARINGER §4) ─────────────────────────
+ *
+ * Flyt aldrig ét lag uden at se paa resten. Tallene staar ved selektorerne
+ * laengere nede; dette er kortet. Faar noget et nyt z-index, skal det skrives
+ * her - tests/form.test.mjs faelder ellers (og hvis et lag flytter uden at
+ * kortet gør det).
+ *
+ *   1  kolonne   foerste kolonne i en tabel, der ruller vandret - kun under
+ *                900 px (.tablewrap table.data, .tabelwrap .md-tabel)
+ *   2  i boksen  kopiér-knappen paa inline-kode (.inlinekode-kopi) og
+ *                vaerktoejerne i lysboksen (.lightbox-vaerktoej) - kun over
+ *                deres egen boks
+ *  20  wikitop   wikiens klaebende topbjaelke (.wtop)
+ *  30  oversigt  sideoversigten i hoejre side (.toc)
+ *  40  topbjaelke appens klaebende topbjaelke (.topbar) - og de lister, der
+ *                folder sig ud under et felt og skal over indholdet:
+ *                [[-forslag (.wikiforslag), maerkeforslag (.maerke-forslag),
+ *                wikiens traefferliste (.wtraefliste)
+ *  45  slør      baggrunden bag den udfoldede sidebar (.backdrop)
+ *  50  sidebar   sidebaren som overlay - under 900 px og skjult paa desktop
+ *                (.sidebar)
+ *  58  menu      brugermenuen (.usermenu)
+ *  60  flydere   toasts (.toasts), markeringsknappen (.mark-knap), linjen
+ *                ved traek i traeet (.tree-indsaet), blokmenuen (.blok-menu)
+ *  70  traek     rammen om siden, naar en fil traekkes ind
+ *                (body.traekker-fil .main::after), og traek-ned-for-at-
+ *                opfriske (.traekopfrisk)
+ *  80  rude      modalerne (.modal)
+ *  90  lysboks   billedet i fuld skaerm (.lightbox) - over alt andet
+ *
+ * Uden for kortet: bogmaerket (p14_klip.js) bruger 2147483647, men paa en
+ * FREMMED side, hvor dette stylesheet slet ikke findes.
+ */
+
 :root {
   --bg: #efe9e2;
   --sidebar: #e7e0d7;
@@ -396,8 +431,7 @@ input[type="checkbox"], input[type="radio"] { appearance: auto; width: auto; min
 
 /* ------------------------------------------------------------ brugermenu */
 
-/* Lag: indhold < brugermenu (58) < toasts (60) < palet (70). Dokumenteret
-   samlet ét sted - flyt aldrig ét lag uden at se paa resten. */
+/* Brugermenuen ligger paa 58 - under toasts. Alle lagene: kortet oeverst. */
 .usermenu {
   position: absolute;
   bottom: calc(100% + 4px);

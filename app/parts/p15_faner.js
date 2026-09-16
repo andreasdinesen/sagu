@@ -178,7 +178,8 @@ function klargoerNoteFaner() {
 function gemNoteFaneRul() {
   if (state.view !== 'note' || !state.openNote) return;
   const t = noteFaner.liste.find((x) => x.id === state.openNote);
-  if (t) t.rul = Math.round(window.scrollY || document.documentElement.scrollTop || 0);
+  // `rulletNed()`, ikke `window.scrollY`: under 900 px er det body, der ruller.
+  if (t) t.rul = Math.round(rulletNed());
 }
 
 function infoFraTrae(id) {
@@ -229,10 +230,10 @@ function noteFaneEfterIndlaesning(note) {
    * så meget for højt oppe. Målt: gemt 1200, genskabt 1104. Anden gang står
    * bjælken, som den stod, da positionen blev gemt.
    */
-  window.scrollTo(0, rul);
+  rulTil(rul);
   setTimeout(() => {
     if (state.openNote !== note.id) return;
-    if (Math.abs((window.scrollY || 0) - rul) > 2) window.scrollTo(0, rul);
+    if (Math.abs(rulletNed() - rul) > 2) rulTil(rul);
   }, 60);
 }
 

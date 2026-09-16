@@ -3751,6 +3751,17 @@ const ROUTES = {
     }
     setSetting(user.id, 'totp_last', String(vindue));
     setSetting(user.id, 'totp_enabled', '1');
+    /*
+     * Alle ANDRE sessioner doer - samme greb som kodeordsskiftet.
+     *
+     * Man slaar ofte 2FA til, fordi man er bange for, at kodeordet er ude. En
+     * tyv, der allerede sidder med en cookie, fik ellers lov at blive: porten
+     * ved login ser han aldrig, for han logger aldrig ind igen. Kun sessionen,
+     * der slog det til, overlever (Andreas, 2026-09-16: han logges ud paa de
+     * andre enheder, og det er meningen).
+     */
+    const behold = parseCookies(req.headers.cookie)[SESSION_COOKIE] || '';
+    db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(user.id, behold);
     const koder = nyeGenoprettelseskoder(user.id);
     audit('totp-slaaet-til', user.id, user.username, ip);
     logSecurity(`totp slaaet til for ${user.username}`);

@@ -20,6 +20,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -461,3 +462,170 @@ test('hver CSS-variabel, der bruges, er også defineret', () => {
  * Reglen står derfor i `CLAUDE.md` som noget, et menneske skal vide:
  * ét sted tegner OG binder.
  */
+
+/*
+ * **En del, der samles FØR p1_core.js, må ikke røre en senere const, når den
+ * indlæses.**
+ *
+ * `build_rune.py` samler delene med `sorted()`, og `'p15_' < 'p1_c'`, fordi
+ * `'5' < '_'`. p10–p19 ligger altså FØR kernen — og før p2–p9. En `const`
+ * dernede er i sin »temporal dead zone«, mens de øverste dele kører deres
+ * topniveau, og appen startede SORT, da p15 havde en matchMedia-linje
+ * øverst, der læste `SMAL_SKAERM` (F35).
+ *
+ * Den første udgave af reglen læste kun `p15_faner.js` og ledte efter fire
+ * navne med et regex på de uindrykkede linjer. Den så hverken p16, den næste
+ * konstant i p1 eller en indrykket linje i et objekt-literal, der jo OGSÅ
+ * kører ved indlæsning.
+ *
+ * Derfor KØRES det i stedet: de delte moduler og alle dele før kernen, i den
+ * rækkefølge build'et bruger, efterfulgt af de senere deles topniveau-
+ * erklæringer: variablerne tomme, funktionerne med deres krop. Så opfører V8
+ * sig præcis som i browseren: en `const` giver »Cannot access … before
+ * initialization«, en `function` er hejst og kan kaldes — og læser den selv
+ * en `const`, fejler kaldet. Alt andet, der mangler (`window`, `document`, …),
+ * bliver et sort hul, der sluger enhver brug — det er ikke det, der måles.
+ */
+const SORT_HUL = new Proxy(function () {}, {
+  get: (_, k) => (k === Symbol.toPrimitive ? () => '' : k === 'then' ? undefined : SORT_HUL),
+  apply: () => SORT_HUL,
+  construct: () => SORT_HUL,
+});
+
+/** Det, de senere dele erklærer på topniveau: variablerne TOMME, funktionerne hele. */
+function senereErklaeringer(kilde) {
+  const ud = [];
+  for (const m of kilde.matchAll(/^(const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    ud.push(m[1] === 'class' ? `class ${m[2]} {}` : `${m[1]} ${m[2]} = undefined;`);
+  }
+  // Funktionerne med deres RIGTIGE krop: de er hejst, og kalder en tidlig del
+  // en af dem paa topniveau, koerer kroppen - med de konstanter, den laeser.
+  for (const m of kilde.matchAll(/^(?:async\s+)?function\b[\s\S]*?^\}/gm)) ud.push(m[0]);
+  // En destrukturering paa topniveau kan regexet ikke navngive - saa skal det siges.
+  assert.ok(!/^(?:const|let|var)\s*[{[]/m.test(kilde), 'destrukturering paa topniveau - udvid reglen');
+  return ud;
+}
+
+/** Kører de tidlige dele og svarer med TDZ-fejlen - eller null. */
+function tdzFejl(tidlige, senere) {
+  const kilde = [...tidlige, ...senere.flatMap(senereErklaeringer)].join('\n');
+  const huller = {};
+  for (let i = 0; i < 500; i++) {
+    try {
+      vm.runInContext(kilde, vm.createContext({ ...huller }), { timeout: 2000 });
+      return null;
+    } catch (e) {
+      const mangler = e && e.name === 'ReferenceError' && /^(\S+) is not defined$/.exec(e.message);
+      if (!mangler) return `${e && e.name}: ${e && e.message}`;
+      huller[mangler[1]] = SORT_HUL;   // en browser-global - proev igen med den som hul
+    }
+  }
+  return 'for mange ukendte navne';
+}
+
+/** Delene i BUILD'ets orden: `sorted()` i Python = kodepunkt-orden = JS' standard-sort. */
+function deleIByggeOrden() {
+  const mappe = path.join(ROD, 'app', 'parts');
+  const navne = readdirSync(mappe).filter((n) => n.endsWith('.js')).sort();
+  return navne.map((n) => [n, readFileSync(path.join(mappe, n), 'utf8')]);
+}
+
+test('ingen del før p1_core.js rører en senere const ved indlæsning', () => {
+  const dele = deleIByggeOrden();
+  const kerne = dele.findIndex(([n]) => n === 'p1_core.js');
+  assert.ok(kerne > 0, 'p1_core.js findes - og noget sorterer foer den');
+  const tidlige = dele.slice(0, kerne);
+  assert.ok(tidlige.some(([n]) => n === 'p15_faner.js'), 'p15 sorterer foer p1_core, som build_rune.py goer');
+
+  const delteMappe = path.join(ROD, 'app', 'shared');
+  const delte = readdirSync(delteMappe).filter((n) => n.endsWith('.js')).sort()
+    .map((n) => readFileSync(path.join(delteMappe, n), 'utf8'));
+  const fejl = tdzFejl([...delte, ...tidlige.map(([, k]) => k)], dele.slice(kerne).map(([, k]) => k));
+  assert.equal(fejl, null, `${tidlige.map(([n]) => n).join(', ')} koerer noget ved indlaesning: ${fejl}`);
+});
+
+test('... og DEN regel er set fejle', () => {
+  const kerne = 'const KERNE = 900;\nfunction hejst() {\n  return KERNE;\n}\nclass Klasse {}';
+  // Det, der var i orden: kun inde i funktioner, og kald af en hejst funktion,
+  // der ikke selv koerer noget.
+  assert.equal(tdzFejl(['document.addEventListener("x", () => KERNE);\nconst f = () => KERNE;'], [kerne]), null);
+  // Den oprindelige fejl.
+  assert.match(tdzFejl(['const smal = matchMedia(`(max-width: ${KERNE}px)`);'], [kerne]), /KERNE/);
+  // En indrykket linje i et objekt-literal - den gamle regel saa den ikke.
+  assert.match(tdzFejl(['const x = {\n  graense: KERNE,\n};'], [kerne]), /before initialization/);
+  // En hejst funktion, der RUNDT OM laeser en const.
+  assert.match(tdzFejl(['hejst();'], [kerne]), /before initialization/);
+  assert.match(tdzFejl(['new Klasse();'], [kerne]), /before initialization/);
+});
+
+/*
+ * **z-index-lagene står på ÉT kort** — øverst i style.css.
+ *
+ * RUNE-ERFARINGER §4: flyt aldrig ét lag uden at se på resten (Kokkeri: en
+ * timer-dialog lå bag kogetilstanden). Et kort, der ikke passer, er værre end
+ * intet kort — man stoler på det. Reglen kræver derfor, at hver eneste
+ * `z-index` i filen står på kortets række for SIT tal, med en af selektorens
+ * klasser. Et lag, der flytter, eller et nyt lag uden en linje, fælder.
+ */
+function zKort(css) {
+  const start = css.indexOf('z-index-lagene');
+  assert.ok(start > -1, 'kortet over z-index-lagene mangler oeverst i style.css');
+  const blok = css.slice(start, css.indexOf('*/', start));
+  const raekker = new Map();
+  let nu = null;
+  for (const linje of blok.split('\n')) {
+    // Tallet staar i de foerste kolonner; »900 px« i en fortsaettelse er ikke en raekke.
+    const m = /^ \*\s{1,3}(\d+)\s+(.*)$/.exec(linje);
+    if (m) { nu = Number(m[1]); raekker.set(nu, (raekker.get(nu) || '') + ` ${m[2]}`); continue; }
+    if (nu !== null && /^ \*\s{6,}\S/.test(linje)) raekker.set(nu, `${raekker.get(nu)} ${linje.slice(3)}`);
+    else nu = null;
+  }
+  return raekker;
+}
+
+/** Hver `z-index: N` i filen med sin selektor. Kommentarer blankes, saa de ikke taeller. */
+function zErklaeringer(css) {
+  const ren = css.replace(/\/\*[\s\S]*?\*\//g, (k) => k.replace(/[^\n]/g, ' '));
+  const ud = [];
+  for (const m of ren.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const z of m[2].matchAll(/z-index:\s*(-?\d+)/g)) {
+      ud.push({ vaerdi: Number(z[1]), selektor: m[1].trim().replace(/\s+/g, ' '),
+        linje: ren.slice(0, m.index + m[0].indexOf(z[0])).split('\n').length });
+    }
+  }
+  return ud;
+}
+
+function zAfvigelser(css) {
+  const kort = zKort(css);
+  const fejl = [];
+  for (const { vaerdi, selektor, linje } of zErklaeringer(css)) {
+    const raekke = kort.get(vaerdi);
+    const klasser = [...selektor.matchAll(/\.([\w-]+)/g)].map((k) => k[1]);
+    const naevnt = raekke && klasser.some((k) => new RegExp(`\\.${k}(?![\\w-])`).test(raekke));
+    if (!naevnt) fejl.push(`linje ${linje}: ${selektor} { z-index: ${vaerdi} } staar ikke paa kortet`);
+  }
+  return fejl;
+}
+
+test('hvert z-index i style.css står på kortet øverst - med sit tal', () => {
+  const css = readFileSync(path.join(ROD, 'app', 'public', 'style.css'), 'utf8');
+  const alle = zErklaeringer(css);
+  assert.ok(alle.length >= 20, `fandt kun ${alle.length} z-index - er maalingen i stykker?`);
+  const fejl = zAfvigelser(css);
+  assert.deepEqual(fejl, [], fejl.join('\n'));
+  // ... og kortet har ingen raekke, som intet i filen bruger.
+  const brugte = new Set(alle.map((z) => z.vaerdi));
+  const doede = [...zKort(css).keys()].filter((v) => !brugte.has(v));
+  assert.deepEqual(doede, [], `kortet naevner lag, ingen bruger: ${doede.join(', ')}`);
+});
+
+test('... og DEN regel er set fejle', () => {
+  const css = readFileSync(path.join(ROD, 'app', 'public', 'style.css'), 'utf8');
+  // Et lag flytter uden kortet.
+  assert.match(zAfvigelser(css.replace(/(\.modal \{[^}]*z-index: )80/, '$185')).join(), /\.modal/);
+  // Et nyt lag uden en linje paa kortet.
+  assert.match(zAfvigelser(`${css}\n.ny-flyder { z-index: 60; }\n`).join(), /\.ny-flyder/);
+  // Et z-index i en KOMMENTAR er ikke et lag.
+  assert.deepEqual(zAfvigelser(`${css}\n/* .gammel { z-index: 52; } */\n`), []);
+});

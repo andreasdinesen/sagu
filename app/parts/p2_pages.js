@@ -1914,7 +1914,8 @@ async function startTotp() {
           <button class="btn primary" id="totpBekraeft">Turn it on</button>
         </div>
         <p class="meta saetning" style="margin-top:10px">Nothing is switched on until that code
-        fits. A mis-scan cannot lock you out of your own server.</p>
+        fits. A mis-scan cannot lock you out of your own server. Turning it on signs you
+        out on your other devices.</p>
       </div>
     </div>`;
 

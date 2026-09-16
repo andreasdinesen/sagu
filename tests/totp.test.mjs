@@ -393,13 +393,53 @@ test('nye nødkoder kræver også kodeordet — og dræber de gamle', async () =
 test('en NØGLE kan ikke røre 2FA — heller ikke en full-nøgle', async () => {
   // Samme regel som kodeordsskift: én laekket noegle maa ikke kunne fjerne
   // det andet led fra en konto.
+  //
+  // ALLE fem ruter, ogsaa `/enable` og `/recovery`. tovo havde dem paa en
+  // rute, der godtog noegler: en write-noegle alene hentede ti friske
+  // noedkoder og loggede ind med dem (RUNE-ERFARINGER, 2026-09-16).
   const noegle = (await a.kald('POST', '/api/v1/keys', { name: 'k', scope: 'full' })).data.key;
-  for (const sti of ['/api/v1/totp', '/api/v1/totp/setup', '/api/v1/totp/disable']) {
+  for (const sti of ['/api/v1/totp', '/api/v1/totp/setup', '/api/v1/totp/enable',
+    '/api/v1/totp/disable', '/api/v1/totp/recovery']) {
     const r = await fetch(srv.base + sti, {
       method: sti === '/api/v1/totp' ? 'GET' : 'POST',
       headers: { Authorization: `Bearer ${noegle}`, 'Content-Type': 'application/json' },
-      body: sti === '/api/v1/totp' ? undefined : JSON.stringify({ password: 'kodeord-1234' }),
+      body: sti === '/api/v1/totp' ? undefined
+        : JSON.stringify({ password: 'kodeord-1234', code: '000000' }),
     });
     assert.equal(r.status, 401, `${sti} svarede ${r.status}`);
   }
+});
+
+/* ------------------------------------------------- de andre sessioner */
+
+test('at slå 2FA til logger de ANDRE sessioner ud — ikke den, der gjorde det', async () => {
+  /*
+   * Man slår ofte 2FA til, fordi man frygter, at kodeordet er ude. En tyv med
+   * en cookie ser aldrig porten ved login — han logger jo ikke ind igen. Så
+   * han skal ud i samme øjeblik, præcis som ved et kodeordsskift.
+   *
+   * To sessioner på SAMME konto, og en tredje på en anden konto, der ikke må
+   * mærke noget: sletningen er filtreret på bruger.
+   */
+  const her = klient(srv.base);
+  const der = klient(srv.base);
+  await her.opret('carol', 'kodeord-1234');
+  assert.equal((await der.kald('POST', '/api/login',
+    { username: 'carol', password: 'kodeord-1234' })).status, 200);
+  assert.equal((await der.kald('GET', '/api/me')).data.user.username, 'carol', 'begge er inde');
+  assert.notEqual(her.cookie, der.cookie, 'to forskellige sessioner');
+
+  const setup = (await her.kald('POST', '/api/v1/totp/setup', {})).data;
+  assert.equal((await her.kald('POST', '/api/v1/totp/enable',
+    { code: kodeNu(setup.secret) })).status, 200);
+
+  assert.equal((await der.kald('GET', '/api/me')).data.user, null, 'den anden session er død');
+  assert.equal((await der.kald('GET', '/api/v1/totp')).status, 401);
+  assert.equal((await her.kald('GET', '/api/me')).data.user?.username, 'carol',
+    'den, der slog det til, er stadig inde');
+  assert.equal((await her.kald('GET', '/api/v1/totp')).data.enabled, true);
+  assert.equal((await b.kald('GET', '/api/me')).data.user?.username, 'bob',
+    'en ANDEN brugers session er urørt');
+
+  await her.kald('POST', '/api/v1/totp/disable', { password: 'kodeord-1234' });
 });
