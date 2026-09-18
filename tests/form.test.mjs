@@ -629,3 +629,52 @@ test('... og DEN regel er set fejle', () => {
   // Et z-index i en KOMMENTAR er ikke et lag.
   assert.deepEqual(zAfvigelser(`${css}\n/* .gammel { z-index: 52; } */\n`), []);
 });
+
+/*
+ * Håndtaget står ved HVER blok — også når der kun er én.
+ *
+ * `tegnGreb()` havde `if (blokke.length < 2) return` med begrundelsen »ét
+ * element kan ikke flyttes nogen steder«. Det var rigtigt, dengang håndtaget
+ * kun betød TRÆK. Siden fik klikket en menu, og i den står »Delete this
+ * block« — så vagten fjernede den eneste vej til at slette den sidste blok i
+ * en note. Man kunne skrive noget vrøvl, opdage det, og ikke komme af med det
+ * igen (Andreas, 18-09-2026).
+ *
+ * Det er ANDEN gang samme fejl: `visBlokMenu()` havde en vagt mod »doda ikke
+ * forbundet«, som skjulte sletningen for enhver, der ikke havde koblet de to
+ * apps sammen. Begge vagter var skrevet for én betydning og blev ikke set
+ * efter, da knappen fik en betydning mere.
+ *
+ * Reglen kan ikke prøves ved at køre koden — der er ingen DOM i node — men
+ * den kan prøves på FORMEN, og det er den, der står her.
+ */
+function tegnGrebKilde() {
+  const src = readFileSync(path.join(ROD, 'app', 'parts', 'p6_blokke.js'), 'utf8');
+  const i = src.indexOf('function tegnGreb(');
+  assert.ok(i > -1, 'tegnGreb findes ikke længere');
+  const krop = src.slice(i, src.indexOf('\n}', i) + 2);
+  // Kommentarerne forklarer netop, at vagten ER fjernet. Uden strimlingen
+  // ville prøven læse sin egen begrundelse som kode.
+  return krop.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/.*$/gm, ' ');
+}
+
+/** Et `return`, der afhænger af hvor MANGE blokke der er. */
+function antalsVagt(krop) {
+  return (krop.match(/if\s*\([^)]*\blength\s*[<>]=?\s*[2-9][^)]*\)\s*return/g) || []);
+}
+
+test('tegnGreb springer ikke over, fordi der kun er én blok', () => {
+  const fundne = antalsVagt(tegnGrebKilde());
+  assert.deepEqual(fundne, [],
+    'tegnGreb har en vagt på antallet af blokke igen: ' + fundne.join(' · ')
+    + ' — håndtaget er også vejen til menuen, og menuen er den eneste vej '
+    + 'til at slette den sidste blok.');
+});
+
+test('... og DEN regel er set fejle', () => {
+  assert.match(
+    antalsVagt('function tegnGreb(host) { if (blokke.length < 2) return; }').join(),
+    /length < 2/);
+  // Et loft i en kommentar er ikke en vagt.
+  assert.deepEqual(antalsVagt(tegnGrebKilde() + ' '), []);
+});

@@ -3832,3 +3832,53 @@ rigtige nødudgang.
 **Målt i browseren** i alle tre tilfælde: normal (knap under, alle ti
 værktøjsknapper fri), nederst i et 420 px højt vindue (knap over), og i
 MD-tilstand, hvor det er tekstfelt-vejen, der kører.
+
+
+---
+
+## 42 · Den sidste blok kunne ikke slettes (2026-09-18)
+
+`tegnGreb()` begyndte med:
+
+```js
+if (blokke.length < 2) return;   // ét element kan ikke flyttes nogen steder
+```
+
+Begrundelsen var rigtig, dengang håndtaget kun betød **træk**. Siden fik
+klikket en **menu**, og i den står »Delete this block«. Vagten fjernede
+dermed den eneste vej til at slette den sidste blok i en note: man kunne
+skrive noget vrøvl, opdage det, og ikke komme af med det igen.
+
+**Det er anden gang samme fejl.** `visBlokMenu()` havde en vagt mod »doda
+ikke forbundet«, der skjulte sletningen for enhver, som ikke havde koblet de
+to apps sammen — den står allerede rettet, med sin egen forklaring. Begge
+vagter var skrevet for **én** betydning og blev ikke set efter, da knappen
+fik en betydning mere.
+
+Reglen, der kommer ud af det, og som nu står i `tests/form.test.mjs`:
+
+> **En vagt, der er skrevet for én betydning, skal ses efter, når knappen får
+> en betydning mere.**
+
+### Hvad der ellers fulgte med
+
+- **Navnet.** Er der kun én blok, er der ingen steder at flytte den hen, så
+  håndtaget hedder »Click for options« i stedet for »Drag to move — click for
+  options«. Reglen står i funktionen i forvejen: *navnet skal sige, hvad
+  håndtaget KAN — og kun det.*
+- **Og `dodaState.connected`-grenen i navnet er væk.** Den sagde bare »Drag
+  to move«, når doda ikke var forbundet, med en kommentar om at »klikket
+  åbner ingen menu«. Det var blevet forkert samme dag, menuen fik sit
+  slette-punkt. En forklaring, der er blevet forkert, er værre end ingen.
+- **Trækket springes helt over ved én blok.** `flytBlok` afviser både
+  `fra === til` og `til === fra + 1`, som er de eneste to, der kan opstå — så
+  en bevægelse ville med sikkerhed ændre ingenting, men indsætningslinjen
+  ville blinke frem undervejs. Tryk og slip bliver dermed altid til et klik,
+  og klikket åbner menuen, som er hele grunden til, at en enlig blok har et
+  håndtag.
+
+**Målt i browseren:** én blok → håndtag med det rigtige navn, menu med
+»Delete this block«, sletningen virker; et træk giver hverken
+indsætningslinje, `traekker-blok`-klasse eller en ændring, og slippet åbner
+menuen. Tre blokke → alle tre har håndtag, navnet siger igen »Drag to move«,
+og et rigtigt træk flytter den første ned bagest.

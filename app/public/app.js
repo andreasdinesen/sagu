@@ -4334,7 +4334,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 77;
+const APP_VERSION = 78;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -13949,7 +13949,25 @@ function tegnGreb(host) {
   if (!editor.note || !maaRette(editor.note)) return;
 
   const blokke = [...host.querySelectorAll('[data-blok]')];
-  if (blokke.length < 2) return;        // ét element kan ikke flyttes nogen steder
+  if (!blokke.length) return;
+
+  /*
+   * **Ét element faar OGSAA et haandtag** (Andreas, 18-09-2026).
+   *
+   * Her stod `if (blokke.length < 2) return` med begrundelsen »ét element kan
+   * ikke flyttes nogen steder«. Det var rigtigt, dengang haandtaget kun betoed
+   * TRAEK. Siden fik klikket en menu - og i den staar »Delete this block«.
+   *
+   * Vagten fjernede dermed den eneste vej til at slette den sidste blok i en
+   * note: man kunne skrive noget vroevl, opdage det, og ikke kunne komme af
+   * med det igen. Praecis samme fejl som den, `visBlokMenu` allerede har
+   * rettet én gang - dens vagt mod »doda ikke forbundet« fjernede sletningen
+   * for alle, der ikke havde koblet de to apps sammen.
+   *
+   * Laeren staar to steder nu: **en vagt, der er skrevet for én betydning,
+   * skal ses efter, naar knappen faar en betydning mere.**
+   */
+  const kanFlyttes = blokke.length > 1;
 
   for (const el of blokke) {
     const g = document.createElement('button');
@@ -13959,13 +13977,17 @@ function tegnGreb(host) {
     /*
      * Navnet skal sige, hvad haandtaget KAN - og kun det.
      *
-     * Er doda ikke forbundet, aabner klikket ingen menu (se `visBlokMenu`),
-     * og saa maa navnet ikke love en. Et navn, der naevner en mulighed, som
-     * ikke er der, er den samme slags loefte som en knap, der ikke virker.
+     * Menuen aabner ALTID (se `visBlokMenu`), saa »click for options« er
+     * sandt uanset doda. Her stod en `dodaState.connected`-gren, som sagde
+     * bare »Drag to move«, naar doda ikke var forbundet - og den var blevet
+     * forkert samme dag, menuen fik sit slette-punkt.
+     *
+     * Er der kun ÉN blok, er der ingen steder at flytte den hen, og saa maa
+     * navnet ikke love et traek.
      */
-    const medMenu = dodaState.connected;
-    g.setAttribute('aria-label', medMenu ? 'Move this block, or click for options' : 'Drag to move this block');
-    g.title = medMenu ? 'Drag to move — click for options' : 'Drag to move';
+    g.setAttribute('aria-label', kanFlyttes
+      ? 'Move this block, or click for options' : 'Options for this block');
+    g.title = kanFlyttes ? 'Drag to move — click for options' : 'Click for options';
     g.innerHTML = '<span></span><span></span><span></span>'
       + '<span></span><span></span><span></span>';
     host.appendChild(g);
@@ -14007,11 +14029,22 @@ function startTraek(e, host, g) {
   g.setPointerCapture(e.pointerId);
 
   const startY = e.clientY;
+  /*
+   * Er der kun én blok, er der ingen flytning at lave. Traekket springes helt
+   * over - ellers ville indsaetningslinjen blinke frem ved en bevaegelse, der
+   * med sikkerhed ender med at aendre ingenting (`flytBlok` afviser baade
+   * `fra === til` og `til === fra + 1`, som er de eneste to, der kan opstaa).
+   *
+   * Tryk og slip bliver dermed altid til et KLIK, og klikket aabner menuen -
+   * som er hele grunden til, at en enlig blok har et haandtag.
+   */
+  const kanFlyttes = host.querySelectorAll('[data-blok]').length > 1;
 
   const linje = document.createElement('div');
   linje.className = 'blok-indsaet';
 
   const flyt = (ev) => {
+    if (!kanFlyttes) return;
     /*
      * Et træk begynder først efter 4 px.
      *
