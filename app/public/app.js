@@ -4334,7 +4334,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 76;
+const APP_VERSION = 77;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -15748,11 +15748,18 @@ function markeringSomOpgave() {
      */
     const linje = felt.value.slice(0, felt.selectionStart).split('\n').length - 1;
     const lh = parseFloat(getComputedStyle(felt).lineHeight) || 22;
+    const top = r.top + (linje * lh) - felt.scrollTop;
+    /*
+     * `bottom` skal MED. Knappen placeres under markeringen, og et
+     * skoennet rect uden en underkant ville give `undefined` - og en knap,
+     * der lander i skaermens hjoerne. Linjehoejden ER underkanten her:
+     * skoennet er én linje, ikke et omraade.
+     */
     return {
       tekst: tekst.slice(0, 500),
       afkortet: tekst.length > 500,
       iFelt: true,
-      rect: { left: r.left, width: r.width, top: r.top + (linje * lh) - felt.scrollTop },
+      rect: { left: r.left, width: r.width, top, bottom: top + lh },
     };
   }
 
@@ -15810,11 +15817,45 @@ function visDodaMark() {
     document.body.appendChild(dodaMarkKnap);
   }
 
-  // Over markeringen, og aldrig ud over kanten.
+  /*
+   * UNDER markeringen (Andreas, 18-09-2026).
+   *
+   * Den laa over, og det var forkert ét bestemt sted: markerer man i et
+   * AABENT redigeringsfelt, staar formateringslinjen lige over feltet - og
+   * knappen lagde sig oven paa den. Man kunne altsaa ikke goere det, man
+   * lige havde markeret, til kodetekst, fed eller et link, fordi knappen,
+   * der tilbyder at sende det til doda, daekkede knapperne der gor det.
+   *
+   * Under markeringen daekker den hoejst den naeste linje TEKST, og den kan
+   * man rulle eller klikke sig fri af. En daekket vaerktoejslinje er derimod
+   * en funktion, der ikke findes, saa laenge markeringen staar.
+   *
+   * Er der ikke plads under - markerer man nederst i vinduet - laegger den
+   * sig over i stedet. Formateringslinjen er langt vaek der, saa den gamle
+   * placering er stadig den rigtige noedudgang.
+   */
   const b = dodaMarkKnap.getBoundingClientRect();
   const bredde = b.width || 150;
-  const x = Math.min(Math.max(8, m.rect.left + (m.rect.width - bredde) / 2), window.innerWidth - bredde - 8);
-  const y = Math.max(8, m.rect.top - 44);
+  const hoejde = b.height || 36;
+  const luft = 8;
+  const x = Math.min(Math.max(luft, m.rect.left + (m.rect.width - bredde) / 2),
+    window.innerWidth - bredde - luft);
+
+  const under = m.rect.bottom + luft;
+  const erPlads = under + hoejde <= window.innerHeight - luft;
+  /*
+   * Til sidst klemmes den ind i vinduet UANSET hvad.
+   *
+   * Uden det kunne knappen lande uden for skaermen, naar markeringen selv er
+   * rullet ud af syne - og en knap, man ikke kan se, er den samme fejl som en
+   * knap, der daekker noget. Den gamle placering havde et `Math.max(8, …)`,
+   * der gjorde det samme; det maatte ikke forsvinde med omlaegningen.
+   */
+  const y = Math.min(
+    Math.max(luft, erPlads ? under : m.rect.top - hoejde - luft),
+    Math.max(luft, window.innerHeight - hoejde - luft),
+  );
+
   dodaMarkKnap.style.left = `${Math.round(x)}px`;
   dodaMarkKnap.style.top = `${Math.round(y)}px`;
 }

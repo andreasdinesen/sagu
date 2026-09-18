@@ -3792,3 +3792,43 @@ Vagten har to halvdele, og den anden fandt en sabotage: der siges kun »Not in a
 notebook«, når noten **er min** og `notebookId` er **tom**. Står der et bog-id, jeg ikke
 kender — en andens bog bag en deling, eller et træ, der ikke er hentet endnu — er svaret
 ikke »ingen bog«, det er »det ved jeg ikke«, og så står der ingenting.
+
+
+---
+
+## 41 · Markeringsknappen flyttede ned (2026-09-18)
+
+»Send to doda« lå **over** markeringen (`m.rect.top - 44`). Det var forkert ét
+bestemt sted, og Andreas ramte det: markerer man inde i et **åbent
+redigeringsfelt**, står formateringslinjen lige over feltet — og knappen lagde
+sig oven på den.
+
+Man kunne altså ikke gøre det, man lige havde markeret, til kodetekst, fed
+eller et link, fordi knappen, der tilbyder at *sende teksten væk*, dækkede de
+knapper, der ville *gøre noget ved den*. To tilbud om den samme markering, og
+det ene spærrede for det andet.
+
+**Under markeringen dækker den højst den næste linje tekst** — og den kan man
+rulle eller klikke sig fri af. En dækket værktøjslinje er derimod en funktion,
+der ikke findes, så længe markeringen står.
+
+To ting, der skulle med:
+
+- **Skønnet for tekstfeltet manglede en underkant.** `markeringSomOpgave()`
+  bygger for et `<textarea>` et *skønnet* rect af linjenummer × linjehøjde, og
+  det havde kun `top`. En placering under markeringen ville have læst
+  `undefined`. Linjehøjden **er** underkanten der: skønnet er én linje, ikke et
+  område.
+- **Klemningen ind i vinduet måtte ikke forsvinde.** Den gamle linje havde et
+  `Math.max(8, …)`, som garanterede, at knappen altid var synlig. Første udgave
+  af omlægningen tabte den, og knappen kunne lande uden for skærmen, når
+  markeringen selv var rullet ud af syne. En knap, man ikke kan se, er den samme
+  fejl som en, der dækker noget.
+
+Er der ikke plads under — markerer man nederst i vinduet — lægger den sig over
+i stedet. Værktøjslinjen er langt væk der, så den gamle placering er stadig den
+rigtige nødudgang.
+
+**Målt i browseren** i alle tre tilfælde: normal (knap under, alle ti
+værktøjsknapper fri), nederst i et 420 px højt vindue (knap over), og i
+MD-tilstand, hvor det er tekstfelt-vejen, der kører.
