@@ -3882,3 +3882,87 @@ Reglen, der kommer ud af det, og som nu står i `tests/form.test.mjs`:
 indsætningslinje, `traekker-blok`-klasse eller en ændring, og slippet åbner
 menuen. Tre blokke → alle tre har håndtag, navnet siger igen »Drag to move«,
 og et rigtigt træk flytter den første ned bagest.
+
+---
+
+## 43 · `/notesbog` og `#mærke`, mens man skriver (2026-09-18)
+
+Andreas skrev `testestest /do` i feltet og ventede forslag på en notesbog.
+Der kom ingen — og efterprøvningen viste hvorfor: **markøren fandtes slet
+ikke.** `/do` blev stående i titlen, og noten landede ingen steder. Kun `#`
+virkede, fordi `plukMaerker()` allerede kørte på teksten.
+
+Så opgaven var ikke »tilføj forslag«, men »få markøren til at findes — og
+foreslå, så man rammer en rigtig«.
+
+### Reglen ligger i `p5_omni.js`, ikke i `app/shared/`
+
+`#mærke` bor i det delte modul, fordi **serveren** også skal tolke det: en
+genvej på en telefon sender ren tekst til `/api/v1/capture`. Notesbogen har
+derimod sit eget felt i API'et (`notebookId`), så der er ingen anden
+køreplads at holde i trit med. En regel i `shared/` med ét kørested ville se
+ud, som om serveren også tolkede den — og det gør den ikke.
+
+### Formen er mærkets, plus anførselstegn
+
+Markøren skal stå ved start eller efter et **mellemrum**, og navnet skal
+klæbe til skråstregen — samme to regler som `#`, og af samme grund:
+`https://dr.dk/nyheder` må ikke blive til en notesbog.
+
+Dertil `/"TDCE noter"`, fordi halvdelen af bøgerne hedder noget med to ord.
+Uden citaterne ville `/TDCE noter` kun ramme »TDCE«, og »noter« blev stående i
+titlen. Det er dodas `/"two words"` og Sagus egen frasesøgning.
+
+### Et præfiks er nok — når det kun kan være én
+
+Præcist navn slår alt. Ellers skal præfikset passe på **præcis én** bog: to
+kandidater er ikke et valg, appen må træffe for brugeren. `/drif` med både
+»Drift« og »Driftsplaner« rammer derfor ingenting, og forslagene viser begge.
+
+### Uden en modtager bliver teksten stående
+
+Rammer `/xyz` ingen bog, fjernes markøren **ikke** fra titlen, og en chip
+siger *no notebook called "xyz"*. En markør, der forsvinder uden at have gjort
+noget, opdager man en uge senere.
+
+Og der oprettes **ingen** notesbog af en tastefejl: med 32 bøger er en 33. ved
+navn »dirft« en stille oprydningsopgave, ikke en hjælp. Vil man have en ny, er
+`/` som første tegn stadig vejen — den tilbyder det ligeud.
+
+For `#` gælder det modsatte, og det er med vilje: et mærke, der ikke findes,
+bliver **lavet**. Netop derfor er det dér, en tastefejl bliver til en dublet
+— `#drift` og `#dirft` ved siden af hinanden. Forslagene viser **antallet af
+noter** på hvert mærke, så det er til at se, hvilket der er det rigtige.
+
+### Forslagene ligger i ÉN funktion
+
+Kun én markør kan stå sidst i feltet, så de to lister kan aldrig optræde
+samtidig. Det er ikke et tilfælde — det er grunden til, at `markoerForslag()`
+håndterer begge: to uafhængige lister ville kunne komme til at bryde det.
+
+Et forslag **udfylder** feltet; det åbner ikke noget. Det er forskellen på de
+her rækker og `/`- og `#`-tilstandenes: dér leder man *efter* en bog eller et
+mærke, her er man i gang med at lave en note et bestemt sted.
+
+### To fejl, målingen fandt, og ræsonnementet ikke
+
+Begge så rigtige ud i koden:
+
+1. **Mønsteret sluttede på `$`.** Det var rigtigt for *forslag* (»står den
+   sidst?«), men forkert for *tolkning*: når et forslag udfylder feltet,
+   kommer der et mellemrum efter navnet, så man kan skrive videre — og så
+   holdt markøren op med at blive genkendt. Noten landede i ingen notesbog,
+   mens både rækken og chippen sagde det modsatte. »Står den sidst?« er nu et
+   spørgsmål for sig (`erSidst`).
+2. **Søgetolken kom først.** `saguSoeg.tolk` læser `"to ord"` som en frase og
+   fjerner citaterne, så `plukBog` bagefter så `/TDCE noter` og kun ramte
+   »TDCE«. Titlen blev `mine noter noter og mere tekst`. Rækkefølgen er nu:
+   **markør → søgesyntaks → mærker**, og en prøve holder den fast.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **818 grønne** (+11 i `tests/markoerer.test.mjs`) |
+| Hver vagt set fejle | `$` tilbage i mønsteret → to røde · `plukBog` efter søgetolken → én rød |
+| I browseren | forslag på `/dri`, `/TDCE` og `#dri` · udfyldning af et navn med mellemrum · note oprettet i »Drift« med mærket `drift` · `/xyzzy` lader markøren stå |

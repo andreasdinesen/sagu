@@ -363,6 +363,15 @@ function sideSoeg() {
         <tr><td><code>* title</code></td><td>create a note with that title</td></tr>
         <tr><td><code>/ name</code></td><td>jump to a notebook</td></tr>
         <tr><td><code># name</code></td><td>filter by a tag</td></tr>
+        ${/*
+          * De to sidste er ikke tilstande, men markoerer INDE i en titel, man
+          * opretter. Tabellen er en kravspecifikation, saa de skal staa her -
+          * og de skal staa som det, man faktisk taster, med citaterne paa det
+          * navn, der har mellemrum.
+          */ ''}
+        <tr><td><code>title /Drift</code></td><td>the new note goes in that notebook —
+          <code>/"two words"</code> for a longer name</td></tr>
+        <tr><td><code>title #drift</code></td><td>the new note gets that tag</td></tr>
       </table>
       <p class="meta saetning" style="margin-top:12px">A word inside a word is found too:
       searching <code>inventory</code> finds a note that only says <code>keepInventory</code>.

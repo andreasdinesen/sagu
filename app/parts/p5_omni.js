@@ -37,6 +37,177 @@ const OMNI_MODER = {
 
 const OMNI_LEGEND = ['* new note', '/ notebooks', '# tags', 'tag: in: updated: has:'];
 
+/*
+ * `/notesbog` INDE i en tekst, man opretter en note ud fra.
+ *
+ * ── Hvorfor den ikke ligger i `app/shared/` ───────────────────────────────
+ *
+ * `#maerke` bor i det delte modul, fordi SERVEREN ogsaa skal tolke det: en
+ * genvej paa en telefon sender ren tekst til API'et, og maerket skal blive et
+ * rigtigt maerke. Notesbogen har derimod sit eget felt i API'et
+ * (`notebookId`), saa der er ingen anden koereplads at holde i trit med. En
+ * regel i `shared/` med ét koerested ville se ud, som om serveren ogsaa
+ * tolkede den - og det goer den ikke.
+ *
+ * ── Formen er maerkets ────────────────────────────────────────────────────
+ *
+ * Markoeren skal staa ved start eller efter et MELLEMRUM, og navnet skal
+ * klaebe til skraastregen. Det er de samme to regler som `#`, og de er der af
+ * samme grund: ellers bliver »https://dr.dk/nyheder« til en notesbog.
+ *
+ * ── Uden en modtager bliver teksten staaende ──────────────────────────────
+ *
+ * Rammer `/xyz` ingen notesbog, fjernes den IKKE fra titlen. En markoer, der
+ * forsvinder uden at have gjort noget, er den slags, man opdager en uge
+ * senere. Fladen siger det desuden med en chip, mens man skriver.
+ *
+ * Der oprettes heller ingen notesbog af en tastefejl: med 32 boeger er en
+ * 33. ved navn »dirft« en stille oprydningsopgave, ikke en hjaelp. Vil man
+ * have en ny, er `/` som FOERSTE tegn stadig vejen - den tilbyder det
+ * ligeud.
+ */
+/*
+ * Formen: `/Drift` eller `/"TDCE noter"`.
+ *
+ * Anfoerselstegnene er der, fordi mange notesboeger har et navn med
+ * MELLEMRUM, og uden dem ville `/TDCE noter` kun ramme »TDCE«. Det er samme
+ * greb, soegefeltet allerede bruger til en fraselookup - og dodas
+ * `/"two words"`.
+ *
+ * Moensteret slutter IKKE med `$`. Foerste udgave gjorde, og det var forkert:
+ * naar et forslag udfylder feltet, kommer der et mellemrum efter navnet, saa
+ * man kan skrive videre - og saa holdt markoeren op med at blive genkendt.
+ * Noten landede i ingen notesbog, selv om baade raekken og chippen sagde det
+ * modsatte. »Staar den til sidst?« er et spoergsmaal om FORSLAG, ikke om
+ * tolkning; det maales for sig i `erSidst()`.
+ */
+const BOG_MOENSTER = /(^|\s)\/(?:"([^"]{1,60})"|([\p{L}\p{N}][\p{L}\p{N}_-]{0,59}))/u;
+
+/** Skriver navnet, som det skal tastes - med anfoerselstegn, hvis det har mellemrum. */
+function bogMarkoer(navn) {
+  return /\s/.test(navn) ? `/"${navn}"` : `/${navn}`;
+}
+
+/**
+ * Finder den notesbog, `/navn` peger paa.
+ *
+ * Praecist navn slaar alt. Ellers skal praefikset passe paa PRAECIS ÉN bog -
+ * to kandidater er ikke et valg, appen maa traeffe for brugeren.
+ */
+function findBog(navn, boeger) {
+  const q = String(navn || '').trim().toLowerCase();
+  if (!q) return null;
+  const alle = boeger || [];
+  const praecis = alle.find((b) => String(b.name || '').toLowerCase() === q);
+  if (praecis) return praecis;
+  const starter = alle.filter((b) => String(b.name || '').toLowerCase().startsWith(q));
+  if (starter.length === 1) return starter[0];
+  return null;
+}
+
+/**
+ * Deler en fangst-tekst i titel og notesbog.
+ *
+ * @returns {{tekst, bog, soegt}} `soegt` er det, der stod efter skraastregen -
+ *   ogsaa naar den ikke ramte noget. Den er det, chippen og forslagene viser.
+ */
+function plukBog(raa, boeger) {
+  const tekst = String(raa || '');
+  const m = BOG_MOENSTER.exec(tekst);
+  if (!m) return { tekst: tekst.trim(), bog: null, soegt: '', erSidst: false };
+  const soegt = String(m[2] != null ? m[2] : m[3]).trim();
+  const bog = findBog(soegt, boeger);
+  // Staar markoeren sidst, er man stadig i gang med at skrive navnet - og saa
+  // er det dét, forslagene handler om.
+  const erSidst = m.index + m[0].length === tekst.length;
+  // Ingen modtager: teksten bliver, som den blev skrevet.
+  if (!bog) return { tekst: tekst.trim(), bog: null, soegt, erSidst };
+  return {
+    tekst: (tekst.slice(0, m.index) + m[1] + tekst.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim(),
+    bog,
+    soegt,
+    erSidst,
+  };
+}
+
+/** Etiketten paa oprettelses-raekken - den skal sige, HVOR noten lander. */
+function opretEtiket(titel, bog) {
+  const navn = titel ? `Create “${titel}”` : 'Create a note';
+  return bog ? `${navn} in ${bog.name}` : navn;
+}
+
+/* `#maerke`, mens det skrives. Samme form som bogens, men uden citater:
+   et maerke kan ikke indeholde mellemrum (`shared/maerker.js`). */
+const MAERKE_SIDST = /(^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{0,59})$/u;
+
+/*
+ * Forslag, mens man skriver en markoer.
+ *
+ * ── Kun naar markoeren staar SIDST ────────────────────────────────────────
+ *
+ * Det er dét, der betyder »jeg er i gang med at skrive navnet«. Er den
+ * faerdig og fulgt af mere tekst, er valget truffet, og forslagene ville
+ * staa i vejen for Enter.
+ *
+ * Og fordi kun ÉN markoer kan staa sidst, kan de to lister aldrig optraede
+ * samtidig. Det er ikke et tilfaelde, det er grunden til, at de to ligger i
+ * den SAMME funktion: to uafhaengige lister ville kunne komme til at gore det.
+ *
+ * ── Et forslag UDFYLDER, det aabner ikke ──────────────────────────────────
+ *
+ * Det er forskellen paa de her raekker og `/`- og `#`-tilstandenes: dér leder
+ * man EFTER en bog eller et maerke, her er man i gang med at lave en note et
+ * bestemt sted eller med et bestemt maerke.
+ *
+ * ── Rammer navnet praecist, foreslaas der ikke mere ───────────────────────
+ *
+ * Saa er der ikke noget at vaelge imellem.
+ *
+ * ── Hvorfor `#` ogsaa har brug for det ────────────────────────────────────
+ *
+ * Et maerke, der ikke findes, bliver LAVET - der er ingen fejl at opdage.
+ * Derfor er det netop her, en tastefejl bliver til en dublet: `#drift` og
+ * `#dirft` ved siden af hinanden, og den ene har én note i sig. Antallet
+ * staar paa hvert forslag, saa det er til at se, hvilket der er det rigtige.
+ */
+function markoerForslag(raa) {
+  const tekst = String(raa || '');
+
+  const mm = MAERKE_SIDST.exec(tekst);
+  if (mm) {
+    const q = mm[2].toLowerCase();
+    const traef = (state.tags || [])
+      .filter((t) => String(t.name || '').toLowerCase().includes(q))
+      .slice(0, 6);
+    if (traef.length === 1 && String(traef[0].name || '').toLowerCase() === q) return [];
+    return traef.map((t) => ({
+      slags: 'udfyld',
+      markoer: '#',
+      navn: t.name,
+      etiket: `#${t.name}`,
+      antal: t.notes,
+      under: 'tag the new note with this',
+    }));
+  }
+
+  const b = plukBog(tekst, state.notebooks);
+  if (!b.soegt || !b.erSidst) return [];
+  const q = b.soegt.toLowerCase();
+  const traef = (state.notebooks || [])
+    .filter((x) => String(x.name || '').toLowerCase().includes(q))
+    .slice(0, 6);
+  if (traef.length === 1 && String(traef[0].name || '').toLowerCase() === q) return [];
+  return traef.map((x) => ({
+    slags: 'udfyld',
+    markoer: '/',
+    id: x.id,
+    navn: x.name,
+    ikon: x.icon || '📓',
+    etiket: x.name,
+    under: 'put the new note here',
+  }));
+}
+
 const omni = {
   mode: null,
   raekker: [],
@@ -99,11 +270,18 @@ function tegnLegend() {
 }
 
 /** Chips under feltet: hvad filtrene BETYDER, mens man skriver dem. */
-function tegnOmniChips(tolket) {
+function tegnOmniChips(tolket, bog) {
   const host = document.getElementById('omniChips');
   if (!host) return;
   const dele = tolket ? saguSoeg.beskriv(tolket) : [];
   if (omni.fallback) dele.push('no index match — read the text');
+  /*
+   * `/navn`, der ikke rammer noget, skal SIGES.
+   *
+   * Markoeren bliver staaende i titlen, og uden chippen ville man foerst
+   * opdage det, naar noten var lavet og hed »Ny router /dirft«.
+   */
+  if (bog && bog.soegt && !bog.bog) dele.push(`no notebook called “${bog.soegt}”`);
   host.innerHTML = dele.map((d) => `<span class="chip${d.startsWith('no index') ? ' neutral' : ''}">${esc(d)}</span>`).join('');
 }
 
@@ -119,15 +297,20 @@ async function opdaterOmni() {
   tegnLegend();
 
   if (omni.mode === '*') {
-    const p = plukMaerker(tekst);
-    omni.raekker = [{
+    const b = plukBog(tekst, state.notebooks);
+    const p = plukMaerker(b.tekst);
+    // Skriver man stadig paa navnet, staar forslagene OEVERST - det er dem,
+    // man kigger efter i det oejeblik.
+    omni.raekker = markoerForslag(tekst);
+    omni.raekker.push({
       slags: 'ny',
       tekst: p.tekst,
       maerker: p.maerker,
-      etiket: p.tekst ? `Create "${p.tekst}"` : 'Create a note',
+      bogId: b.bog ? b.bog.id : null,
+      etiket: opretEtiket(p.tekst, b.bog),
       meta: p.maerker.length ? p.maerker.map((m) => `#${m}`).join(' ') : '',
-    }];
-    tegnOmniChips(null);
+    });
+    tegnOmniChips(null, b);
     tegnPanel();
     return;
   }
@@ -210,7 +393,20 @@ async function opdaterOmni() {
         meta: r.notebook,
       }));
       // Oprettelse er den SIDSTE raekke - altid der, aldrig i vejen.
-      const p = plukMaerker(tolket.tekst || raa.trim());
+      /*
+       * Notesbogen plukkes af den RAA tekst - ikke af `tolket.tekst`.
+       *
+       * Soegetolken laeser `"to ord"` som en FRASE og fjerner citaterne. Kom
+       * `plukBog` bagefter, saa den `/"TDCE noter"` som `/TDCE noter`, ramte
+       * kun »TDCE« med sit navne-moenster, og ordet »noter« blev staaende i
+       * titlen: `Create "mine noter noter og mere tekst"`. Maalt, ikke
+       * gaettet - `plukBog` alene gav det rigtige svar hele tiden.
+       *
+       * Raekkefoelgen er derfor: markoer foerst, saa soegesyntaks, saa maerker.
+       */
+      const b = plukBog(raa.trim(), state.notebooks);
+      const udenSyntaks = saguSoeg.tolk(b.tekst);
+      const p = plukMaerker(udenSyntaks.tekst || b.tekst);
       omni.raekker.push({
         slags: 'ny',
         tekst: p.tekst,
@@ -218,10 +414,19 @@ async function opdaterOmni() {
         // ledt efter noget under et maerke og ikke fundet det, er det dér, den
         // nye note hoerer hjemme.
         maerker: p.maerker.concat(tolket.tags || []),
-        etiket: `Create "${p.tekst}"`,
+        bogId: b.bog ? b.bog.id : null,
+        etiket: opretEtiket(p.tekst, b.bog),
       });
+      /*
+       * Notesbogs-forslagene staar OEVERST - foran traefferne.
+       *
+       * Skriver man `/dri`, leder man ikke laengere efter en note; man er i
+       * gang med at vaelge en bog. Stod de nederst, skulle man forbi ti
+       * soegetraeffere for at naa det, man var i gang med.
+       */
+      omni.raekker = markoerForslag(raa).concat(omni.raekker);
       omni.valgt = 0;
-      tegnOmniChips(tolket);
+      tegnOmniChips(tolket, b);
       tegnPanel();
     } catch (ex) {
       if (mit !== omni.token) return;
@@ -264,7 +469,7 @@ function tegnPanel() {
     : (r.meta ? esc(r.meta) : '')}</span>
         </a>`;
     }
-    const ikon = { ny: 'plus', nybog: 'book', bog: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
+    const ikon = { ny: 'plus', nybog: 'book', bog: null, udfyld: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
     return `<button class="omni-row${paa}${r.slags === 'fejl' ? ' fejl' : ''}" data-row="${i}">
         <span class="omni-row-ikon">${r.ikon ? esc(r.ikon) : icon(ikon || 'book', 16)}</span>
         <span class="omni-row-tekst"><span class="omni-row-titel">${esc(r.etiket)}</span>
@@ -314,7 +519,36 @@ async function vaelgRaekke(i) {
   }
   if (r.slags === 'ny') {
     ryd();
-    await opretOgAaben({ title: r.tekst || 'Untitled', tags: r.maerker || [] });
+    await opretOgAaben(Object.assign(
+      { title: r.tekst || 'Untitled', tags: r.maerker || [] },
+      r.bogId ? { notebookId: r.bogId } : {},
+    ));
+    return;
+  }
+  /*
+   * Et forslag UDFYLDER feltet med bogens fulde navn og bliver staaende.
+   *
+   * Feltet ryddes ikke, og der oprettes ingenting: man har valgt en bog, ikke
+   * afsluttet en handling. Markoeren erstattes praecis dér, hvor den stod, saa
+   * resten af titlen er uroert - og markoeren kommer til sidst, saa det, man
+   * skriver videre, IKKE havner i navnet paa bogen.
+   */
+  if (r.slags === 'udfyld') {
+    if (!el) return;
+    /*
+     * Markoeren erstattes DÉR, hvor den stod - resten af titlen er uroert -
+     * og der saettes et mellemrum efter, saa det, man skriver videre, ikke
+     * havner inde i navnet.
+     *
+     * Feltet ryddes ikke, og der oprettes ingenting: man har valgt en bog
+     * eller et maerke, ikke afsluttet en handling.
+     */
+    el.value = r.markoer === '#'
+      ? `${el.value.replace(MAERKE_SIDST, `$1#${r.navn}`)} `
+      : `${el.value.replace(BOG_MOENSTER, `$1${bogMarkoer(r.navn)}`)} `;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    opdaterOmni();
     return;
   }
   if (r.slags === 'nybog') {
