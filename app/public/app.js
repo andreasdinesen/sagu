@@ -1080,6 +1080,17 @@
     const tekst = String(md == null ? '' : md);
     const b = blokke(tekst).find((x) => x.fra === fra);
     if (!b) return '';
+    /*
+     * En STREG har ingen tekst.
+     *
+     * Markoerererne nedenfor fjerner overskriftens `#`, citatets `>` og
+     * punktets `-`, men `---` er ikke en markoer foran noget - det ER
+     * blokken. Uden den her linje blev en streg til en opgave, der hed
+     * »---« (maalt, da F36 sendte tre markerede blokke til doda,
+     * 2026-09-20). Fejlen fandtes ogsaa for én blok ad gangen: menuens
+     * »Send to doda« stod frem paa en streg, fordi `---` er tre tegn.
+     */
+    if (b.slags === 'hr') return '';
     return tekst.split('\n').slice(b.fra, b.til + 1)
       .map((l) => String(l)
         .replace(/^\s*#{1,6}\s+/, '')                              // overskrift
@@ -1160,6 +1171,60 @@
   }
 
   /**
+   * Fjerner FLERE blokke paa én gang (F36).
+   *
+   * ── Hvorfor den findes, naar `sletBlok` allerede er der ───────────────
+   *
+   * Fordi rækkefølgen ikke er ligegyldig, og det er den slags, der ser ud
+   * til at virke. `sletBlok` slaar blokken op paa dens FOERSTE LINJENUMMER i
+   * den tekst, den faar - og saa snart én blok er fjernet, er hvert eneste
+   * linjenummer UNDER den rykket op. Sletter man oppefra og ned, peger det
+   * naeste tal derfor paa noget andet, end brugeren markerede: enten en
+   * nabo-blok, eller ingenting.
+   *
+   * Nedefra og op roerer hver sletning kun linjer EFTER de numre, der er
+   * tilbage. Derfor sorteres der faldende, og derfor er den her funktion et
+   * sted og ikke en `for`-loekke i fladen.
+   *
+   * Dubletter fjernes: de samme to tal ville ellers slette to forskellige
+   * blokke, fordi den anden omgang rammer den, der rykkede op i stedet.
+   *
+   * @param {number[]} fraListe blokkenes foerste linjer (`blokke()[i].fra`)
+   */
+  function sletBlokke(md, fraListe) {
+    const numre = [...new Set((fraListe || []).map(Number))]
+      .filter((n) => Number.isInteger(n) && n >= 0)
+      .sort((a, b) => b - a);
+    let ud = String(md == null ? '' : md);
+    for (const fra of numre) ud = sletBlok(ud, fra);
+    return ud;
+  }
+
+  /**
+   * De valgte blokke som en markdown-tekst for sig (F36).
+   *
+   * Raekkefoelgen er NOTENS, ikke den, man klikkede i: markerer man foerst
+   * det nederste afsnit og saa det oeverste, vil man have dem i den orden,
+   * de staar paa skaermen - alt andet ville vaere en tekst, ingen har set.
+   *
+   * Blokkene skilles af en tom linje, praecis som markdown selv goer. Uden
+   * den ville to afsnit smelte sammen til ét, naar teksten saettes ind igen.
+   *
+   * @param {number[]} fraListe blokkenes foerste linjer (`blokke()[i].fra`)
+   */
+  function blokkeSomMarkdown(md, fraListe) {
+    const tekst = String(md == null ? '' : md);
+    const vil = new Set((fraListe || []).map(Number));
+    // Samme normalisering som `blokke()` selv laver - ellers passer
+    // linjenumrene ikke paa en tekst med CRLF.
+    const linjer = tekst.replace(/\r\n?/g, '\n').split('\n');
+    return blokke(tekst)
+      .filter((b) => vil.has(b.fra))
+      .map((b) => linjer.slice(b.fra, b.til + 1).join('\n'))
+      .join('\n\n');
+  }
+
+  /**
    * De billeder, noten faktisk viser.
    *
    * Bruges naar en note skal kopieres UD af Sagu: hver `sagu:`-adresse skal
@@ -1190,7 +1255,8 @@
   }
 
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, blokSomLinje,
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, sletBlokke,
+    blokkeSomMarkdown, blokSomLinje,
     billederIMarkdown, pentNavn, pentBrugernavn, SYNTAKS };
 }));
 
@@ -2776,8 +2842,9 @@ const GENVEJE = [
     // Et klik, ikke en tast - men den skal STAA paa listen, ellers findes
     // fanerne kun for den, der har laest koden.
     tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`,
-    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree it selects — use '
-      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click there`,
+    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree, and on the '
+      + 'blocks of a note, it selects instead — use '
+      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click in the tree to open a tab`,
     kunVist: true,
   },
   {
@@ -2818,11 +2885,24 @@ document.addEventListener('keydown', (e) => {
    * FOER alt andet, og uden at spoerge om skrivefelter: staar man i
    * soegefeltet med tre noter markeret, er Escape stadig det, man trykker.
    */
-  if (e.key === 'Escape' && typeof harValgte === 'function' && harValgte()
-      && !document.querySelector('.modal')) {
-    e.preventDefault();
-    ryddValgte();
-    return;
+  if (e.key === 'Escape' && !document.querySelector('.modal')) {
+    /*
+     * Blokmarkeringen i noten (F36) ryddes FOER traeets.
+     *
+     * Er begge i gang, er det den, man staar i, man mener - og det er
+     * blokkene: traeets markering bliver siddende, mens man arbejder i en
+     * note, netop fordi den skal overleve en optegning.
+     */
+    if (typeof harBlokValg === 'function' && harBlokValg()) {
+      e.preventDefault();
+      ryddBlokValg();
+      return;
+    }
+    if (typeof harValgte === 'function' && harValgte()) {
+      e.preventDefault();
+      ryddValgte();
+      return;
+    }
   }
   const passer = (x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase());
 
@@ -4334,7 +4414,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 79;
+const APP_VERSION = 80;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -9732,6 +9812,9 @@ function tegnKrop() {
     // To editorer, ét valg. Se `heleNoten()`.
     if (heleNoten()) tegnHeleNoten(host, n);
     else tegnMedAabenBlok(host, n);
+    // Et aabent felt og en markering kan ikke staa samtidig (F36), men
+    // baandet skal tegnes VAEK, naar man gaar fra det ene til det andet.
+    tegnBlokValgBaand();
     return;
   }
 
@@ -9755,6 +9838,11 @@ function tegnKrop() {
   }
   bindKrop();
   tegnGreb(host);
+  // Markeringen lever uden for optegningen, saa den skal farves paa igen -
+  // ellers ville en optegning (et flueben, et billede der lander) se ud, som
+  // om markeringen var forsvundet (F36).
+  markerValgteBlokke(host);
+  tegnBlokValgBaand();
   byggToc();
 }
 
@@ -9814,10 +9902,44 @@ function bindKrop() {
   const host = document.getElementById('noteBody');
   if (!host) return;
 
-  // ÉN delegeret handler paa kroppen. Ikke `{once:true}`: den ville fjerne sig
-  // selv efter foerste klik, saa man kunne aabne én blok pr. optegning og
-  // derefter ingenting - og fejlen ville ligne "editoren gaar i staa".
+  /*
+   * ÉN delegeret handler paa kroppen - og kun én. Ikke `{once:true}`: den
+   * ville fjerne sig selv efter foerste klik, saa man kunne aabne én blok pr.
+   * optegning og derefter ingenting, og fejlen ville ligne »editoren gaar i
+   * staa«.
+   *
+   * ── Hvorfor der staar et maerke paa vaerten ──────────────────────────────
+   *
+   * `tegnKrop()` skriver kroppens `innerHTML` om, men `#noteBody` SELV
+   * overlever - kun dens boern skiftes ud. Handleren blev derfor lagt paa
+   * igen ved hver optegning, og efter n optegninger koerte den n gange paa ét
+   * klik. `stopPropagation()` hjaelper ikke: den standser andre ELEMENTER,
+   * ikke andre handlere paa det samme.
+   *
+   * Det var usynligt, saa laenge et klik betoed »aabn den her blok« - at
+   * aabne den samme blok fem gange er det samme som at aabne den én gang.
+   * F36's markering er et SKIFT, og to kald i traek ophaever hinanden: anden
+   * gang man ⌘-klikkede, skete der ingenting (maalt i browseren,
+   * 2026-09-20). **En handler, der ikke kan taale at blive kaldt to gange,
+   * afsloerer en binding, der er lagt paa to gange.**
+   *
+   * Vaerten er ny for hver note (`sideNote()` skriver hele kortet), saa
+   * maerket foelger med i faldet af sig selv.
+   */
+  if (host.dataset.bundet) return;
+  host.dataset.bundet = '1';
+
   host.addEventListener('click', (e) => {
+    /*
+     * **Markeringen af flere blokke spoerges FOERST** (F36).
+     *
+     * Foer tekstmarkeringen nedenfor, med vilje: et ⌘-klik i et afsnit, hvor
+     * der ogsaa stod noget markeret tekst, ville ellers falde paa den vagt og
+     * ikke markere noget. Vagten mod betjeningselementerne staar inde i
+     * `blokValgKlik` selv, saa haandtaget og menuen er upaavirkede.
+     */
+    if (blokValgKlik(e)) return;
+
     /*
      * **Har man MARKERET noget, aabner klikket ikke redigeringen.**
      *
@@ -11160,6 +11282,10 @@ function aabnBlok(fra) {
   // Hele noten er ikke en tilstand, man klikker sig ind i en enkelt blok fra
   // - naar en blok aabnes ved et klik, er omfanget blokken.
   editor.raaNote = false;
+  // At begynde at skrive slutter en markering (F36). De to tilstande kan ikke
+  // staa sammen: det aabne felt har intet `data-blok` og kan hverken markeres
+  // eller slettes af baandet.
+  nulstilBlokValg();
   editor.aabenBlok = fra;
   tegnKrop();
 }
@@ -11178,6 +11304,7 @@ function aabnSidste() {
   if (!b.length) {
     // Tom note: laeg en tom linje ind, saa der er en blok at aabne.
     editor.note.body = '\n';
+    nulstilBlokValg();
     editor.aabenBlok = 0;
     tegnKrop();
     return;
@@ -12878,22 +13005,30 @@ async function vaelgRaekke(i) {
  * samme fejl. Er en note aaben, faar opgaven et link tilbage til den; ellers
  * er det en fritstaaende opgave, og det er ogsaa i orden - man staar ikke
  * altid i en note, naar noget falder én ind.
+ *
+ * `stille` slaar KVITTERINGEN fra, ikke fejlen. Den bruges, naar flere
+ * blokke sendes i traek (F36): fem beskeder oven i hinanden er ikke fem
+ * kvitteringer, det er stoej, og afsenderen siger selv hvor mange der naaede
+ * frem. Gaar noget galt, skal beskeden derimod frem med det samme.
+ *
+ * @returns {Promise<boolean>} sandt, hvis opgaven naaede frem
  */
-async function sendOpgaveTilDoda(tekst) {
+async function sendOpgaveTilDoda(tekst, stille) {
   const note = state.view === 'note' && editor.note ? editor.note : null;
   try {
     if (!note) {
       // Uden en note er der ingen note-rute at gaa igennem. Broen har en
       // fritstaaende doer, saa markoeren virker fra enhver skaerm.
       const r = await api('POST', '/api/v1/doda/tasks', { text: tekst });
-      toast(r.message || 'Sent to doda.');
-      return;
+      if (!stille) toast(r.message || 'Sent to doda.');
+      return true;
     }
     const r = await api('POST', `/api/v1/notes/${note.id}/tasks`, { text: tekst });
     dodaState.opgaver = r.tasks || [];
     dodaState.noteId = note.id;
     tegnDodaOpgaver();
-    toast(r.message || 'Sent to doda.');
+    if (!stille) toast(r.message || 'Sent to doda.');
+    return true;
   } catch (ex) {
     /*
      * En fejlet forbindelse er ikke en fejlet gemning.
@@ -12904,9 +13039,10 @@ async function sendOpgaveTilDoda(tekst) {
      */
     if (ex && ex.code === 'not_connected') {
       toast('doda is not connected yet.', { label: 'Connect', run: () => gaaTil('settings') });
-      return;
+      return false;
     }
     toast(ex && ex.message ? ex.message : 'Could not reach doda.');
+    return false;
   }
 }
 
@@ -13251,6 +13387,10 @@ function bindTjek(host) {
   if (!maaRette(editor.note)) return;
   host.querySelectorAll('[data-tjek]').forEach((el) => {
     el.addEventListener('click', (e) => {
+      // Tjekboksen standser sin egen haendelse, saa den naar aldrig kroppens
+      // handler. Markeringen (F36) skal derfor spoerges HER - ellers kunne en
+      // tjekliste ikke markeres, og et ⌘-klik ville saette et flueben i stedet.
+      if (blokValgKlik(e)) return;
       e.stopPropagation();       // maa ikke ogsaa aabne blokken raat
       const linje = Number(el.dataset.tjek);
       const nu = el.getAttribute('aria-checked') === 'true';
@@ -13384,6 +13524,9 @@ function bindBilleder(host) {
     if (el.complete) gemBilledMaal(el);
     else el.addEventListener('load', () => gemBilledMaal(el), { once: true });
     el.addEventListener('click', (e) => {
+      // Samme grund som tjekboksen: billedet standser sin egen haendelse, saa
+      // uden det her kunne en blok, der KUN er et billede, ikke markeres.
+      if (blokValgKlik(e)) return;
       e.stopPropagation();
       visLightbox(el.getAttribute('src'), el.getAttribute('alt'));
     });
@@ -14266,6 +14409,18 @@ function startTraek(e, host, g) {
   if (e.button != null && e.button > 0) return;   // kun venstre knap
   e.preventDefault();
   e.stopPropagation();
+  /*
+   * ⌘/Ctrl (og shift) paa selve haandtaget MARKERER blokken (F36).
+   *
+   * De seks prikker ER blokken som ting - det er dér, oejet leder efter
+   * »denne her«. Og det er `pointerdown` og ikke klikket, fordi haandtaget
+   * aldrig faar et almindeligt klik: trykket ender enten i et traek eller i
+   * menuen, og begge dele afgoeres nedenfor.
+   */
+  if ((e.metaKey || e.ctrlKey || e.shiftKey) && !e.altKey) {
+    skiftBlokValgt(Number(g.dataset.greb), e.shiftKey);
+    return;
+  }
   greb.fra = Number(g.dataset.greb);
   greb.til = null;
   greb.aktiv = false;
@@ -14363,6 +14518,8 @@ function fuldfoerTraek() {
   const ny = saguMarkdown.flytBlok(n.body, fraNr, tilNr);
   if (ny === n.body) return;            // trækket var ingen flytning
   n.body = ny;
+  // Markeringen er linjenumre, og de er flyttet af netop den her operation.
+  nulstilBlokValg();
   markerBeskidt();
   /*
    * Hele noten tegnes om, og det er med vilje.
@@ -14434,7 +14591,9 @@ function visBlokMenu(g) {
 
   blokMenu = document.createElement('div');
   blokMenu.className = 'blok-menu';
-  blokMenu.innerHTML = `${tilDoda
+  blokMenu.innerHTML = `<button type="button" class="blok-menu-punkt" id="blokVaelg">
+      ${icon('tjekboks', 15)}<span>Select this block</span></button>
+    ${tilDoda
     ? `<button type="button" class="blok-menu-punkt" id="blokTilDoda">
         ${icon('tjek', 15)}<span>Send to doda</span></button>` : ''}
     <button type="button" class="blok-menu-punkt farlig" id="blokSlet">
@@ -14448,6 +14607,19 @@ function visBlokMenu(g) {
   // Til højre for håndtaget, og aldrig ud over skærmkanten.
   blokMenu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - m.width - 8))}px`;
   blokMenu.style.top = `${Math.round(Math.min(r.bottom + 4, window.innerHeight - m.height - 8))}px`;
+
+  /*
+   * Markeringens doer paa en TELEFON (F36).
+   *
+   * ⌘-klik findes ikke paa touch, saa uden det her punkt kunne halvdelen af
+   * brugerne slet ikke STARTE en markering - F26's aabne ende, gentaget.
+   * Menuen ligger her i forvejen, og prikkerne staar fremme hele tiden paa en
+   * skaerm uden hover, saa doeren koster ingenting.
+   */
+  blokMenu.querySelector('#blokVaelg').addEventListener('click', () => {
+    lukBlokMenu();
+    skiftBlokValgt(linje, false);
+  });
 
   const dodaKnap = blokMenu.querySelector('#blokTilDoda');
   if (dodaKnap) {
@@ -14465,7 +14637,7 @@ function visBlokMenu(g) {
 
   document.addEventListener('keydown', blokMenuTast, true);
   document.addEventListener('pointerdown', blokMenuUdenfor, true);
-  (dodaKnap || blokMenu.querySelector('#blokSlet')).focus();
+  blokMenu.querySelector('#blokVaelg').focus();
 }
 
 /**
@@ -14491,6 +14663,7 @@ function sletBlokFraMenu(linje) {
 
   n.body = ny;
   editor.aabenBlok = null;
+  nulstilBlokValg();
   markerBeskidt();
   tegnKrop();
   toast('Block deleted.', {
@@ -14499,6 +14672,7 @@ function sletBlokFraMenu(linje) {
       if (!editor.note || editor.note.id !== n.id) return;
       editor.note.body = foer;
       editor.aabenBlok = null;
+      nulstilBlokValg();
       markerBeskidt();
       tegnKrop();
     },
@@ -14508,6 +14682,325 @@ function sletBlokFraMenu(linje) {
 // Ruller siden, står menuen det forkerte sted - så er det bedre, den går væk.
 // Samme valg som markeringsknappen (F16).
 window.addEventListener('scroll', lukBlokMenu, { passive: true });
+
+/* ==================================== flere blokke ad gangen (F36) ======
+ *
+ * »Kan du lave saa man kan markere flere elementer i en note via ctrl+klik
+ * saa man fx kan kopier flere elementer paa en gang? Man maa gerne kunne
+ * bruge delete og send to doda funktionen« (Andreas, 2026-09-20).
+ *
+ * ── Samme gestus som traeet, og det er ikke pynt ─────────────────────────
+ *
+ * F26 gav sidebaren ⌘/Ctrl-klik, og reglen staar i `docs/regler/flade.md`:
+ * **⌘-klik VAELGER.** Den regel maa ikke betyde noget andet 30 px laengere
+ * inde i vinduet, saa markeringen her er bygget over F26's: et Set uden for
+ * optegningen, shift for et spaend, et baand der siger hvor mange og hvad man
+ * kan goere - og Escape som vejen ud.
+ *
+ * Prisen er ogsaa den samme: naar foerst noget er markeret, VAELGER et
+ * almindeligt klik til og fra i stedet for at aabne blokken. Det er
+ * bevidst - ellers kunne man kun tilfoeje med to haender - og det er derfor,
+ * baandet har et »Clear«, og Escape virker uanset hvor man staar.
+ *
+ * ── Markeringen er LINJENUMRE, og derfor doer den ved hver aendring ──────
+ *
+ * En blok kendes paa `data-blok`: linjenummeret paa dens foerste linje. I
+ * samme oejeblik teksten flytter sig, er hvert eneste af de numre foraeldet -
+ * det er praecis den grund, `fuldfoerTraek` tegner HELE noten om. Markeringen
+ * ryddes derfor, saa snart noget er slettet, flyttet eller skrevet. Der er
+ * ingen halv tilstand at komme galt afsted med.
+ *
+ * Og den hoerer til ÉN note: `blokValg.noteId` gaelder kun, saa laenge den
+ * note staar aaben, saa et fane- eller noteskift behoever ikke at rydde
+ * noget. En markering, der overlevede et noteskift, ville pege paa linjer i
+ * en helt anden tekst.
+ *
+ * ── Touch har faaet en doer, og det er nyt ──────────────────────────────
+ *
+ * F26's aabne ende var, at en telefon ikke har en ⌘-tast, saa markeringen
+ * slet ikke kunne STARTES dér. Her var der allerede en menu paa haandtaget,
+ * og den har faaet »Select this block«. Bagefter vaelger et almindeligt tryk
+ * til og fra, praecis som i traeet. **En rute uden en knap er ikke en
+ * funktion.**
+ */
+
+const blokValg = { noteId: null, linjer: new Set(), sidst: null };
+
+/** Er der en blokmarkering i gang i DEN note, der staar aaben? */
+function harBlokValg() {
+  return !!(editor.note && blokValg.noteId === editor.note.id && blokValg.linjer.size);
+}
+
+/**
+ * Rydder markeringen UDEN at tegne noget.
+ *
+ * Findes for sig, fordi den kaldes fra steder, der tegner alligevel
+ * (`aabnBlok`, en sletning, et traek). Tegnede den selv, ville noten blive
+ * tegnet to gange - og i `aabnBlok`s tilfaelde gennem `tegnKrop` igen.
+ *
+ * @returns {boolean} sandt, hvis der faktisk stod noget markeret
+ */
+function nulstilBlokValg() {
+  const havde = blokValg.linjer.size > 0;
+  blokValg.linjer.clear();
+  blokValg.sidst = null;
+  blokValg.noteId = null;
+  return havde;
+}
+
+/** Rydder markeringen OG tegner noten, saa baand og farver forsvinder. */
+function ryddBlokValg() {
+  if (nulstilBlokValg()) tegnKrop();
+}
+
+/** Blokkenes foerste linjer i notens egen raekkefoelge - markeringens akse. */
+function blokLinjer() {
+  return editor.note ? saguMarkdown.blokke(editor.note.body).map((b) => b.fra) : [];
+}
+
+/**
+ * Slaar én blok til eller fra.
+ *
+ * `medShift` tager spaendet fra den sidst markerede, som i enhver anden
+ * liste. Raekkefoelgen er NOTENS - `blokke()` og ikke DOM'en - saa et spaend
+ * betyder det samme, uanset om noten er tegnet om siden sidst.
+ */
+function skiftBlokValgt(fra, medShift) {
+  if (!editor.note) return;
+  // Et skift af note nulstiller: numrene herunder er linjer i DEN tekst.
+  if (blokValg.noteId !== editor.note.id) nulstilBlokValg();
+  blokValg.noteId = editor.note.id;
+
+  const alle = blokLinjer();
+  if (medShift && blokValg.sidst !== null
+      && alle.includes(blokValg.sidst) && alle.includes(fra)) {
+    const a = alle.indexOf(blokValg.sidst);
+    const b = alle.indexOf(fra);
+    for (const l of alle.slice(Math.min(a, b), Math.max(a, b) + 1)) blokValg.linjer.add(l);
+  } else if (blokValg.linjer.has(fra)) {
+    blokValg.linjer.delete(fra);
+  } else {
+    blokValg.linjer.add(fra);
+  }
+  blokValg.sidst = fra;
+
+  /*
+   * En aaben blok og en markering kan ikke staa samtidig.
+   *
+   * Feltet har intet `data-blok` - det er netop det, der goer det til den
+   * aabne blok - saa det kan hverken markeres eller faa en farve. Stod de to
+   * tilstande sammen, ville baandets »Delete« slette blokke under et felt,
+   * man stod og skrev i.
+   */
+  editor.aabenBlok = null;
+  tegnKrop();
+}
+
+/**
+ * Klikket, der markerer - hvis det da er ét.
+ *
+ * Kaldes fra tre steder, fordi tre ting i noten standser deres egen
+ * haendelse, foer den naar kroppen: billedet (lightboxen), tjekboksen og
+ * kroppens egen delegerede handler. Vagten mod betjeningselementerne staar
+ * HER og ikke ved kaldstederne, saa der er ét svar paa »er det her et
+ * markerings-klik« - ellers ville et tryk paa traekhaandtaget rydde
+ * markeringen fra det ene kaldsted og ikke fra det andet.
+ *
+ * @returns {boolean} sandt, hvis klikket blev brugt (og altsaa er opbrugt)
+ */
+function blokValgKlik(e) {
+  if (!editor.note) return false;
+  // Betjening er ikke tekst: haandtaget, dets menu, indsaetningslinjen, det
+  // aabne felt, »Add a block« og ethvert link passer sig selv.
+  if (e.target.closest
+      && e.target.closest('.blok-greb, .blok-menu, .blok-indsaet, .blok-redigering, .ny-blok, a')) {
+    return false;
+  }
+
+  const el = e.target.closest('[data-blok]');
+  const mod = (e.metaKey || e.ctrlKey || e.shiftKey) && !e.altKey;
+  const brug = () => { e.preventDefault(); e.stopPropagation(); };
+
+  if (mod && el) {
+    brug();
+    skiftBlokValgt(Number(el.dataset.blok), e.shiftKey);
+    return true;
+  }
+  if (!harBlokValg()) return false;
+
+  // Markeringen er i gang: et almindeligt klik vaelger til og fra ...
+  if (el) {
+    brug();
+    skiftBlokValgt(Number(el.dataset.blok), false);
+    return true;
+  }
+  // ... og et klik ved siden af slipper én fri. Samme svar som Escape, for
+  // den, der ikke ved, at Escape er svaret.
+  brug();
+  ryddBlokValg();
+  return true;
+}
+
+/**
+ * Farver de markerede blokke. Kaldes efter hver optegning af kroppen.
+ *
+ * Haandtaget faar sin egen klasse og ikke bare en CSS-selektor paa naboen:
+ * de seks prikker ligger som soeskende til blokkene og ikke inde i dem (de
+ * tegnes UDEN OM markdown'en, se `tegnGreb`), saa CSS kan ikke spoerge om
+ * blokkens tilstand derfra.
+ */
+function markerValgteBlokke(host) {
+  if (!host) return;
+  const paa = harBlokValg();
+  const valgt = (nr) => paa && blokValg.linjer.has(Number(nr));
+  host.querySelectorAll('[data-blok]').forEach((el) => {
+    el.classList.toggle('blok-valgt', valgt(el.dataset.blok));
+  });
+  host.querySelectorAll('.blok-greb').forEach((g) => {
+    g.classList.toggle('greb-valgt', valgt(g.dataset.greb));
+  });
+}
+
+/* ------------------------------------------------------- baandet over noten
+ *
+ * Det staar OVER kroppen og ikke som en svaevende bjaelke: en bjaelke hen over
+ * noten ville daekke netop de blokke, man er ved at vaelge. Samme valg som
+ * traeets baand (F26), og den samme `.valgtbaand` tegner dem begge.
+ *
+ * Ét sted tegner OG binder - reglen fra `docs/regler/flade.md`. Baandet
+ * findes ikke i `sideNote()`s markup, saa der er ingen kopi, der kan komme
+ * til at staa uden klik-handlere efter en optegning.
+ */
+function tegnBlokValgBaand() {
+  const gammel = document.getElementById('blokValgBaand');
+  if (gammel) gammel.remove();
+  const krop = document.getElementById('noteBody');
+  if (!krop || !krop.parentNode || !harBlokValg()) return;
+
+  const n = editor.note;
+  const antal = blokValg.linjer.size;
+  // Et punkt, der ikke kan goere noget, er et loefte, appen ikke holder -
+  // samme regel som blokmenuens »Send to doda« og `maaRette` (F11).
+  const kanRette = maaRette(n);
+  const tilDoda = dodaState.connected;
+
+  const baand = document.createElement('div');
+  baand.className = 'valgtbaand blokvalg-baand';
+  baand.id = 'blokValgBaand';
+  baand.innerHTML = `
+    <span class="valgtbaand-tal">${antal} block${antal === 1 ? '' : 's'} selected</span>
+    <button class="btn ghost" id="bvKopi">${icon('copy', 14)}<span>Copy</span></button>
+    ${tilDoda ? `<button class="btn ghost" id="bvDoda">${icon('tjek', 14)}
+      <span>Send to doda</span></button>` : ''}
+    ${kanRette ? `<button class="btn ghost danger" id="bvSlet">${icon('trash', 14)}
+      <span>Delete</span></button>` : ''}
+    <button class="linkbtn" id="bvRyd">Clear</button>`;
+  krop.parentNode.insertBefore(baand, krop);
+
+  baand.querySelector('#bvKopi').addEventListener('click', () => kopierValgteBlokke());
+  const doda = baand.querySelector('#bvDoda');
+  if (doda) doda.addEventListener('click', () => sendValgteBlokkeTilDoda());
+  const slet = baand.querySelector('#bvSlet');
+  if (slet) slet.addEventListener('click', () => sletValgteBlokke());
+  baand.querySelector('#bvRyd').addEventListener('click', () => ryddBlokValg());
+}
+
+/* ------------------------------------------------------------ handlingerne */
+
+/** De markerede blokke som markdown - i notens raekkefoelge, ikke klikkenes. */
+function valgteBlokkeSomMarkdown() {
+  return harBlokValg()
+    ? saguMarkdown.blokkeSomMarkdown(editor.note.body, [...blokValg.linjer]) : '';
+}
+
+/**
+ * Kopierer de markerede blokke - MED billederne, som hele noten kan det.
+ *
+ * Det er den samme `kopierMarkdown()`, knappen i vaerktoejsraekken bruger, saa
+ * to blokke og en hel note ikke kan lande forskelligt paa udklipsholderen.
+ */
+function kopierValgteBlokke() {
+  const md = valgteBlokkeSomMarkdown();
+  if (!md.trim()) { toast('Nothing to copy.'); return; }
+  const antal = blokValg.linjer.size;
+  kopierMarkdown(md, `${antal} block${antal === 1 ? '' : 's'}`);
+}
+
+/**
+ * Sletter dem alle - og tilbyder at fortryde.
+ *
+ * Rækkefølgen ligger i `saguMarkdown.sletBlokke()`: nedefra og op, fordi
+ * hvert linjenummer under en sletning rykker sig. Den gamle tekst gemmes FOER
+ * der roeres ved noget, praecis som `sletBlokFraMenu` - bygger man den op
+ * igen bagefter, faar »fortryd« en tekst, der LIGNER den gamle.
+ */
+function sletValgteBlokke() {
+  const n = editor.note;
+  if (!n || !maaRette(n) || !harBlokValg()) return;
+  const antal = blokValg.linjer.size;
+  const foer = n.body;
+  const ny = saguMarkdown.sletBlokke(foer, [...blokValg.linjer]);
+  if (ny === foer) return;
+
+  n.body = ny;
+  nulstilBlokValg();
+  editor.aabenBlok = null;
+  markerBeskidt();
+  tegnKrop();
+  toast(`${antal} block${antal === 1 ? '' : 's'} deleted.`, {
+    label: 'Undo',
+    run: () => {
+      if (!editor.note || editor.note.id !== n.id) return;
+      editor.note.body = foer;
+      nulstilBlokValg();
+      editor.aabenBlok = null;
+      markerBeskidt();
+      tegnKrop();
+    },
+  });
+}
+
+/**
+ * Hver markeret blok bliver til sin egen opgave i doda.
+ *
+ * Blokkene sendes ÉN ad gangen gennem `sendOpgaveTilDoda()` - der er ingen
+ * bulk-rute, og en ville betyde to steder, der kan svare forskelligt paa
+ * »hvad er en opgave«. Til gengaeld sendes de TAVST, saa fem blokke ikke
+ * bliver til fem beskeder oven i hinanden; kvitteringen kommer til sidst og
+ * siger, hvor mange der naaede frem.
+ *
+ * En blok uden tekst springes over. `blokSomLinje` giver tom streng for en
+ * streg og for et billede alene, og en opgave, der hedder ingenting, er ikke
+ * en opgave.
+ */
+async function sendValgteBlokkeTilDoda() {
+  const n = editor.note;
+  if (!n || !harBlokValg()) return;
+  const tekster = saguMarkdown.blokke(n.body)
+    .filter((b) => blokValg.linjer.has(b.fra))
+    .map((b) => saguMarkdown.blokSomLinje(n.body, b.fra))
+    .filter((t) => t.length >= 2);
+  if (!tekster.length) {
+    toast('None of the selected blocks have any text to send.');
+    return;
+  }
+  const sprunget = blokValg.linjer.size - tekster.length;
+  if (tekster.some((t) => t.length > 500)) {
+    toast('Some were long — the first 500 characters became the task.');
+  }
+
+  let sendt = 0;
+  for (const t of tekster) {
+    // Sekventielt med vilje: falder den tredje, skal de to foerste stadig
+    // vaere sendt, og brugeren skal have at vide hvor langt det naaede.
+    // eslint-disable-next-line no-await-in-loop
+    if (!await sendOpgaveTilDoda(t.slice(0, 500), true)) break;
+    sendt += 1;
+  }
+  if (!sendt) return;                       // fejlen er allerede sagt
+  toast(`${sendt} task${sendt === 1 ? '' : 's'} sent to doda.`
+    + (sprunget ? ` ${sprunget} had no text.` : ''));
+}
 
 /* ============================== hjælp til at skrive =====================
  *
@@ -14804,21 +15297,36 @@ function skrivToFlavours(ren, html) {
  * skrev - samme regel som `kopierBillede()`.
  */
 function kopierNoten(n) {
-  const md = noteSomMarkdown(n);
+  kopierMarkdown(noteSomMarkdown(n), 'Note');
+}
+
+/**
+ * Markdown paa udklipsholderen, med billederne baaret med. ÉT sted.
+ *
+ * Hele noten (knappen ovenfor) og et udvalg af blokke (F36) gaar gennem den
+ * samme funktion, saa de to aldrig kan lande forskelligt paa
+ * udklipsholderen - eller sige hver sin ting, naar et billede var for stort.
+ *
+ * @param {string} hvad hvad der blev kopieret, som det staar i kvitteringen
+ *   (»Note«, »3 blocks«). Det er en BESKED til brugeren, saa den er engelsk.
+ */
+function kopierMarkdown(md, hvad) {
   const antal = saguMarkdown.billederIMarkdown(md).length;
   if (antal) toast(`Fetching ${antal} image${antal === 1 ? '' : 's'}…`);
 
   medIndlejredeBilleder(md).then((r) => {
     if (!skrivToFlavours(md, r.html)) {
-      toast('Could not copy the note here. Use “Show as markdown” and Select all.');
+      toast(`Could not copy ${hvad.toLowerCase()} here. `
+        + 'Use “Show as markdown” and Select all.');
       return;
     }
     if (r.sprunget) {
-      toast(`Note copied with ${r.ialt - r.sprunget} of ${r.ialt} images — `
+      toast(`${hvad} copied with ${r.ialt - r.sprunget} of ${r.ialt} images — `
         + 'the rest were too large to carry.');
     } else {
       const med = antal - r.sprunget;
-      toast(antal ? `Note copied with ${med} image${med === 1 ? '' : 's'}.` : 'Note copied.');
+      toast(antal ? `${hvad} copied with ${med} image${med === 1 ? '' : 's'}.`
+        : `${hvad} copied.`);
     }
   }).catch((ex) => toast(udklipsFejl(ex)));
 }

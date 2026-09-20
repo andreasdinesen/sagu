@@ -601,22 +601,30 @@ async function vaelgRaekke(i) {
  * samme fejl. Er en note aaben, faar opgaven et link tilbage til den; ellers
  * er det en fritstaaende opgave, og det er ogsaa i orden - man staar ikke
  * altid i en note, naar noget falder én ind.
+ *
+ * `stille` slaar KVITTERINGEN fra, ikke fejlen. Den bruges, naar flere
+ * blokke sendes i traek (F36): fem beskeder oven i hinanden er ikke fem
+ * kvitteringer, det er stoej, og afsenderen siger selv hvor mange der naaede
+ * frem. Gaar noget galt, skal beskeden derimod frem med det samme.
+ *
+ * @returns {Promise<boolean>} sandt, hvis opgaven naaede frem
  */
-async function sendOpgaveTilDoda(tekst) {
+async function sendOpgaveTilDoda(tekst, stille) {
   const note = state.view === 'note' && editor.note ? editor.note : null;
   try {
     if (!note) {
       // Uden en note er der ingen note-rute at gaa igennem. Broen har en
       // fritstaaende doer, saa markoeren virker fra enhver skaerm.
       const r = await api('POST', '/api/v1/doda/tasks', { text: tekst });
-      toast(r.message || 'Sent to doda.');
-      return;
+      if (!stille) toast(r.message || 'Sent to doda.');
+      return true;
     }
     const r = await api('POST', `/api/v1/notes/${note.id}/tasks`, { text: tekst });
     dodaState.opgaver = r.tasks || [];
     dodaState.noteId = note.id;
     tegnDodaOpgaver();
-    toast(r.message || 'Sent to doda.');
+    if (!stille) toast(r.message || 'Sent to doda.');
+    return true;
   } catch (ex) {
     /*
      * En fejlet forbindelse er ikke en fejlet gemning.
@@ -627,9 +635,10 @@ async function sendOpgaveTilDoda(tekst) {
      */
     if (ex && ex.code === 'not_connected') {
       toast('doda is not connected yet.', { label: 'Connect', run: () => gaaTil('settings') });
-      return;
+      return false;
     }
     toast(ex && ex.message ? ex.message : 'Could not reach doda.');
+    return false;
   }
 }
 

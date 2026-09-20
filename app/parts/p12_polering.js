@@ -119,8 +119,9 @@ const GENVEJE = [
     // Et klik, ikke en tast - men den skal STAA paa listen, ellers findes
     // fanerne kun for den, der har laest koden.
     tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`,
-    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree it selects — use '
-      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click there`,
+    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree, and on the '
+      + 'blocks of a note, it selects instead — use '
+      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click in the tree to open a tab`,
     kunVist: true,
   },
   {
@@ -161,11 +162,24 @@ document.addEventListener('keydown', (e) => {
    * FOER alt andet, og uden at spoerge om skrivefelter: staar man i
    * soegefeltet med tre noter markeret, er Escape stadig det, man trykker.
    */
-  if (e.key === 'Escape' && typeof harValgte === 'function' && harValgte()
-      && !document.querySelector('.modal')) {
-    e.preventDefault();
-    ryddValgte();
-    return;
+  if (e.key === 'Escape' && !document.querySelector('.modal')) {
+    /*
+     * Blokmarkeringen i noten (F36) ryddes FOER traeets.
+     *
+     * Er begge i gang, er det den, man staar i, man mener - og det er
+     * blokkene: traeets markering bliver siddende, mens man arbejder i en
+     * note, netop fordi den skal overleve en optegning.
+     */
+    if (typeof harBlokValg === 'function' && harBlokValg()) {
+      e.preventDefault();
+      ryddBlokValg();
+      return;
+    }
+    if (typeof harValgte === 'function' && harValgte()) {
+      e.preventDefault();
+      ryddValgte();
+      return;
+    }
   }
   const passer = (x) => x.tast === e.key || (x.tast.length === 1 && x.tast === e.key.toLowerCase());
 

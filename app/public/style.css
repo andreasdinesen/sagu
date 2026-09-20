@@ -1940,7 +1940,14 @@ body.fokus .topbar { display: none; }
         et tomt kommentarfelt på et stykke papir er ingenting værd. */
   .note-tools, .blok-greb, .inlinekode-kopi, .tilfoej, .krummer,
   .filer, .dodaopgaver, .kommentarer, .backlinks, .delingsbaand,
-  .blok-menu, .syntakspanel { display: none !important; }
+  .blok-menu, .syntakspanel, .valgtbaand { display: none !important; }
+
+  /* En markering er noget, man er i gang med — ikke noget, der hører til
+     papiret. Farven ville blive til en grå kasse om et tilfældigt afsnit. */
+  #noteBody [data-blok].blok-valgt {
+    background: none !important;
+    box-shadow: none !important;
+  }
 
   /* 2. Titlen er et `<input>`. Uden det her printer den som et FELT med kant
         og fast bredde — og et tekstfelt øverst på et dokument ser ud som en
@@ -2855,6 +2862,34 @@ body.traekker { cursor: grabbing; user-select: none; }
 @media (pointer: coarse) {
   .blok-greb { opacity: .4; }
 }
+
+/* ------------------------------------------- markerede blokke (F36)
+ *
+ * Farven lægges UD over blokkens kant med en `box-shadow`, der er sin egen
+ * baggrund. En ren `background` ville klistre til teksten — blokkene har
+ * ingen indvendig luft — og `padding` kan ikke bruges: en liste har sin egen
+ * venstremargen til punkttegnene, og den ville flytte sig.
+ *
+ * Og håndtaget ud for en markeret blok står fremme i accentfarven. På en
+ * telefon findes hover ikke, så prikkerne er det eneste, der kan vise, hvor
+ * markeringen begyndte, når man har rullet. */
+#noteBody [data-blok].blok-valgt {
+  background: var(--accent-soft);
+  border-radius: 4px;
+  /* Stregen i venstre kant er den samme, en markeret række i træet har
+     (`.tree-row.valgt`) — i det lyse tema er `--accent-soft` alene for spagt
+     til at sige »markeret«. Den er `inset`, så den ikke flytter en eneste
+     bogstav. */
+  box-shadow: 0 0 0 4px var(--accent-soft), inset 2px 0 0 var(--accent-text);
+}
+.blok-greb.greb-valgt { opacity: 1; }
+.blok-greb.greb-valgt span { background: var(--accent-text); }
+
+/* Båndet over noten. `.valgtbaand` tegner både denne og træets (F26) — ét
+   udseende for »der er noget markeret«, hvor end man har markeret det. */
+.blokvalg-baand { margin: 0 0 12px; }
+.blokvalg-baand .btn { display: inline-flex; align-items: center; gap: 6px; }
+.blokvalg-baand .btn svg { flex: none; }
 
 /* Under trækket: en linje dér, hvor blokken lander. */
 .blok-indsaet {

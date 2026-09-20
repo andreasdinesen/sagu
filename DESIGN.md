@@ -3966,3 +3966,111 @@ Begge så rigtige ud i koden:
 | Tests | **818 grønne** (+11 i `tests/markoerer.test.mjs`) |
 | Hver vagt set fejle | `$` tilbage i mønsteret → to røde · `plukBog` efter søgetolken → én rød |
 | I browseren | forslag på `/dri`, `/TDCE` og `#dri` · udfyldning af et navn med mellemrum · note oprettet i »Drift« med mærket `drift` · `/xyzzy` lader markøren stå |
+
+---
+
+## 44 · F36 · Markér flere blokke i en note (2026-09-20)
+
+> »Kan du lave saa man kan markere flere elementer i en note via ctrl+klik
+> saa man fx kan kopier flere elementer paa en gang? Man maa gerne kunne
+> bruge delete og send to doda funktionen« (Andreas, 2026-09-20).
+
+### Gestussen er den, træet allerede har
+
+F26 gav sidebaren ⌘/Ctrl-klik, og reglen står i `docs/regler/flade.md`:
+**⌘-klik VÆLGER.** Den regel må ikke betyde noget andet 30 px længere inde i
+vinduet, så markeringen af blokke er bygget over F26's, stykke for stykke:
+
+| F26 (træet) | F36 (noten) |
+|---|---|
+| `valgte` — et Set uden for optegningen | `blokValg.linjer` — et Set uden for optegningen |
+| ⌘/Ctrl-klik slår til og fra, shift tager et spænd | det samme |
+| er noget markeret, **vælger** et almindeligt klik | det samme |
+| bånd over listen: *N selected*, Move…, Clear | bånd over noten: *N blocks selected*, Copy, Send to doda, Delete, Clear |
+| Escape rydder | Escape rydder — og **blokkene før træet**, for står man i en note, er det dem, man mener |
+
+Prisen er også den samme: når først noget er markeret, åbner et almindeligt
+klik ikke blokken. Det er bevidst — ellers kunne man kun føje til med to
+hænder — og det er derfor, båndet har et »Clear«, og Escape virker, uanset
+hvor markøren står.
+
+### Markeringen er linjenumre, og derfor dør den ved hver ændring
+
+En blok kendes på `data-blok`: linjenummeret på dens første linje. I samme
+øjeblik teksten flytter sig, er hvert eneste af de numre forældet — det er
+præcis den grund, `fuldfoerTraek` tegner **hele** noten om. `nulstilBlokValg()`
+kaldes derfor fra hvert sted, `body` skrives: et træk, en sletning fra menuen,
+sletningen af de markerede selv, og at åbne en blok. Der er ingen halv
+tilstand at komme galt afsted med.
+
+Og markeringen hører til **én** note: `blokValg.noteId` gælder kun, så længe
+den note står åben, så et fane- eller noteskift behøver ikke at rydde noget.
+En markering, der overlevede et noteskift, ville pege på linjer i en anden
+tekst.
+
+### To rene tekstoperationer, ikke en løkke i fladen
+
+Begge er lagt i `app/shared/markdown.js` ved siden af `flytBlok` og
+`sletBlok`, hvor de kan prøves uden en browser:
+
+- **`sletBlokke(md, [fra…])`** sorterer **faldende** og sletter nedefra og op.
+  Oppefra og ned rykker hvert linjenummer *under* den første sletning op, og
+  de næste rammer naboen: med tre afsnit og et valg af første og tredje ryger
+  første og **andet**. Dubletter fjernes af samme grund.
+- **`blokkeSomMarkdown(md, [fra…])`** giver de valgte blokkes **rå** kilde i
+  **notens** rækkefølge — ikke klikkenes — skilt af en tom linje, som markdown
+  selv gør mellem afsnit.
+
+Kopieringen går gennem den samme `kopierMarkdown()`, som værktøjsrækkens
+»kopiér hele noten« bruger, så billederne kommer med på nøjagtig samme vilkår
+(`data:` i `text/html`, ren markdown i `text/plain`, og det samme loft). To
+blokke og en hel note kan ikke lande forskelligt på udklipsholderen.
+
+`sendOpgaveTilDoda()` har fået et `stille`-flag. Fem blokke må ikke blive til
+fem kvitteringer oven i hinanden — men en **fejl** skal stadig frem med det
+samme, og løkken stopper, hvor det gik galt, og siger hvor langt den nåede.
+
+### Touch har fået en dør, og det er nyt
+
+F26's åbne ende var, at en telefon ikke har en ⌘-tast, så markeringen slet
+ikke kunne **startes** der. Her lå der allerede en menu på håndtaget, og den
+har fået **»Select this block«** øverst. Bagefter vælger et almindeligt tryk
+til og fra, præcis som i træet. *En rute uden en knap er ikke en funktion.*
+
+### Fundet undervejs: én binding var lagt på ved hver optegning
+
+Andet ⌘-klik gjorde ingenting. `bindKrop()` lagde sin delegerede handler på
+`#noteBody` ved **hver** `tegnKrop()` — kroppens `innerHTML` skiftes ud, men
+elementet selv overlever — så efter *n* optegninger kørte handleren *n* gange
+på ét klik. `stopPropagation()` hjælper ikke: den standser andre **elementer**,
+ikke andre handlere på det samme.
+
+Fejlen havde ligget der siden F13 og var usynlig, fordi et klik dengang betød
+»åbn den her blok«, og at åbne den samme blok fem gange er det samme som at
+åbne den én gang. En markering er et **skift**, og to kald i træk ophæver
+hinanden.
+
+> **En handler, der ikke kan tåle at blive kaldt to gange, afslører en
+> binding, der er lagt på to gange.**
+
+Værten mærkes nu med `data-bundet`, og fordi `sideNote()` skriver hele kortet
+om for hver note, falder mærket af sig selv.
+
+### Hvorfor tjekboksen og billedet spørger om markeringen selv
+
+De standser begge deres egen hændelse og når derfor aldrig kroppens
+delegerede handler. Uden et kald til `blokValgKlik(e)` i hver af dem kunne en
+tjekliste eller et billede ikke markeres — og et ⌘-klik på en tjekboks ville
+sætte et flueben i stedet. Vagten mod betjeningselementerne (håndtaget,
+menuen, det åbne felt, »Add a block«, ethvert link) står **inde i**
+`blokValgKlik` og ikke ved kaldstederne, så der er ét svar på »er det her et
+markerings-klik«.
+
+### Målt
+
+| | |
+|---|---|
+| Tests | **+23** i `tests/blokvalg.test.mjs` — 810 grønne i alt |
+| Sabotager set røde | stigende sortering i `sletBlokke` → to røde · `blokValgKlik` fjernet fra `bindTjek` → én rød · `nulstilBlokValg` fjernet fra `fuldfoerTraek` → én rød |
+| Fundet af funktionen selv | en `---` blev til en opgave, der hed **»---«**. `blokSomLinje` fjerner markører *foran* en tekst, men stregen ER blokken. Rettet i `blokSomLinje` og ikke i F36's filter, for fejlen gjaldt også blokmenuens »Send to doda« for én blok ad gangen |
+| I browseren | ⌘-klik markerer · shift tager spændet · almindeligt klik vælger fra · Escape rydder · ⌘ på håndtaget markerer · menuens »Select this block« virker · Delete fjerner præcis de tre og **Undo giver teksten tilbage byte for byte** · ⌘-klik på en tjekboks markerer uden at sætte flueben, et almindeligt klik sætter det · et klik uden markering åbner stadig blokken · begge temaer |

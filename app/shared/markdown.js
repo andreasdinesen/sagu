@@ -823,6 +823,17 @@
     const tekst = String(md == null ? '' : md);
     const b = blokke(tekst).find((x) => x.fra === fra);
     if (!b) return '';
+    /*
+     * En STREG har ingen tekst.
+     *
+     * Markoerererne nedenfor fjerner overskriftens `#`, citatets `>` og
+     * punktets `-`, men `---` er ikke en markoer foran noget - det ER
+     * blokken. Uden den her linje blev en streg til en opgave, der hed
+     * »---« (maalt, da F36 sendte tre markerede blokke til doda,
+     * 2026-09-20). Fejlen fandtes ogsaa for én blok ad gangen: menuens
+     * »Send to doda« stod frem paa en streg, fordi `---` er tre tegn.
+     */
+    if (b.slags === 'hr') return '';
     return tekst.split('\n').slice(b.fra, b.til + 1)
       .map((l) => String(l)
         .replace(/^\s*#{1,6}\s+/, '')                              // overskrift
@@ -903,6 +914,60 @@
   }
 
   /**
+   * Fjerner FLERE blokke paa én gang (F36).
+   *
+   * ── Hvorfor den findes, naar `sletBlok` allerede er der ───────────────
+   *
+   * Fordi rækkefølgen ikke er ligegyldig, og det er den slags, der ser ud
+   * til at virke. `sletBlok` slaar blokken op paa dens FOERSTE LINJENUMMER i
+   * den tekst, den faar - og saa snart én blok er fjernet, er hvert eneste
+   * linjenummer UNDER den rykket op. Sletter man oppefra og ned, peger det
+   * naeste tal derfor paa noget andet, end brugeren markerede: enten en
+   * nabo-blok, eller ingenting.
+   *
+   * Nedefra og op roerer hver sletning kun linjer EFTER de numre, der er
+   * tilbage. Derfor sorteres der faldende, og derfor er den her funktion et
+   * sted og ikke en `for`-loekke i fladen.
+   *
+   * Dubletter fjernes: de samme to tal ville ellers slette to forskellige
+   * blokke, fordi den anden omgang rammer den, der rykkede op i stedet.
+   *
+   * @param {number[]} fraListe blokkenes foerste linjer (`blokke()[i].fra`)
+   */
+  function sletBlokke(md, fraListe) {
+    const numre = [...new Set((fraListe || []).map(Number))]
+      .filter((n) => Number.isInteger(n) && n >= 0)
+      .sort((a, b) => b - a);
+    let ud = String(md == null ? '' : md);
+    for (const fra of numre) ud = sletBlok(ud, fra);
+    return ud;
+  }
+
+  /**
+   * De valgte blokke som en markdown-tekst for sig (F36).
+   *
+   * Raekkefoelgen er NOTENS, ikke den, man klikkede i: markerer man foerst
+   * det nederste afsnit og saa det oeverste, vil man have dem i den orden,
+   * de staar paa skaermen - alt andet ville vaere en tekst, ingen har set.
+   *
+   * Blokkene skilles af en tom linje, praecis som markdown selv goer. Uden
+   * den ville to afsnit smelte sammen til ét, naar teksten saettes ind igen.
+   *
+   * @param {number[]} fraListe blokkenes foerste linjer (`blokke()[i].fra`)
+   */
+  function blokkeSomMarkdown(md, fraListe) {
+    const tekst = String(md == null ? '' : md);
+    const vil = new Set((fraListe || []).map(Number));
+    // Samme normalisering som `blokke()` selv laver - ellers passer
+    // linjenumrene ikke paa en tekst med CRLF.
+    const linjer = tekst.replace(/\r\n?/g, '\n').split('\n');
+    return blokke(tekst)
+      .filter((b) => vil.has(b.fra))
+      .map((b) => linjer.slice(b.fra, b.til + 1).join('\n'))
+      .join('\n\n');
+  }
+
+  /**
    * De billeder, noten faktisk viser.
    *
    * Bruges naar en note skal kopieres UD af Sagu: hver `sagu:`-adresse skal
@@ -933,6 +998,7 @@
   }
 
   return { render, blokke, inline, tilTekst, foersteOverskrift, wikiLinks,
-    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, blokSomLinje,
+    slug, esc, attr, sikkerUrl, saetTjek, flytBlok, sletBlok, sletBlokke,
+    blokkeSomMarkdown, blokSomLinje,
     billederIMarkdown, pentNavn, pentBrugernavn, SYNTAKS };
 }));

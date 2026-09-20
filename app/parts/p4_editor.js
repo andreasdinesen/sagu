@@ -1703,6 +1703,9 @@ function tegnKrop() {
     // To editorer, ét valg. Se `heleNoten()`.
     if (heleNoten()) tegnHeleNoten(host, n);
     else tegnMedAabenBlok(host, n);
+    // Et aabent felt og en markering kan ikke staa samtidig (F36), men
+    // baandet skal tegnes VAEK, naar man gaar fra det ene til det andet.
+    tegnBlokValgBaand();
     return;
   }
 
@@ -1726,6 +1729,11 @@ function tegnKrop() {
   }
   bindKrop();
   tegnGreb(host);
+  // Markeringen lever uden for optegningen, saa den skal farves paa igen -
+  // ellers ville en optegning (et flueben, et billede der lander) se ud, som
+  // om markeringen var forsvundet (F36).
+  markerValgteBlokke(host);
+  tegnBlokValgBaand();
   byggToc();
 }
 
@@ -1785,10 +1793,44 @@ function bindKrop() {
   const host = document.getElementById('noteBody');
   if (!host) return;
 
-  // ÉN delegeret handler paa kroppen. Ikke `{once:true}`: den ville fjerne sig
-  // selv efter foerste klik, saa man kunne aabne én blok pr. optegning og
-  // derefter ingenting - og fejlen ville ligne "editoren gaar i staa".
+  /*
+   * ÉN delegeret handler paa kroppen - og kun én. Ikke `{once:true}`: den
+   * ville fjerne sig selv efter foerste klik, saa man kunne aabne én blok pr.
+   * optegning og derefter ingenting, og fejlen ville ligne »editoren gaar i
+   * staa«.
+   *
+   * ── Hvorfor der staar et maerke paa vaerten ──────────────────────────────
+   *
+   * `tegnKrop()` skriver kroppens `innerHTML` om, men `#noteBody` SELV
+   * overlever - kun dens boern skiftes ud. Handleren blev derfor lagt paa
+   * igen ved hver optegning, og efter n optegninger koerte den n gange paa ét
+   * klik. `stopPropagation()` hjaelper ikke: den standser andre ELEMENTER,
+   * ikke andre handlere paa det samme.
+   *
+   * Det var usynligt, saa laenge et klik betoed »aabn den her blok« - at
+   * aabne den samme blok fem gange er det samme som at aabne den én gang.
+   * F36's markering er et SKIFT, og to kald i traek ophaever hinanden: anden
+   * gang man ⌘-klikkede, skete der ingenting (maalt i browseren,
+   * 2026-09-20). **En handler, der ikke kan taale at blive kaldt to gange,
+   * afsloerer en binding, der er lagt paa to gange.**
+   *
+   * Vaerten er ny for hver note (`sideNote()` skriver hele kortet), saa
+   * maerket foelger med i faldet af sig selv.
+   */
+  if (host.dataset.bundet) return;
+  host.dataset.bundet = '1';
+
   host.addEventListener('click', (e) => {
+    /*
+     * **Markeringen af flere blokke spoerges FOERST** (F36).
+     *
+     * Foer tekstmarkeringen nedenfor, med vilje: et ⌘-klik i et afsnit, hvor
+     * der ogsaa stod noget markeret tekst, ville ellers falde paa den vagt og
+     * ikke markere noget. Vagten mod betjeningselementerne staar inde i
+     * `blokValgKlik` selv, saa haandtaget og menuen er upaavirkede.
+     */
+    if (blokValgKlik(e)) return;
+
     /*
      * **Har man MARKERET noget, aabner klikket ikke redigeringen.**
      *
@@ -3131,6 +3173,10 @@ function aabnBlok(fra) {
   // Hele noten er ikke en tilstand, man klikker sig ind i en enkelt blok fra
   // - naar en blok aabnes ved et klik, er omfanget blokken.
   editor.raaNote = false;
+  // At begynde at skrive slutter en markering (F36). De to tilstande kan ikke
+  // staa sammen: det aabne felt har intet `data-blok` og kan hverken markeres
+  // eller slettes af baandet.
+  nulstilBlokValg();
   editor.aabenBlok = fra;
   tegnKrop();
 }
@@ -3149,6 +3195,7 @@ function aabnSidste() {
   if (!b.length) {
     // Tom note: laeg en tom linje ind, saa der er en blok at aabne.
     editor.note.body = '\n';
+    nulstilBlokValg();
     editor.aabenBlok = 0;
     tegnKrop();
     return;
