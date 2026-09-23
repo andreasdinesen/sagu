@@ -1430,6 +1430,7 @@ async function saetNoteMaerker(navne) {
     const d = await api('PATCH', `/api/v1/notes/${n.id}`, { tags: navne });
     n.tags = d.note.tags;
     n.updatedAt = d.note.updatedAt;
+    tegnOpdateret();
     // Listen over ALLE maerker skal med, ellers mangler det nye i
     // autoudfyldningen og i »Tags«-skaermen, til man genindlaeser.
     try { state.tags = (await api('GET', '/api/v1/state')).tags || state.tags; } catch { /* ligegyldigt */ }
@@ -1601,6 +1602,52 @@ function gemMaerke() {
   return '<span class="gem ok">Saved</span>';
 }
 
+/*
+ * »Hvornaar blev noten sidst opdateret?« (Andreas, 2026-09-23).
+ *
+ * Staar i linjen over titlen, til hoejre for broedkrummen - den er noten
+ * OM noten, og dér er der plads. Relativ tid, saa laenge den er det, man
+ * taenker i (»12 min ago«, »yesterday at 14:02«), og derefter en dato.
+ * Det praecise tidspunkt ligger i `title`, for den, der har brug for det.
+ *
+ * Tiden er serverens `updatedAt`, ikke »Saved«-maerkets: en rettelse i et
+ * maerke eller fra en anden enhed taeller ogsaa som en opdatering.
+ */
+function opdateretTekst(sek) {
+  if (!sek) return '';
+  const d = new Date(sek * 1000);
+  const sekSiden = Math.round(Date.now() / 1000 - sek);
+  if (sekSiden < 45) return 'just now';
+  const min = Math.round(sekSiden / 60);
+  if (min < 60) return `${min} min ago`;
+  const kl = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const idag = new Date(); idag.setHours(0, 0, 0, 0);
+  const dagen = new Date(d); dagen.setHours(0, 0, 0, 0);
+  const dage = Math.round((idag - dagen) / 86400000);
+  if (dage === 0) return `today at ${kl}`;
+  if (dage === 1) return `yesterday at ${kl}`;
+  if (dage < 7) return `${dage} days ago`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function opdateretHtml(n) {
+  if (!n || !n.updatedAt) return '';
+  const praecis = new Date(n.updatedAt * 1000).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  return `<span class="note-opdateret meta" id="noteOpdateret"
+    title="Last updated ${esc(praecis)}">Updated ${esc(opdateretTekst(n.updatedAt))}</span>`;
+}
+
+/** Skriver tidspunktet om uden at tegne siden - efter en gemning og hvert halve minut. */
+function tegnOpdateret() {
+  const el = document.getElementById('noteOpdateret');
+  if (!el || !editor.note) return;
+  el.outerHTML = opdateretHtml(editor.note);
+}
+// »3 min ago« maa ikke staa og vaere »just now« i en time.
+setInterval(tegnOpdateret, 30000);
+
 function sideNote() {
   const n = editor.note;
   if (editor.indlaeser || !n) {
@@ -1608,7 +1655,7 @@ function sideNote() {
   }
 
   return `
-    ${broedkrummer(n)}
+    <div class="note-over">${broedkrummer(n)}${opdateretHtml(n)}</div>
     <div class="note-head">
       <button class="note-ikon" id="noteIkon" title="Pick an icon"
         aria-label="Pick an icon">${n.icon ? esc(n.icon) : icon('notes', 20)}</button>
@@ -3407,6 +3454,7 @@ async function gemNu() {
     editor.gemmer = false;
     const m2 = document.getElementById('gemMaerke');
     if (m2) m2.innerHTML = gemMaerke();
+    tegnOpdateret();
   }
 }
 

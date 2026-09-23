@@ -174,7 +174,7 @@ test('body.solo staar paa SAMME regel som body.fokus', () => {
   const i = css.indexOf('body.fokus .sidebar');
   assert.ok(i > -1, 'fokus-reglen findes ikke laengere - ret proeven');
   const regel = css.slice(i, css.indexOf('}', i));
-  for (const del of ['.sidebar', '.navtoggle', '.krummer', '.backlinks']) {
+  for (const del of ['.sidebar', '.navtoggle', '.note-over', '.backlinks']) {
     assert.ok(regel.includes(`body.solo ${del}`),
       `body.solo mangler paa ${del} - de to lister er drevet fra hinanden`);
   }

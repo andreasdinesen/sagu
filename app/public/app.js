@@ -4414,7 +4414,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 81;
+const APP_VERSION = 82;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -9541,6 +9541,7 @@ async function saetNoteMaerker(navne) {
     const d = await api('PATCH', `/api/v1/notes/${n.id}`, { tags: navne });
     n.tags = d.note.tags;
     n.updatedAt = d.note.updatedAt;
+    tegnOpdateret();
     // Listen over ALLE maerker skal med, ellers mangler det nye i
     // autoudfyldningen og i »Tags«-skaermen, til man genindlaeser.
     try { state.tags = (await api('GET', '/api/v1/state')).tags || state.tags; } catch { /* ligegyldigt */ }
@@ -9712,6 +9713,52 @@ function gemMaerke() {
   return '<span class="gem ok">Saved</span>';
 }
 
+/*
+ * »Hvornaar blev noten sidst opdateret?« (Andreas, 2026-09-23).
+ *
+ * Staar i linjen over titlen, til hoejre for broedkrummen - den er noten
+ * OM noten, og dér er der plads. Relativ tid, saa laenge den er det, man
+ * taenker i (»12 min ago«, »yesterday at 14:02«), og derefter en dato.
+ * Det praecise tidspunkt ligger i `title`, for den, der har brug for det.
+ *
+ * Tiden er serverens `updatedAt`, ikke »Saved«-maerkets: en rettelse i et
+ * maerke eller fra en anden enhed taeller ogsaa som en opdatering.
+ */
+function opdateretTekst(sek) {
+  if (!sek) return '';
+  const d = new Date(sek * 1000);
+  const sekSiden = Math.round(Date.now() / 1000 - sek);
+  if (sekSiden < 45) return 'just now';
+  const min = Math.round(sekSiden / 60);
+  if (min < 60) return `${min} min ago`;
+  const kl = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const idag = new Date(); idag.setHours(0, 0, 0, 0);
+  const dagen = new Date(d); dagen.setHours(0, 0, 0, 0);
+  const dage = Math.round((idag - dagen) / 86400000);
+  if (dage === 0) return `today at ${kl}`;
+  if (dage === 1) return `yesterday at ${kl}`;
+  if (dage < 7) return `${dage} days ago`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function opdateretHtml(n) {
+  if (!n || !n.updatedAt) return '';
+  const praecis = new Date(n.updatedAt * 1000).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  return `<span class="note-opdateret meta" id="noteOpdateret"
+    title="Last updated ${esc(praecis)}">Updated ${esc(opdateretTekst(n.updatedAt))}</span>`;
+}
+
+/** Skriver tidspunktet om uden at tegne siden - efter en gemning og hvert halve minut. */
+function tegnOpdateret() {
+  const el = document.getElementById('noteOpdateret');
+  if (!el || !editor.note) return;
+  el.outerHTML = opdateretHtml(editor.note);
+}
+// »3 min ago« maa ikke staa og vaere »just now« i en time.
+setInterval(tegnOpdateret, 30000);
+
 function sideNote() {
   const n = editor.note;
   if (editor.indlaeser || !n) {
@@ -9719,7 +9766,7 @@ function sideNote() {
   }
 
   return `
-    ${broedkrummer(n)}
+    <div class="note-over">${broedkrummer(n)}${opdateretHtml(n)}</div>
     <div class="note-head">
       <button class="note-ikon" id="noteIkon" title="Pick an icon"
         aria-label="Pick an icon">${n.icon ? esc(n.icon) : icon('notes', 20)}</button>
@@ -11518,6 +11565,7 @@ async function gemNu() {
     editor.gemmer = false;
     const m2 = document.getElementById('gemMaerke');
     if (m2) m2.innerHTML = gemMaerke();
+    tegnOpdateret();
   }
 }
 
@@ -12851,7 +12899,7 @@ async function opdaterOmni() {
     const mit = ++omni.token;
     try {
       const bog = soegeBog();
-      const d = await api('GET', `/api/v1/search?q=${encodeURIComponent(raa)}`
+      const d = await api('GET', `/api/v1/search?q=${encodeURIComponent(raa)}&preview=1`
         + (bog ? `&notebook=${encodeURIComponent(bog.id)}` : ''));
       // Et AELDRE svar maa aldrig overskrive et nyere.
       if (mit !== omni.token) return;
@@ -12861,6 +12909,7 @@ async function opdaterOmni() {
         id: r.id,
         etiket: r.title || 'Untitled',
         uddrag: r.excerpt,
+        forsmag: r.preview,
         afsnit: r.section,
         afsnitTitel: r.sectionTitle,
         meta: r.notebook,
@@ -12911,6 +12960,19 @@ async function opdaterOmni() {
   }, 140);
 }
 
+/**
+ * Uddraget under en note-raekke - eller forsmagen, naar raekken er VALGT.
+ *
+ * Man koerer ned over traefferne med piletasterne for at finde den rigtige,
+ * og én linje er sjaeldent nok til at afgoere det (Andreas, 2026-09-23). Kun
+ * den valgte folder ud: stod alle raekker med seks linjer, var der plads til
+ * tre traeffere i panelet, og listen var ikke til at overskue.
+ */
+function forsmagHtml(r, valgt) {
+  if (valgt && r.forsmag) return `<span class="omni-row-forsmag">${uddrag(r.forsmag)}</span>`;
+  return r.uddrag ? `<span class="omni-row-uddrag">${uddrag(r.uddrag)}</span>` : '';
+}
+
 function tegnPanel() {
   const host = document.getElementById('omniPanel');
   if (!host) return;
@@ -12938,7 +13000,7 @@ function tegnPanel() {
           <span class="omni-row-ikon">${icon('notes', 16)}</span>
           <span class="omni-row-tekst">
             <span class="omni-row-titel">${esc(r.etiket)}</span>
-            ${r.uddrag ? `<span class="omni-row-uddrag">${uddrag(r.uddrag)}</span>` : ''}
+            ${forsmagHtml(r, !!paa)}
           </span>
           <span class="omni-row-meta meta">${r.afsnitTitel ? esc(r.afsnitTitel)
     : (r.meta ? esc(r.meta) : '')}</span>
@@ -12954,6 +13016,13 @@ function tegnPanel() {
       </button>`;
   }).join('');
   host.hidden = false;
+  /*
+   * Den valgte raekke skal kunne ses. Med forsmagen er den flere linjer hoej,
+   * saa to tryk paa pil ned kan skubbe den ud under panelets kant.
+   * `nearest` ruller kun, naar den ikke allerede staar der.
+   */
+  const valgtEl = host.querySelector('.omni-row.on');
+  if (valgtEl && valgtEl.scrollIntoView) valgtEl.scrollIntoView({ block: 'nearest' });
 
   host.querySelectorAll('[data-row]').forEach((el) => {
     el.addEventListener('mousedown', (e) => e.preventDefault());   // behold fokus i feltet

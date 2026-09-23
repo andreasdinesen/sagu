@@ -4096,3 +4096,35 @@ markerings-klik«.
 | Sabotager set røde | stigende sortering i `sletBlokke` → to røde · `blokValgKlik` fjernet fra `bindTjek` → én rød · `nulstilBlokValg` fjernet fra `fuldfoerTraek` → én rød |
 | Fundet af funktionen selv | en `---` blev til en opgave, der hed **»---«**. `blokSomLinje` fjerner markører *foran* en tekst, men stregen ER blokken. Rettet i `blokSomLinje` og ikke i F36's filter, for fejlen gjaldt også blokmenuens »Send to doda« for én blok ad gangen |
 | I browseren | ⌘-klik markerer · shift tager spændet · almindeligt klik vælger fra · Escape rydder · ⌘ på håndtaget markerer · menuens »Select this block« virker · Delete fjerner præcis de tre og **Undo giver teksten tilbage byte for byte** · ⌘-klik på en tjekboks markerer uden at sætte flueben, et almindeligt klik sætter det · et klik uden markering åbner stadig blokken · begge temaer |
+
+## 45 · Forsmag i søgelisten og »Updated …« på noten (2026-09-23)
+
+### Den valgte træffer viser flere linjer
+
+Andreas: når man kører ned over træfferne med piletasterne, skal den række, man
+står på, vise mere af teksten. Én linje er nok til at kende en note igen, ikke til
+at afgøre, om det er den rigtige.
+
+- **Kun den valgte række folder ud.** Seks linjer på hver række giver plads til tre
+  træffere i panelet, og så er listen ikke til at overskue.
+- **Serveren laver forsmagen** (`forsmagAf`), når feltet beder om den med
+  `?preview=1`: fra linjen *før* den første træffer og frem, hver linje renset som
+  uddraget, tomme linjer væk — men linjeskiftene bevaret, så en liste stadig er en
+  liste. `…` foran og bagved, når der er mere. Bundet til 6 linjer og 600 tegn: en
+  note på én kæmpe linje må ikke give et kæmpe svar. Uden parameteren er svaret
+  som før — wikien og API-brugerne betaler ikke for det.
+- **Den valgte række rulles i syne** (`scrollIntoView({ block: 'nearest' })`). Det
+  manglede i forvejen, men med høje rækker blev det synligt: to tryk på pil ned
+  kunne skubbe den ud under panelets kant.
+
+### Hvornår noten sidst blev opdateret
+
+Står til højre i linjen over titlen, ud for brødkrummen (`.note-over`). Relativ tid,
+så længe man tænker sådan (`just now`, `12 min ago`, `today at 14:02`,
+`yesterday at 14:02`, `4 days ago`), derefter en dato; det præcise tidspunkt ligger
+i `title`. Tiden er serverens `updatedAt`, ikke »Saved«-mærkets — et nyt mærke
+eller en rettelse fra en anden enhed er også en opdatering. Den skrives om efter
+hver gemning og hvert halve minut, så »just now« ikke står og lyver.
+
+`.note-over` er det, fokus og sidevinduet skjuler, i stedet for `.krummer` alene —
+ellers ville tidspunktet blive stående alene øverst i fokus.

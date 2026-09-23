@@ -3143,6 +3143,8 @@ function filterLed(userId, t) {
  *   `ider`  afgraens til netop disse noter (wikien: kun det udgivne undertrae).
  *   `scope` hvad en tom soegning logges under i search_miss.
  *   `bog`   afgraens til én notesbog (soegefeltets »In <bog>«-knap).
+ *   `forsmag` laeg `preview` paa hvert resultat - flere linjer omkring
+ *           traefferen, som soegefeltet viser under den valgte raekke.
  *
  * Wikiens soegning gaar gennem DENNE funktion. Lagde den sin egen SQL ved
  * siden af, ville rangering, uddrag og afsnits-anker drive fra hinanden - og
@@ -3261,6 +3263,7 @@ function soegNoter(userId, raa, limit, ekstra) {
     const afsnit = afsnitFor(r.body_md, ord);
     if (afsnit) { ud.section = afsnit.id; ud.sectionTitle = afsnit.tekst; }
     ud.notebook = notesbogNavnFor(r.notebook_id);
+    if (e.forsmag) ud.preview = forsmagAf(r.body_md, ord);
     return ud;
   }));
   form.sort((a, b) => kort.get(a.id).rang - kort.get(b.id).rang);
@@ -3309,6 +3312,48 @@ function uddragAf(body, ord) {
     ud = ud.replace(new RegExp(`(${o.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<<$1>>');
   }
   return (fra > 0 ? '…' : '') + ud + (fra + 180 < ren.length ? '…' : '');
+}
+
+/**
+ * Flere linjer af noten omkring traefferen - soegefeltets forsmag.
+ *
+ * Uddraget er ÉN linje, og den er nok til at kende noten igen, ikke til at
+ * laese den. Forsmagen er linjerne selv: fra linjen foer den foerste traeffer
+ * og nogle stykker frem, hver renset som uddraget, tomme linjer vaek.
+ * Linjeskiftene BEVARES - det er dem, der goer en liste til en liste.
+ *
+ * Bundet paa to led, linjer og tegn: en note paa én kaempe linje maa ikke
+ * blive til et 20 KB svar pr. resultat.
+ */
+const FORSMAG_LINJER = 6;
+const FORSMAG_TEGN = 600;
+function forsmagAf(body, ord) {
+  const linjer = String(body || '').split('\n')
+    .map((l) => renUddrag(l))
+    .filter((l) => l && !/^[-:| ]+$/.test(l));
+  if (!linjer.length) return '';
+  let start = 0;
+  if (ord.length) {
+    const i = linjer.findIndex((l) => ord.some((o) => l.toLowerCase().includes(o.toLowerCase())));
+    if (i > 0) start = i - 1;
+  }
+  const ud = [];
+  let tegn = 0;
+  for (const l of linjer.slice(start, start + FORSMAG_LINJER)) {
+    const plads = FORSMAG_TEGN - tegn;
+    if (plads <= 0) break;
+    const stump = l.length > plads ? `${l.slice(0, plads)}…` : l;
+    ud.push(stump);
+    tegn += stump.length;
+  }
+  let tekst = (start > 0 ? '…\n' : '') + ud.join('\n')
+    + (start + ud.length < linjer.length ? '\n…' : '');
+  // Samme markoerer som uddraget: saettes paa RENSET tekst, og frontenden
+  // escaper, foer den bytter dem til <mark>.
+  for (const o of ord) {
+    tekst = tekst.replace(new RegExp(`(${o.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<<$1>>');
+  }
+  return tekst;
 }
 
 function notesbogNavnFor(id) {
@@ -4193,7 +4238,7 @@ const ROUTES = {
     const auth = godkend(req, res, 'read');
     if (!auth) return;
     const svar = soegNoter(auth.user.id, ctx.query.get('q') || '', ctx.query.get('limit'),
-      { bog: ctx.query.get('notebook') || null });
+      { bog: ctx.query.get('notebook') || null, forsmag: ctx.query.get('preview') === '1' });
     // `fallback` siger, at indekset intet fandt, og teksten blev laest i
     // stedet. Frontenden kan saa sige det - et resultat uden rangering skal
     // ikke se ud som et rangeret.

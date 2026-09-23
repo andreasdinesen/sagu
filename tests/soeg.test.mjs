@@ -394,3 +394,28 @@ test('?notebook= afgraenser til én bog - i indekset OG i faldet tilbage', async
   const ukendt = await a.kald('GET', '/api/v1/search?q=bogsoeg&notebook=findes-ikke');
   assert.equal(ukendt.data.results.length, 0);
 });
+
+test('?preview=1 giver flere linjer omkring traefferen - bundet og renset', async () => {
+  // Soegefeltets forsmag under den valgte raekke (2026-09-23).
+  const krop = ['# Intro', 'linje et', 'linje to', '## Drift', '- punkt om forsmagsord her',
+    '**fed** linje', '', 'linje fem', 'linje seks', 'linje syv', 'linje otte'].join('\n');
+  const n = (await a.kald('POST', '/api/v1/notes', { title: 'Forsmag', body: krop })).data.note;
+
+  const uden = (await a.kald('GET', '/api/v1/search?q=forsmagsord')).data.results.find((x) => x.id === n.id);
+  assert.equal(uden.preview, undefined, 'uden ?preview=1 skal svaret vaere som foer');
+
+  const t = (await a.kald('GET', '/api/v1/search?q=forsmagsord&preview=1')).data.results.find((x) => x.id === n.id);
+  const linjer = t.preview.split('\n');
+  assert.equal(linjer[0], '…', 'forsmagen begynder ikke ved notens start - det skal den sige');
+  assert.equal(linjer[1], 'Drift', 'linjen FOER traefferen kommer med, uden #');
+  assert.match(linjer[2], /^· punkt om <<forsmagsord>> her$/);
+  assert.equal(linjer[3], 'fed linje');
+  assert.ok(!t.preview.includes('**') && !t.preview.includes('#'));
+  assert.equal(linjer.at(-1), '…', 'der er mere efter');
+  assert.ok(linjer.length <= 8);
+
+  // En note paa én kaempe linje giver ikke et kaempe svar.
+  const lang = (await a.kald('POST', '/api/v1/notes', { title: 'Lang', body: `langeord ${'x'.repeat(50000)}` })).data.note;
+  const l = (await a.kald('GET', '/api/v1/search?q=langeord&preview=1')).data.results.find((x) => x.id === lang.id);
+  assert.ok(l.preview.length < 700, `forsmagen er ${l.preview.length} tegn`);
+});

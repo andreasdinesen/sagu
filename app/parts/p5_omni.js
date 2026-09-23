@@ -445,7 +445,7 @@ async function opdaterOmni() {
     const mit = ++omni.token;
     try {
       const bog = soegeBog();
-      const d = await api('GET', `/api/v1/search?q=${encodeURIComponent(raa)}`
+      const d = await api('GET', `/api/v1/search?q=${encodeURIComponent(raa)}&preview=1`
         + (bog ? `&notebook=${encodeURIComponent(bog.id)}` : ''));
       // Et AELDRE svar maa aldrig overskrive et nyere.
       if (mit !== omni.token) return;
@@ -455,6 +455,7 @@ async function opdaterOmni() {
         id: r.id,
         etiket: r.title || 'Untitled',
         uddrag: r.excerpt,
+        forsmag: r.preview,
         afsnit: r.section,
         afsnitTitel: r.sectionTitle,
         meta: r.notebook,
@@ -505,6 +506,19 @@ async function opdaterOmni() {
   }, 140);
 }
 
+/**
+ * Uddraget under en note-raekke - eller forsmagen, naar raekken er VALGT.
+ *
+ * Man koerer ned over traefferne med piletasterne for at finde den rigtige,
+ * og én linje er sjaeldent nok til at afgoere det (Andreas, 2026-09-23). Kun
+ * den valgte folder ud: stod alle raekker med seks linjer, var der plads til
+ * tre traeffere i panelet, og listen var ikke til at overskue.
+ */
+function forsmagHtml(r, valgt) {
+  if (valgt && r.forsmag) return `<span class="omni-row-forsmag">${uddrag(r.forsmag)}</span>`;
+  return r.uddrag ? `<span class="omni-row-uddrag">${uddrag(r.uddrag)}</span>` : '';
+}
+
 function tegnPanel() {
   const host = document.getElementById('omniPanel');
   if (!host) return;
@@ -532,7 +546,7 @@ function tegnPanel() {
           <span class="omni-row-ikon">${icon('notes', 16)}</span>
           <span class="omni-row-tekst">
             <span class="omni-row-titel">${esc(r.etiket)}</span>
-            ${r.uddrag ? `<span class="omni-row-uddrag">${uddrag(r.uddrag)}</span>` : ''}
+            ${forsmagHtml(r, !!paa)}
           </span>
           <span class="omni-row-meta meta">${r.afsnitTitel ? esc(r.afsnitTitel)
     : (r.meta ? esc(r.meta) : '')}</span>
@@ -548,6 +562,13 @@ function tegnPanel() {
       </button>`;
   }).join('');
   host.hidden = false;
+  /*
+   * Den valgte raekke skal kunne ses. Med forsmagen er den flere linjer hoej,
+   * saa to tryk paa pil ned kan skubbe den ud under panelets kant.
+   * `nearest` ruller kun, naar den ikke allerede staar der.
+   */
+  const valgtEl = host.querySelector('.omni-row.on');
+  if (valgtEl && valgtEl.scrollIntoView) valgtEl.scrollIntoView({ block: 'nearest' });
 
   host.querySelectorAll('[data-row]').forEach((el) => {
     el.addEventListener('mousedown', (e) => e.preventDefault());   // behold fokus i feltet

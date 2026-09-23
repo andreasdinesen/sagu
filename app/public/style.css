@@ -791,7 +791,12 @@ table.data td.center, table.data th.center { text-align: center; }
 
 /* ============================================================ noten ===== */
 
-.krummer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+/* Linjen over titlen: broedkrummen til venstre, »Updated …« til hoejre.
+   Afstanden til titlen bor her og ikke paa krummen, ellers forsvinder den,
+   naar der ingen krumme er (en delt note). */
+.note-over { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.krummer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.note-opdateret { margin-left: auto; font-size: 13px; white-space: nowrap; }
 .krummer button { border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0; }
 .krummer button:hover { color: var(--text); text-decoration: underline; }
 .krummer .sep { color: var(--border); }
@@ -1365,11 +1370,11 @@ kbd {
  */
 body.fokus .sidebar,
 body.fokus .navtoggle,
-body.fokus .krummer,
+body.fokus .note-over,
 body.fokus .backlinks,
 body.solo .sidebar,
 body.solo .navtoggle,
-body.solo .krummer,
+body.solo .note-over,
 body.solo .backlinks { display: none; }
 
 body.fokus .main { padding: 56px 32px 96px; }
@@ -1584,7 +1589,22 @@ a.omni-row { text-decoration: none; }
   white-space: nowrap;
 }
 
-.omni-row-uddrag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; padding: 0 2px; }
+/* Den valgte raekkes forsmag: flere linjer, linjeskiftene bevaret. Loftet i
+   hoejden er et vaern mod lange linjer - serveren binder allerede antallet. */
+.omni-row-forsmag {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  opacity: .8;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.omni-row-uddrag mark, .omni-row-forsmag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; padding: 0 2px; }
 .omni-row-meta { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-top: 3px; }
 /* Antallet under et maerke. Ikke `.omni-row-meta`: den skjules paa en telefon,
    og tallet er lige saa nyttigt dér. */
