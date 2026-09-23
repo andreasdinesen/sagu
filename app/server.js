@@ -6959,8 +6959,8 @@ const wiki = wikiModul.opret({
     return e.slags === 'fil' ? wikiGhFil(e, info) : wikiGhSag(e);
   },
 
-  soegIUdgivelse(share, q, ider) {
-    return soegNoter(share.user_id, q, 30, { ider, scope: share.id });
+  soegIUdgivelse(share, q, ider, forsmag) {
+    return soegNoter(share.user_id, q, 30, { ider, scope: share.id, forsmag: !!forsmag });
   },
 
   /*

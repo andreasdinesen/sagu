@@ -797,7 +797,10 @@ ${nyeste.map((n) => `  <entry>
     if (rest === 'search') {
       if (!share.allow_search) { srv.ikkeFundet(res); return true; }
       const q = String(ctx.query.get('q') || '').slice(0, 200);
-      const resultat = q ? srv.soegIUdgivelse(share, q, ider) : { results: [], fallback: false };
+      // Forsmagen (flere linjer under den valgte traeffer) kun til den levende
+      // liste - resultatsiden viser ét uddrag pr. traeffer og betaler ikke for den.
+      const json = ctx.query.get('format') === 'json';
+      const resultat = q ? srv.soegIUdgivelse(share, q, ider, json) : { results: [], fallback: false };
       /*
        * Levende soegning, som i appen - men uden appens API.
        *
@@ -809,7 +812,7 @@ ${nyeste.map((n) => `  <entry>
        * Der er intet at oprette og ingen notesboeger at hoppe til: en laeser
        * kan soege i sider og maerker, og det er alt.
        */
-      if (ctx.query.get('format') === 'json') {
+      if (json) {
         const link = (n) => ((!share.notebook_id && n.dybde === 0) ? `${rod}/` : `${rod}/${kort.get(n.id)}`);
         srv.sendTekst(res, 200, JSON.stringify({
           fallback: !!resultat.fallback,
@@ -819,6 +822,9 @@ ${nyeste.map((n) => `  <entry>
               title: r.title || 'Untitled',
               url: n ? (r.section ? `${link(n)}#${encodeURIComponent(r.section)}` : link(n)) : `${rod}/`,
               excerpt: r.excerpt || '',
+              // Samme tekst som uddraget kommer fra - notens egen, udgivne krop -
+              // bare flere linjer af den. Intet, laeseren ikke kunne aabne i forvejen.
+              preview: r.preview || '',
               section: r.sectionTitle || '',
               tags: r.tags || [],
             };

@@ -390,6 +390,8 @@ test('den levende soegning svarer JSON - og kun inden for udgivelsen', async () 
   assert.match(d.results[0].url, /^\/w\/e1-levende\//, 'adressen skal blive inde i udgivelsen');
   assert.match(d.results[0].excerpt, /<</, 'fremhaevningen er markoerer, ikke tags');
   assert.doesNotMatch(svar.tekst, /<mark>/, 'serveren udsteder ALDRIG et tag i JSON');
+  // Forsmagen under den valgte traeffer (v84) - samme markoerer, flere linjer.
+  assert.match(d.results[0].preview, /<<tunnel>>/i, 'forsmagen skal fremhaeve ordet');
 
   // Uden for udgivelsen findes intet.
   const uden = JSON.parse((await g.hent('/w/e1-levende/search?format=json&q=classified')).tekst);

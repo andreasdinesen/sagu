@@ -4,8 +4,9 @@
  * En besoegende maa hverken hente app.js eller kunne kalde app-API'et, saa den
  * her kender ingen adresser og laver ingen forespoergsler. Alt hvad wikien kan
  * uden JavaScript, GOER den uden JavaScript: navigation, soegning, links og
- * temaet virker med scriptet slaaet fra. Det her er de tre ting, der ikke kan:
- * kopier-knappen paa en kodeblok, temaskiftet og »/« til soegefeltet.
+ * temaet virker med scriptet slaaet fra. Det her er det, der ikke kan:
+ * kopier-knappen paa en kodeblok, temaskiftet, den levende soegning,
+ * knappen til bunden/toppen og »/« til soegefeltet.
  */
 (function () {
   'use strict';
@@ -131,6 +132,12 @@
 
     function luk() { liste.hidden = true; liste.innerHTML = ''; valgt = -1; }
 
+    function medMark(tekst) {
+      return String(tekst || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/&lt;&lt;/g, '<mark>').replace(/&gt;&gt;/g, '</mark>');
+    }
+
     function tegn(svar) {
       var r = svar.results || [];
       if (!r.length) {
@@ -142,15 +149,20 @@
         // Uddraget er ESCAPET af serveren paa naer << >>, som er
         // fremhaevningen. De byttes til <mark> HER - efter escaping - saa der
         // er ingen vej fra en notes tekst til et tag.
-        var ud = String(x.excerpt || '')
-          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-          .replace(/&lt;&lt;/g, '<mark>').replace(/&gt;&gt;/g, '</mark>');
+        var ud = medMark(x.excerpt);
+        /*
+         * Forsmagen: flere linjer af noten, vist under den VALGTE raekke, som i
+         * appens soegefelt. Begge staar i HTML'en, og CSS'en viser den ene -
+         * saa piletasterne ikke skal tegne listen om.
+         */
+        var forsmag = x.preview ? '<span class="wtraefliste-forsmag">' + medMark(x.preview) + '</span>' : '';
         var titel = String(x.title).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         var afsnit = x.section ? ' <span class="wtraef-afsnit">§ ' + String(x.section)
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>' : '';
-        return '<a class="wtraefliste-et' + (i === 0 ? ' paa' : '') + '" href="' + x.url + '">'
+        return '<a class="wtraefliste-et' + (i === 0 ? ' paa' : '') + (forsmag ? ' har-forsmag' : '')
+          + '" href="' + x.url + '">'
           + '<span class="wtraefliste-titel">' + titel + afsnit + '</span>'
-          + '<span class="wtraefliste-uddrag">' + ud + '</span></a>';
+          + '<span class="wtraefliste-uddrag">' + ud + '</span>' + forsmag + '</a>';
       }).join('');
       valgt = 0;
       liste.hidden = false;
@@ -199,6 +211,80 @@
       if (!form.contains(e.target)) luk();
     });
   });
+
+  /* --- til bunden / til toppen ------------------------------------------- */
+
+  /*
+   * Samme knap som i appen (v83): én, der vender efter hvor man staar, og kun
+   * naar der er mere end en skaermhoejde at rulle i. Den bygges HER, fordi
+   * den kraever JavaScript - uden scriptet ville den staa der og ikke virke.
+   *
+   * Rulleboksen er dokumentet paa en bred skaerm, men BODY under 900 px
+   * (`html, body { overflow-x: hidden }` i style.css). Og dér flytter en
+   * bloed rulning sig slet ikke - derfor hoppet bagefter, som i appen.
+   */
+  (function () {
+    var knap = document.createElement('button');
+    knap.type = 'button';
+    knap.className = 'rulleknap';
+    knap.hidden = true;
+    knap.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+      + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M12 4.5v14.5"/><path d="M6.5 13.5L12 19l5.5-5.5"/></svg>';
+    document.body.appendChild(knap);
+
+    function rullet() {
+      return Math.max(window.scrollY || 0, document.body.scrollTop || 0,
+        document.documentElement.scrollTop || 0);
+    }
+    function plads() {
+      return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+        - window.innerHeight;
+    }
+    function boks() {
+      var d = document.scrollingElement || document.documentElement;
+      return d.scrollHeight > d.clientHeight ? d : document.body;
+    }
+    function retning() {
+      var p = plads();
+      if (p < window.innerHeight) return null;
+      return rullet() < p / 2 ? 'ned' : 'op';
+    }
+    function opdater() {
+      var r = retning();
+      knap.hidden = !r;
+      if (!r) return;
+      var op = r === 'op';
+      knap.classList.toggle('op', op);
+      knap.title = op ? 'Go to the top' : 'Go to the bottom';
+      knap.setAttribute('aria-label', knap.title);
+    }
+    function rulTil(y) {
+      var b = boks();
+      if (b === document.body) b.scrollTop = y; else window.scrollTo(0, y);
+    }
+
+    knap.addEventListener('click', function () {
+      var r = retning();
+      if (!r) return;
+      var y = r === 'op' ? 0 : plads() + 1;
+      var b = boks();
+      var fra = rullet();
+      var roligt = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      (b === document.body ? b : window).scrollTo({ top: y, behavior: roligt ? 'auto' : 'smooth' });
+      setTimeout(function () {
+        if (Math.abs(rullet() - fra) < 2) rulTil(y);
+        opdater();
+      }, 350);
+    });
+
+    window.addEventListener('scroll', opdater, { passive: true });
+    document.body.addEventListener('scroll', opdater, { passive: true });
+    window.addEventListener('resize', opdater, { passive: true });
+    // Billeder kan give siden sin hoejde efter scriptet har koert.
+    window.addEventListener('load', opdater);
+    opdater();
+  }());
 
   /* --- »/« og »Cmd/Ctrl+K« giver soegefeltet fokus -----------------------
    *

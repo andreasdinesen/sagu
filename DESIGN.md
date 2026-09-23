@@ -4147,3 +4147,20 @@ Andreas: en knap, der hurtigt fører til bunden eller toppen, alt efter hvor man
   med det samme.
 - Knappens retning følger rullevagten (`registrerRullevagt`) — ingen ny lytter — og
   opdateres også, når en ny side tegnes, så den ikke venter på, at man ruller.
+
+### Også i wikien (2026-09-23)
+
+Andreas: forsmagen og rulleknappen manglede i en delt notesbog. Wikien henter
+**ikke** `app.js` — den har sin egen lille `wiki.js` — så begge dele skulle bygges
+dér også.
+
+- **Forsmagen** kommer fra den samme `soegNoter`, nu med `forsmag` sat, når den
+  levende liste beder om JSON (`?format=json`). Resultatsiden uden JavaScript
+  betaler ikke for den. Teksten er notens egen udgivne krop — det samme sted,
+  uddraget kommer fra — så den viser intet, læseren ikke kunne åbne i forvejen.
+- I listen står **både** uddraget og forsmagen i HTML'en, og CSS'en viser den ene
+  efter `.paa`. Piletasterne skal så ikke tegne listen om. Kun markeringen, ikke
+  `:hover` — ellers hopper listen, når musen passerer.
+- **Rulleknappen** bygges af `wiki.js` og deler CSS med appens (`.rulleknap`). Den
+  findes kun med JavaScript, fordi den kun virker med det. Samme hop-sikring på en
+  telefon som i appen.

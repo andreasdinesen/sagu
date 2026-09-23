@@ -2634,7 +2634,18 @@ body.wiki {
   display: block; margin-top: 2px; color: var(--muted); font-size: 13px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.wtraefliste-uddrag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; }
+.wtraefliste-uddrag mark, .wtraefliste-forsmag mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; }
+/* Forsmagen under den VALGTE traeffer - som appens `.omni-row-forsmag`. Begge
+   staar i HTML'en; `.paa` bestemmer, hvilken der ses. Kun markeringen, ikke
+   `:hover` - ellers hopper listen, naar musen passerer. */
+.wtraefliste-forsmag {
+  display: none; margin-top: 3px; font-size: 13px; line-height: 1.5; color: var(--text); opacity: .8;
+  white-space: pre-line; overflow-wrap: anywhere;
+}
+.wtraefliste-et.paa.har-forsmag .wtraefliste-uddrag { display: none; }
+.wtraefliste-et.paa .wtraefliste-forsmag {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden;
+}
 .wtraefliste-tom { margin: 0; padding: 12px 14px; color: var(--muted); font-size: 13.5px; }
 
 /* Traek i traeet. Linjen viser, hvor noten LANDER - ikke bare at der traekkes. */
