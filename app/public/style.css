@@ -19,7 +19,9 @@
  *  40  topbjaelke appens klaebende topbjaelke (.topbar) - og de lister, der
  *                folder sig ud under et felt og skal over indholdet:
  *                [[-forslag (.wikiforslag), maerkeforslag (.maerke-forslag),
- *                wikiens traefferliste (.wtraefliste)
+ *                wikiens traefferliste (.wtraefliste) - og rulleknappen
+ *                nederst til hoejre (.rulleknap), der skal UNDER sløret,
+ *                naar sidebaren er foldet ud paa en telefon
  *  45  slør      baggrunden bag den udfoldede sidebar (.backdrop)
  *  50  sidebar   sidebaren som overlay - under 900 px og skjult paa desktop
  *                (.sidebar)
@@ -412,6 +414,32 @@ input[type="checkbox"], input[type="radio"] { appearance: auto; width: auto; min
 .gate-switch button { border: 0; background: none; color: var(--accent-text); cursor: pointer; font: inherit; text-decoration: underline; }
 
 /* -------------------------------------------------------------- toasts */
+
+/* Til bunden / til toppen. Nederst til hoejre, under toasts (z 60) og over
+   sideoversigten (z 30). `.op` drejer den samme pil. */
+.rulleknap {
+  position: fixed;
+  right: 20px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--pill);
+  background: var(--card);
+  color: var(--muted);
+  box-shadow: var(--shadow-lift);
+  cursor: pointer;
+  padding: 0;
+}
+.rulleknap[hidden] { display: none; }
+.rulleknap:hover { color: var(--accent-text); border-color: var(--accent); }
+.rulleknap svg { transition: transform .2s; }
+.rulleknap.op svg { transform: rotate(180deg); }
+@media print { .rulleknap { display: none !important; } }
 
 .toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; }
 

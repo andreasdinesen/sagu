@@ -4414,7 +4414,7 @@ document.addEventListener('auxclick', (e) => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 82;
+const APP_VERSION = 83;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -4658,6 +4658,8 @@ const ICONS = {
   comment: '<path d="M20 12.5a6.5 6.5 0 01-6.5 6.5H9l-4 2.5v-4A6.5 6.5 0 016.5 6h7A6.5 6.5 0 0120 12.5z"/>',
   copy: '<path d="M9 9h10v10a1.5 1.5 0 01-1.5 1.5H9z"/><path d="M15 9V4.5A1.5 1.5 0 0013.5 3H5.5A1.5 1.5 0 004 4.5v9A1.5 1.5 0 005.5 15H9"/>',
   luk: '<path d="M6 6l12 12M18 6L6 18"/>',
+  // Pil med skaft til rulleknappen - ned, og op er den samme drejet i CSS.
+  pilNed: '<path d="M12 4.5v14.5"/><path d="M6.5 13.5L12 19l5.5-5.5"/>',
   kalender: '<path d="M4.5 6.5h15v13h-15z"/><path d="M4.5 10h15M9 4.5v3M15 4.5v3"/>',
   skabelon: '<path d="M4.5 5.5h15v13h-15z"/><path d="M4.5 9.5h15M9.5 9.5v9"/>',
   klips: '<path d="M17 8.5l-6.6 6.6a2.5 2.5 0 003.5 3.5l6.6-6.6a4.5 4.5 0 00-6.4-6.4l-6.6 6.6a6.5 6.5 0 009.2 9.2l5.8-5.8"/>',
@@ -4988,7 +4990,8 @@ function shellHtml() {
       <div id="pageHost"></div>
     </main>
   </div>
-  <nav class="toc" id="tocRail" aria-label="On this page" hidden></nav>`;
+  <nav class="toc" id="tocRail" aria-label="On this page" hidden></nav>
+  <button class="rulleknap" id="rulleKnap" type="button" hidden>${icon('pilNed', 18)}</button>`;
 }
 
 /*
@@ -5073,6 +5076,8 @@ function bindNav() {
 function bindShell() {
   bindNav();
   registrerRullevagt();
+  const rulleKnap = document.getElementById('rulleKnap');
+  if (rulleKnap) rulleKnap.addEventListener('click', rulMedKnap);
   bindTemaKnap();
   const synk = document.getElementById('synkBtn');
   if (synk) synk.addEventListener('click', () => opfriskAlt());
@@ -5681,9 +5686,67 @@ function skalVaereRullet(rullet, y, plads) {
   return y >= RULLET_FRA;
 }
 
+/*
+ * Til bunden / til toppen - ÉN knap, der vender efter hvor man staar
+ * (Andreas, 2026-09-23).
+ *
+ * I den oeverste halvdel peger den NED, i den nederste OP. To knapper ville
+ * altid have én, der pegede den vej, man ikke skulle - og paa en telefon er
+ * der ikke plads til to i hjoernet.
+ *
+ * Den vises kun, naar der er mere end en skaermhoejde at rulle i. En knap
+ * paa en side, man kan se hele, er en knap uden noget at goere.
+ *
+ * Rulningen gaar gennem `rulleBoks()`: under 900 px er det BODY, der ruller,
+ * og `window.scrollTo` goer ingenting dér (se `tilToppen`).
+ */
+function rulleKnapRetning() {
+  const plads = rullePlads();
+  if (plads < window.innerHeight) return null;
+  return rulletNed() < plads / 2 ? 'ned' : 'op';
+}
+
+function opdaterRulleKnap() {
+  const knap = document.getElementById('rulleKnap');
+  if (!knap) return;
+  const retning = rulleKnapRetning();
+  knap.hidden = !retning;
+  if (!retning) return;
+  const op = retning === 'op';
+  knap.classList.toggle('op', op);
+  const tekst = op ? 'Go to the top' : 'Go to the bottom';
+  knap.title = tekst;
+  knap.setAttribute('aria-label', tekst);
+}
+
+function rulMedKnap() {
+  const retning = rulleKnapRetning();
+  if (!retning) return;
+  const y = retning === 'op' ? 0 : rullePlads() + 1;
+  const boks = rulleBoks();
+  const maal = boks === document.body ? boks : window;
+  const fra = rulletNed();
+  const roligt = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  maal.scrollTo({ top: y, behavior: roligt ? 'auto' : 'smooth' });
+  /*
+   * Den bloede rulning er et oenske, ikke et loefte.
+   *
+   * Maalt paa 375 px, hvor BODY er rulleboksen: `body.scrollTo({ behavior:
+   * 'smooth' })` flyttede sig ikke en pixel, mens det samme kald uden
+   * `smooth` virkede med det samme. Har vi ikke rokket os efter et kort
+   * oejeblik, hoppes der direkte - en knap, der nogle gange ikke goer noget,
+   * er vaerre end en, der ikke glider.
+   */
+  setTimeout(() => {
+    if (Math.abs(rulletNed() - fra) < 2) rulTil(y);
+    opdaterRulleKnap();
+  }, 350);
+}
+
 function registrerRullevagt() {
   let rullet = document.body.classList.contains('rullet');
   const tjek = () => {
+    opdaterRulleKnap();
     const nu = skalVaereRullet(rullet, rulletNed(), rullePlads());
     if (nu === rullet) return;
     rullet = nu;
@@ -5969,6 +6032,8 @@ function saetAdresse(noteId) {
 async function tegnSide() {
   await tegnSideIndhold();
   byggToc();
+  // En ny side har en ny hoejde - knappen skal ikke vente paa, at man ruller.
+  opdaterRulleKnap();
   // Titlen hoerer til her af samme grund som sideoversigten: ét sted, saa den
   // ikke kan glemmes i en af de mange grene, der aabner en note (F29).
   vinduestitel();

@@ -4128,3 +4128,22 @@ hver gemning og hvert halve minut, så »just now« ikke står og lyver.
 
 `.note-over` er det, fokus og sidevinduet skjuler, i stedet for `.krummer` alene —
 ellers ville tidspunktet blive stående alene øverst i fokus.
+
+## 46 · Til bunden / til toppen (2026-09-23)
+
+Andreas: en knap, der hurtigt fører til bunden eller toppen, alt efter hvor man står.
+
+- **Én rund knap nederst til højre, der vender.** I den øverste halvdel af siden
+  peger den ned (»Go to the bottom«), i den nederste op. To knapper ville altid have
+  én, der pegede den forkerte vej, og på en telefon er der ikke plads til to i hjørnet.
+- **Kun når der er noget at rulle i:** mere end én skærmhøjde. Den gælder alle
+  skærme, ikke kun noten — All Notes kan også være lang.
+- **Lag 40** på z-index-kortet: over sideoversigten, *under* sløret og sidebaren, så
+  den ikke ligger oven på menuen på en telefon.
+- **Den bløde rulning er et ønske, ikke et løfte.** Målt på 375 px, hvor body er
+  rulleboksen: `body.scrollTo({ behavior: 'smooth' })` flyttede sig ikke en pixel,
+  mens det samme kald uden `smooth` virkede. Har rulningen ikke rokket sig efter
+  350 ms, hoppes der direkte med `rulTil`. `prefers-reduced-motion` giver hoppet
+  med det samme.
+- Knappens retning følger rullevagten (`registrerRullevagt`) — ingen ny lytter — og
+  opdateres også, når en ny side tegnes, så den ikke venter på, at man ruller.
