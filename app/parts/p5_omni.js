@@ -218,7 +218,65 @@ const omni = {
   fallback: false,
   seneste: [],
   stilleFokus: false,
+  // Id paa den bog, man har valgt at soege i - eller null for alle noter.
+  // Det er et ID og ikke et flueben: valget gaelder kun, saa laenge den aabne
+  // note ligger i netop den bog (se `soegeBog`).
+  kunBog: null,
 };
+
+/**
+ * Den notesbog, man »staar i« - den aabne notes, hvis den er ens egen.
+ *
+ * Sagu har ingen side for en bog, saa den aabne note er den eneste kontekst.
+ * En delt note fra en anden ligger i HANS bog, og den er ikke i
+ * `state.notebooks` - saa er der ingen bog at tilbyde.
+ */
+function aktuelBog() {
+  const note = state.view === 'note' && typeof editor === 'object' ? editor.note : null;
+  if (!note || !note.notebookId) return null;
+  return (state.notebooks || []).find((b) => b.id === note.notebookId) || null;
+}
+
+/** Den bog, soegningen er afgraenset til lige nu - eller null. */
+function soegeBog() {
+  const bog = aktuelBog();
+  return bog && omni.kunBog === bog.id ? bog : null;
+}
+
+/** Skifter mellem »alle noter« og »kun denne bog« og soeger igen. */
+function skiftSoegeBog() {
+  const bog = aktuelBog();
+  if (!bog) return;
+  omni.kunBog = omni.kunBog === bog.id ? null : bog.id;
+  omni.valgt = 0;
+  opdaterOmni();
+}
+
+/**
+ * Knap og legende efter et skift af note.
+ *
+ * Feltet tegnes ikke forfra, naar man aabner en note, saa uden det her ville
+ * knappen blive staaende med den FORRIGE notes bog, til man skrev noget.
+ */
+function opfriskSoegeBog() {
+  tegnSoegeBog();
+  tegnLegend();
+}
+
+/** Knappen i feltet. Kun i den almindelige soegning, og kun med en bog. */
+function tegnSoegeBog() {
+  const knap = document.getElementById('omniScope');
+  if (!knap) return;
+  const bog = aktuelBog();
+  knap.hidden = !bog || !!omni.mode;
+  if (knap.hidden) return;
+  const paa = omni.kunBog === bog.id;
+  knap.classList.toggle('on', paa);
+  knap.textContent = paa ? `In ${bog.name}` : 'All notes';
+  knap.title = paa ? 'Searching this notebook only — Tab for all notes'
+    : `Searching all notes — Tab for “${bog.name}” only`;
+  knap.setAttribute('aria-pressed', paa ? 'true' : 'false');
+}
 
 const omniEl = () => document.getElementById('omni');
 
@@ -232,6 +290,7 @@ function omniHtml() {
         <span class="omni-mode" id="omniMode" hidden></span>
         <input class="omni-input" id="omni" autocomplete="off" spellcheck="false"
           placeholder="Search your notes, or start a new one">
+        <button class="omni-scope" id="omniScope" type="button" hidden></button>
         <button class="omni-clear" id="omniClear" aria-label="Clear" hidden>${icon('luk', 15)}</button>
       </div>
       <div class="omni-panel" id="omniPanel" hidden></div>
@@ -257,7 +316,10 @@ function tegnLegend() {
   const host = document.getElementById('omniLegend');
   if (!host) return;
   const m = omni.mode ? OMNI_MODER[omni.mode] : null;
-  const dele = m ? m.legend : OMNI_LEGEND;
+  // Legenden lover kun Tab, naar der ER en bog at skifte til.
+  const bog = !m && aktuelBog();
+  const dele = m ? m.legend
+    : OMNI_LEGEND.concat(bog ? [soegeBog() ? '⇥ all notes' : `⇥ only ${bog.name}`] : []);
   const enter = m ? m.enter : 'Open';
   host.innerHTML = `
     <span class="legend-keys">${dele.map((d) => {
@@ -274,6 +336,8 @@ function tegnOmniChips(tolket, bog) {
   const host = document.getElementById('omniChips');
   if (!host) return;
   const dele = tolket ? saguSoeg.beskriv(tolket) : [];
+  const bogSoeg = soegeBog();
+  if (tolket && bogSoeg) dele.unshift(`in ${bogSoeg.name}`);
   if (omni.fallback) dele.push('no index match — read the text');
   /*
    * `/navn`, der ikke rammer noget, skal SIGES.
@@ -295,6 +359,7 @@ async function opdaterOmni() {
   saetMode(OMNI_MODER[tegn] ? tegn : null);
   const tekst = omni.mode ? raa.slice(1).trim() : raa.trim();
   tegnLegend();
+  tegnSoegeBog();
 
   if (omni.mode === '*') {
     const b = plukBog(tekst, state.notebooks);
@@ -379,7 +444,9 @@ async function opdaterOmni() {
   omni.timer = setTimeout(async () => {
     const mit = ++omni.token;
     try {
-      const d = await api('GET', `/api/v1/search?q=${encodeURIComponent(raa)}`);
+      const bog = soegeBog();
+      const d = await api('GET', `/api/v1/search?q=${encodeURIComponent(raa)}`
+        + (bog ? `&notebook=${encodeURIComponent(bog.id)}` : ''));
       // Et AELDRE svar maa aldrig overskrive et nyere.
       if (mit !== omni.token) return;
       omni.fallback = !!d.fallback;
@@ -407,6 +474,8 @@ async function opdaterOmni() {
       const b = plukBog(raa.trim(), state.notebooks);
       const udenSyntaks = saguSoeg.tolk(b.tekst);
       const p = plukMaerker(udenSyntaks.tekst || b.tekst);
+      // Har man ledt i én bog uden at skrive `/bog`, er det dér, noten skal ligge.
+      const nyBog = b.bog || bog;
       omni.raekker.push({
         slags: 'ny',
         tekst: p.tekst,
@@ -414,8 +483,8 @@ async function opdaterOmni() {
         // ledt efter noget under et maerke og ikke fundet det, er det dér, den
         // nye note hoerer hjemme.
         maerker: p.maerker.concat(tolket.tags || []),
-        bogId: b.bog ? b.bog.id : null,
-        etiket: opretEtiket(p.tekst, b.bog),
+        bogId: nyBog ? nyBog.id : null,
+        etiket: opretEtiket(p.tekst, nyBog),
       });
       /*
        * Notesbogs-forslagene staar OEVERST - foran traefferne.
@@ -663,8 +732,11 @@ function ryd() {
   omni.raekker = [];
   omni.mode = null;
   omni.fallback = false;
+  // Et tomt felt er en ny soegning, og en ny soegning er i alle noter.
+  omni.kunBog = null;
   saetMode(null);
   tegnLegend();
+  tegnSoegeBog();
   tegnOmniChips(null);
   tegnPanel();
 }
@@ -703,7 +775,10 @@ function bindOmni() {
   if (!el) return;
 
   el.addEventListener('input', () => { omni.valgt = 0; opdaterOmni(); });
-  el.addEventListener('focus', () => { if (!omni.raekker.length && !omni.stilleFokus) opdaterOmni(); });
+  el.addEventListener('focus', () => {
+    opfriskSoegeBog();
+    if (!omni.raekker.length && !omni.stilleFokus) opdaterOmni();
+  });
   /*
    * Et klik i feltet, der ALLEREDE har fokus, aabner listen.
    *
@@ -738,7 +813,23 @@ function bindOmni() {
       return;
     }
     if (e.key === 'Escape') { e.preventDefault(); ryd(); }
+    /*
+     * Tab skifter mellem alle noter og den aabne notes bog.
+     *
+     * Kun i den almindelige soegning og kun naar der er en bog - ellers er
+     * Tab browserens, og fokus flytter videre som altid.
+     */
+    if (e.key === 'Tab' && !e.shiftKey && !omni.mode && aktuelBog()) {
+      e.preventDefault();
+      skiftSoegeBog();
+    }
   });
+
+  const scope = document.getElementById('omniScope');
+  if (scope) {
+    scope.addEventListener('click', () => { skiftSoegeBog(); el.focus(); });
+    tegnSoegeBog();
+  }
 
   const luk = document.getElementById('omniClear');
   if (luk) luk.addEventListener('click', () => { ryd(); el.focus(); });

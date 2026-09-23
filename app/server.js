@@ -3142,6 +3142,7 @@ function filterLed(userId, t) {
  * @param {object} [ekstra]
  *   `ider`  afgraens til netop disse noter (wikien: kun det udgivne undertrae).
  *   `scope` hvad en tom soegning logges under i search_miss.
+ *   `bog`   afgraens til én notesbog (soegefeltets »In <bog>«-knap).
  *
  * Wikiens soegning gaar gennem DENNE funktion. Lagde den sin egen SQL ved
  * siden af, ville rangering, uddrag og afsnits-anker drive fra hinanden - og
@@ -3161,6 +3162,13 @@ function soegNoter(userId, raa, limit, ekstra) {
     if (!e.ider.length) return { results: [], fallback: false };
     basis.push(`n.id IN (${e.ider.map(() => '?').join(',')})`);
     basisArg.push(...e.ider);
+  }
+  if (e.bog) {
+    // Soegefeltets »kun i denne notesbog«. Bogen afgraenser kun - den giver
+    // ingen adgang: `SYNLIG` staar stadig i `basis`, saa et fremmed id
+    // finder hoejst det, man i forvejen maatte se.
+    basis.push('n.notebook_id = ?');
+    basisArg.push(e.bog);
   }
 
   let raekker = [];
@@ -4184,7 +4192,8 @@ const ROUTES = {
   'GET /api/v1/search': (req, res, ctx) => {
     const auth = godkend(req, res, 'read');
     if (!auth) return;
-    const svar = soegNoter(auth.user.id, ctx.query.get('q') || '', ctx.query.get('limit'));
+    const svar = soegNoter(auth.user.id, ctx.query.get('q') || '', ctx.query.get('limit'),
+      { bog: ctx.query.get('notebook') || null });
     // `fallback` siger, at indekset intet fandt, og teksten blev laest i
     // stedet. Frontenden kan saa sige det - et resultat uden rangering skal
     // ikke se ud som et rangeret.

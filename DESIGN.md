@@ -794,6 +794,28 @@ Et ukendt filternavn bliver et søgeord frem for en fejl; en **ukendt værdi** i
 et kendt filter (`tag:findesikke`, `in:FindesIkke`) giver derimod **nul
 træffere**. Et filter, der stiltiende ignoreres, ligner en søgning, der virker.
 
+### Kun i den notesbog, man står i
+
+Tilføjet 2026-09-23 (Andreas). Standarden er stadig **alle noter**. Står man i en
+note, der ligger i en af ens egne notesbøger, viser feltet en knap til højre —
+»All notes« / »In Privat« — og **Tab** skifter mellem de to, mens man søger.
+Legenden nævner Tab, kun når der er en bog at skifte til.
+
+- **Notesbogen er den åbne notes.** Sagu har ingen side for en bog (et klik
+  folder den ud i træet), så »den bog, man står i« er den eneste kontekst, der
+  findes. Uden en åben note — eller i en delt note fra en anden — er knappen væk.
+- **Valget hører til ÉN bog.** Det gemmes som bogens id, og det gælder kun, så
+  længe den åbne note ligger i den bog. Åbner man en note i en anden bog, eller
+  rydder feltet (Esc, ×), er man tilbage på alle noter uden at skulle huske det.
+  Et filter, der følger med én rundt i appen, er den slags, man glemmer, man har sat.
+- **Det er en parameter, ikke `in:`-syntaks.** `?notebook=<id>` går til
+  `soegNoter` som afgrænsning ved siden af `ider`. At skrive `in:"Privat"` ind i
+  feltet ville binde knappen til bogens NAVN (to bøger kan hedde det samme) og
+  ændre den tekst, brugeren selv har skrevet. En chip under feltet siger »in Privat«.
+- **»Create …« lander i bogen**, når man søger i den og ikke selv har skrevet
+  `/bog`. Har man ledt i Privat uden at finde noget, er det dér, noten hører hjemme
+  — samme tanke som `tag:`-filteret, der følger med over i den nye note.
+
 ### To lag, i den rækkefølge de svarer
 
 1. **FTS5, rangeret.** Titel 10 · overskrifter 5 · mærker/egenskaber 3 ·

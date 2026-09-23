@@ -375,3 +375,22 @@ test('fremhaevningen kan ikke blive til et TAG', async () => {
   assert.ok(!/<script/i.test(somFrontenden), `et script-tag slap igennem: ${somFrontenden}`);
   assert.ok(!/\son[a-z]+=/i.test(somFrontenden));
 });
+
+test('?notebook= afgraenser til én bog - i indekset OG i faldet tilbage', async () => {
+  // Soegefeltets »In <bog>«-knap (2026-09-23). Standarden er alle noter;
+  // parameteren maa kun snaevre ind, aldrig udvide.
+  const anden = (await a.kald('POST', '/api/v1/notebooks', { name: 'Privatbog' })).data.notebook;
+  const i = (await a.kald('POST', '/api/v1/notes', { title: 'Bogsoeg inde', body: 'bogKeepZebra', notebookId: bog.id })).data.note;
+  const u = (await a.kald('POST', '/api/v1/notes', { title: 'Bogsoeg ude', body: 'bogKeepZebra', notebookId: anden.id })).data.note;
+
+  // Uden parameter: begge. `bogsoeg` rammer indekset, `zebra` kun faldet tilbage.
+  for (const q of ['bogsoeg', 'zebra']) {
+    const alle = (await a.kald('GET', `/api/v1/search?q=${q}`)).data.results.map((x) => x.id);
+    assert.ok(alle.includes(i.id) && alle.includes(u.id), `"${q}" uden bog skal finde begge`);
+    const kun = (await a.kald('GET', `/api/v1/search?q=${q}&notebook=${bog.id}`)).data.results.map((x) => x.id);
+    assert.deepEqual(kun, [i.id], `"${q}" i Drift skal kun finde noten i Drift`);
+  }
+  // En fremmed eller ukendt bog giver nul - ikke alle noter.
+  const ukendt = await a.kald('GET', '/api/v1/search?q=bogsoeg&notebook=findes-ikke');
+  assert.equal(ukendt.data.results.length, 0);
+});

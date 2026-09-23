@@ -30,6 +30,8 @@ async function tegnSideIndhold() {
   const host = document.getElementById('pageHost');
   if (!host) return;
   host.classList.toggle('note', state.view === 'note');
+  // Soegefeltets »In <bog>«-knap foelger den note, man staar i.
+  if (typeof opfriskSoegeBog === 'function') opfriskSoegeBog();
   const v = viewById(state.view);
   /*
    * »All Notes« skriver sin egen undertekst.

@@ -1490,6 +1490,26 @@ body.fokus .note-tools:hover, body.fokus .note-tools:focus-within { opacity: 1; 
 
 .omni-clear:hover { background: var(--card-hover); color: var(--text); }
 
+/* »All notes« / »In <bog>«: kun synlig, naar der er en bog at skifte til. */
+.omni-scope {
+  flex: none;
+  max-width: 40%;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--pill);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.omni-scope:hover { background: var(--card-hover); color: var(--text); }
+.omni-scope.on { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
+
 .omni-legend {
   display: flex;
   flex-wrap: wrap;
