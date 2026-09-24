@@ -839,14 +839,30 @@ table.data td.center, table.data th.center { text-align: center; }
   border: 0;
   background: none;
   color: var(--text);
+  font-family: inherit;
   font-size: 34px;
   font-weight: 700;
   letter-spacing: -.02em;
   padding: 0;
   line-height: 1.2;
+  /* Et textarea, der vokser med titlen (v86) - uden haandtag og rullebjaelke. */
+  display: block;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .note-title:focus { outline: none; }
+/* En titel, der ikke kan staa paa én linje ved siden af knapperne: knapperne
+   op over den, og titlen faar hele bredden (se `tilpasTitel`). */
+/* Kun paa en bred skaerm: paa en telefon staar knapperne i forvejen paa deres
+   egen linje under titlen. */
+@media (min-width: 901px) {
+  .note-head.lang-titel { flex-wrap: wrap; }
+  .note-head.lang-titel .note-tools {
+    order: -1; flex: 1 0 100%; justify-content: flex-end; padding-top: 0; margin-bottom: -6px;
+  }
+}
 .note-title::placeholder { color: var(--border); }
 
 .note-tools { display: flex; align-items: center; gap: 4px; flex: none; position: relative; padding-top: 6px; }

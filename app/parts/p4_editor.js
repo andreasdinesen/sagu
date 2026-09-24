@@ -1659,9 +1659,9 @@ function sideNote() {
     <div class="note-head">
       <button class="note-ikon" id="noteIkon" title="Pick an icon"
         aria-label="Pick an icon">${n.icon ? esc(n.icon) : icon('notes', 20)}</button>
-      <input class="note-title" id="noteTitle" value="${esc(n.title)}"
+      <textarea class="note-title" id="noteTitle" rows="1"
         placeholder="Untitled" autocomplete="off" spellcheck="false"
-        ${maaRette(n) ? '' : 'readonly'}>
+        ${maaRette(n) ? '' : 'readonly'}>${esc(n.title)}</textarea>
       <div class="note-tools">
         ${tilbageKnapHtml()}
         <span id="gemMaerke">${gemMaerke()}</span>
@@ -2217,6 +2217,26 @@ function tegnMedAabenBlok(host, n) {
       if (nr !== editor.aabenBlok) aabnBlok(nr);
     });
   });
+}
+
+/**
+ * Titlen faar sin hoejde - og hele bredden, hvis den ikke kan staa paa én linje.
+ *
+ * Med knapperne til hoejre blev en lang titel en hoej, smal soejle. Kan den
+ * ikke staa paa én linje ved siden af knapperne, flytter knapperne op over
+ * den (`lang-titel`). Afgoerelsen tages altid UDEN klassen - ellers ville
+ * den bredere titel passe, klassen ryge af, og titlen hoppe frem og tilbage.
+ * Det sker i ét hug, saa browseren kun tegner resultatet.
+ */
+function tilpasTitel(titel) {
+  const hoved = titel.closest('.note-head');
+  if (hoved) hoved.classList.remove('lang-titel');
+  autoHoejde(titel);
+  const linje = parseFloat(getComputedStyle(titel).lineHeight) || 40;
+  if (hoved && titel.scrollHeight > linje * 1.5) {
+    hoved.classList.add('lang-titel');
+    autoHoejde(titel);
+  }
 }
 
 function autoHoejde(felt) {
@@ -3558,7 +3578,24 @@ function bindNoteSide() {
 
   const titel = document.getElementById('noteTitle');
   if (titel) {
+    /*
+     * Titlen er et `<textarea>`, der vokser - ikke et `<input>`.
+     *
+     * Et input er én linje, og en lang titel (»Demoplan: Genesys Admin Tool
+     * (v6.1)«) blev skaaret af ved vaerktoejsknapperne, saa man ikke kunne
+     * se, hvad noten hed (Andreas, 2026-09-24). Nu bryder den om og skubber
+     * teksten ned. Den er stadig ÉN linje i noten: Enter gaar ned i teksten,
+     * og et linjeskift i et indsaet bliver et mellemrum.
+     */
+    tilpasTitel(titel);
+    if (window.ResizeObserver) new ResizeObserver(() => tilpasTitel(titel)).observe(titel.parentElement);
     titel.addEventListener('input', () => {
+      if (/[\r\n]/.test(titel.value)) {
+        const pos = titel.selectionStart;
+        titel.value = titel.value.replace(/\s*[\r\n]+\s*/g, ' ');
+        titel.setSelectionRange(pos, pos);
+      }
+      tilpasTitel(titel);
       // En note maa ALDRIG staa uden en titel: den hedder sin titel i traeet,
       // i wikiens adresse og i [[henvisninger]]. Tomt felt = "Untitled",
       // men foerst naar man forlader feltet, saa man kan slette og skrive om.

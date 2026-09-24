@@ -4236,3 +4236,14 @@ Målt på en note med 900 blokke: optegning 50 ms, et tastetryk ~6 ms. Håndtage
 2,3 s — i begge editorer — fordi `placerGreb` slog hver blok op med `querySelector` og
 skiftede mellem at læse og skrive layout. Nu en reference pr. håndtag og alle læsninger
 før alle skrivninger: 15 ms.
+
+## 48 · Lange titler (2026-09-24)
+
+Titelfeltet var et `<input>` — én linje — og en lang titel blev skåret af ved
+værktøjsknapperne (Andreas' skærmbillede: »Demoplan: Genesys Admin T«). Nu er det et
+`<textarea>`, der vokser (`tilpasTitel`). Kan titlen ikke stå på én linje ved siden af
+knapperne, får hovedet klassen `lang-titel`, og knapperne flytter op over titlen, så den
+får hele bredden — kun på en bred skærm; på en telefon står knapperne i forvejen under.
+Afgørelsen tages altid **uden** klassen, ellers ville den bredere titel passe, klassen
+ryge af, og titlen hoppe frem og tilbage. Titlen er stadig én linje i noten: Enter går
+ned i teksten, og et linjeskift i et indsæt bliver et mellemrum.
