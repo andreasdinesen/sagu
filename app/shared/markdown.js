@@ -243,7 +243,18 @@
        * Men saa ligner det `[adressen](adressen)`, og vejen tilbage til
        * markdown ville skrive en tekst, ingen har skrevet.
        */
-      return gem(`<a href="${attr(sikker)}"${tekst ? '' : ' data-tom="1"'}${intern ? ' class="vedhaeft"'
+      /*
+       * `data-md` paa et OVERSAT link: adressen, som den stod (`sagu:…`,
+       * `sagu-note:…`). Uden den skrev vejen tilbage `#note-<id>` - den
+       * adresse, appen viser - og ikke den, noten gemmer. Saa kunne et afsnit
+       * med et link til en anden note aldrig redigeres renderet (v85).
+       *
+       * KUN for editoren (`blokAttribut`). Den offentlige wiki maa ikke baere
+       * notens interne adresser - et `sagu-note:<id>` i en udgivet side er et
+       * id, laeseren ikke skal se (tests/wiki.test.mjs).
+       */
+      const spor = o.blokAttribut && oversat && oversat !== url ? ` data-md="${attr(url)}"` : '';
+      return gem(`<a href="${attr(sikker)}"${spor}${tekst ? '' : ' data-tom="1"'}${intern ? ' class="vedhaeft"'
         : ` target="_blank" rel="${eksternRel}"`}>${tekst || attr(sikker)}</a>`);
     });
 

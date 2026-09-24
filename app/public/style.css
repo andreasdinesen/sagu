@@ -19,7 +19,9 @@
  *  40  topbjaelke appens klaebende topbjaelke (.topbar) - og de lister, der
  *                folder sig ud under et felt og skal over indholdet:
  *                [[-forslag (.wikiforslag), maerkeforslag (.maerke-forslag),
- *                wikiens traefferliste (.wtraefliste) - og rulleknappen
+ *                wikiens traefferliste (.wtraefliste), dokumentets
+ *                svaevende vaerktoej (.dok-vaerktoej), link- og
+ *                billedboblen (.linkboble) - og rulleknappen
  *                nederst til hoejre (.rulleknap), der skal UNDER sløret,
  *                naar sidebaren er foldet ud paa en telefon
  *  45  slør      baggrunden bag den udfoldede sidebar (.backdrop)
@@ -2904,6 +2906,73 @@ body.traekker { cursor: grabbing; user-select: none; }
  * man vil flytte rundt i den.
  */
 #noteBody { position: relative; }
+
+/* ------------------------------------------------ noten som ét dokument (v85)
+   `#dok` er hele kroppen som ét contenteditable. Blokkene er de samme som
+   foer - kun rammen om dem er ny, saa afstanden mellem dem skal med herind. */
+.dok { outline: none; min-height: 3em; caret-color: var(--accent); }
+.dok > * { margin: 0 0 14px; }
+.dok > :last-child { margin-bottom: 0; }
+.dok:empty::before, .dok > p:only-child:empty::before {
+  content: 'Start writing…'; color: var(--muted);
+}
+/* En oe (kode, tabel, GitHub-kort) redigeres raat ved et klik. */
+.dok .dok-oe { cursor: pointer; }
+.dok .dok-oe:hover { box-shadow: 0 0 0 1px var(--border); border-radius: 6px; }
+.dok.traekker { outline: 2px dashed var(--accent); outline-offset: 6px; }
+/* Vaerktoejet svaever over den blok, markoeren staar i - til hoejre. */
+.blok-vaerktoej.dok-vaerktoej {
+  position: absolute; right: 0; z-index: 40; margin: 0;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-sm);
+  box-shadow: var(--shadow-lift); padding: 2px 4px;
+}
+/* Paa en telefon: i bunden over tastaturet, én raekke, der kan rulles (se
+   `placerDokVaerktoejVedMarkoer`). Rulleknappen gaar af vejen imens. */
+.blok-vaerktoej.dok-vaerktoej.bund {
+  position: fixed; left: 0; right: 0; top: auto; border-radius: 0;
+  border-width: 1px 0 0; padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
+}
+body.dok-skriver .rulleknap { display: none; }
+@media (max-width: 900px) {
+  .blok-vaerktoej.dok-vaerktoej {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .blok-vaerktoej.dok-vaerktoej::-webkit-scrollbar { display: none; }
+  .blok-vaerktoej.dok-vaerktoej > * { flex: none; }
+}
+/* Link- og billedboblen: under linket eller billedet, markoeren staar i. */
+.linkboble {
+  position: absolute; z-index: 40; display: flex; align-items: center; gap: 2px;
+  max-width: min(460px, 100%); padding: 4px; font-size: 13px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-sm);
+  box-shadow: var(--shadow-lift);
+}
+.linkboble-adr {
+  flex: 1 1 auto; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; border: 0; background: none; color: var(--accent-text); font: inherit;
+  cursor: pointer; padding: 4px 8px; text-align: left;
+}
+.linkboble-adr:hover { text-decoration: underline; }
+.linkboble-knap {
+  flex: none; border: 0; background: none; color: var(--text); font: inherit; font-weight: 550;
+  cursor: pointer; padding: 4px 8px; border-radius: 6px;
+}
+.linkboble-knap:hover { background: var(--card-hover); }
+.linkboble-knap.farlig { color: var(--danger); }
+.linkboble-hint { padding: 0 6px; white-space: nowrap; }
+.linkboble.ret { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; width: 320px; }
+.linkboble-felt { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.linkboble-felt input {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+}
+.linkboble-knapper { display: flex; justify-content: flex-end; gap: 6px; }
+/* Et markeret billede i dokumentet. */
+.dok img.valgt { outline: 3px solid var(--accent); outline-offset: 2px; }
+.dok img.note-img { cursor: default; }
+/* [[forslag]] ved markoeren, ikke under hele noten. */
+.wikiforslag.dok-wiki { position: absolute; margin: 0; width: 280px; max-width: 100%; }
 
 .blok-greb {
   position: absolute;

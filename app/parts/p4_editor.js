@@ -1756,6 +1756,21 @@ function tegnKrop() {
     return;
   }
 
+  /*
+   * Noten som ÉT dokument (v85) - se p16_dokument.js. Falder den igennem
+   * (en note, der ikke kan skrives uaendret tilbage), tegnes den som foer.
+   */
+  if (brugDokument(n)) {
+    const hvor = dokHarFokus() ? dokMarkoer() : null;
+    if (tegnDokument(host, n, hvor ? { markoer: hvor } : null)) {
+      // Kroppens ene klik-handler - oeerne, links og arealet under noten.
+      bindKrop();
+      tegnBlokValgBaand();
+      return;
+    }
+  }
+  dok.el = null;
+
   try {
     const { html } = saguMarkdown.render(n.body, renderValg());
     host.innerHTML = (html || '<p class="tom-note meta saetning">Click here to start writing.</p>')
@@ -1868,6 +1883,8 @@ function bindKrop() {
   host.dataset.bundet = '1';
 
   host.addEventListener('click', (e) => {
+    // Dokumentet (v85) har sine egne regler for klik - teksten er browserens.
+    if (dokKlik(e)) return;
     /*
      * **Markeringen af flere blokke spoerges FOERST** (F36).
      *
@@ -2642,6 +2659,7 @@ async function indsaetFilerIBlok(filer, vaert, b) {
     lagt += 1;
   }
   if (!lagt) return;
+  if (vaert && vaert === dok.el) { dokTegnOmVedMarkoer(); return; }
   gemRigBlok(vaert, b);
   /*
    * Gentegn, saa billedet kan SES.
@@ -2709,6 +2727,16 @@ async function indsaetRent(e, vaert, b) {
   efter.collapse(true);
   sel.removeAllRanges();
   sel.addRange(efter);
+  /*
+   * I dokumentet tegnes det indsatte, saa det ser ud som det, det er: tre
+   * afsnit og en liste, ikke én linje med stjerner og havelaager. Ren tekst
+   * paa én linje lades i fred - saa virker ⌘Z paa den som paa alt andet.
+   */
+  if (vaert && vaert === dok.el) {
+    if (/\n|[*_`#[\]!>~|]/.test(String(ren || ''))) dokTegnOmVedMarkoer();
+    else dokTvingSkriv();
+    return;
+  }
   gemRigBlok(vaert, b);
 }
 
@@ -2791,6 +2819,8 @@ function maerkTomt(vaert) {
 
 /** Blokkens HTML tilbage til markdown og ind i noten. */
 function gemRigBlok(vaert, b) {
+  // I dokumentet (v85) er det observatoeren, der ved, hvad der er roert.
+  if (vaert && vaert === dok.el) { rydTomme(vaert); dokTvingSkriv(); return; }
   rydTomme(vaert);
   maerkTomt(vaert);
   const md = saguRedigering.tilMarkdown(vaert.innerHTML);
@@ -2867,6 +2897,9 @@ function skiftTjekliste(vaert, b) {
   // Skriv blokken tilbage foerst: saa passer `b.til`, og der er kun ét sted,
   // der oversaetter HTML til markdown.
   gemRigBlok(vaert, b);
+  // I dokumentet er blokken den, markoeren staar i.
+  if (vaert && vaert === dok.el) b = dokBlokVedMarkoer();
+  if (!b) return;
   const linjer = editor.note.body.split('\n').slice(b.fra, b.til + 1);
   const fyldte = linjer.filter((l) => l.trim());
   const alle = fyldte.length > 0 && fyldte.every((l) => TJEK_LINJE.test(l));
@@ -2949,6 +2982,9 @@ function lavKodeblok(vaert, b) {
   r.insertNode(document.createTextNode(KODE_START));
 
   gemRigBlok(vaert, b);
+  // I dokumentet kan markeringen gaa over flere blokke: dem alle.
+  if (vaert && vaert === dok.el) b = dokBlokMed(KODE_START, KODE_SLUT);
+  if (!b) return;
   const md = editor.note.body.split('\n').slice(b.fra, b.til + 1).join('\n');
   const i = md.indexOf(KODE_START);
   const j = md.indexOf(KODE_SLUT);
@@ -3238,6 +3274,8 @@ function aabnSidste() {
    * kollega med LAESE-adgang til en tom delt note faa et skrivefelt (F11).
    */
   if (!maaRette(editor.note)) return;
+  // I dokumentet er »begynd at skrive« bare markoeren til sidst.
+  if (dokAktiv()) { dokSaetMarkoer('slut'); return; }
   const b = saguMarkdown.blokke(editor.note.body);
   if (!b.length) {
     // Tom note: laeg en tom linje ind, saa der er en blok at aabne.

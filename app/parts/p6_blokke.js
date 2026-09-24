@@ -160,6 +160,8 @@ function bindTjek(host) {
   // Tredje sted, en redigering kan begynde - se maaRette() (F11).
   if (!maaRette(editor.note)) return;
   host.querySelectorAll('[data-tjek]').forEach((el) => {
+    // I dokumentet (v85) er fluebenene delegeret - se bindDokument().
+    if (el.closest('#dok')) return;
     el.addEventListener('click', (e) => {
       // Tjekboksen standser sin egen haendelse, saa den naar aldrig kroppens
       // handler. Markeringen (F36) skal derfor spoerges HER - ellers kunne en
@@ -298,10 +300,21 @@ function bindBilleder(host) {
     if (el.complete) gemBilledMaal(el);
     else el.addEventListener('load', () => gemBilledMaal(el), { once: true });
     el.addEventListener('click', (e) => {
+      /*
+       * I dokumentet (v85) MARKERER et klik billedet - saa kan det slettes,
+       * kopieres og flyttes som al anden tekst, og boblen under det har
+       * »View« til det store billede. Dobbeltklik aabner det ogsaa.
+       */
+      if (el.closest('#dok')) { e.stopPropagation(); e.preventDefault(); dokMarkerBillede(el); return; }
       // Samme grund som tjekboksen: billedet standser sin egen haendelse, saa
       // uden det her kunne en blok, der KUN er et billede, ikke markeres.
       if (blokValgKlik(e)) return;
       e.stopPropagation();
+      visLightbox(el.getAttribute('src'), el.getAttribute('alt'));
+    });
+    el.addEventListener('dblclick', (e) => {
+      if (!el.closest('#dok')) return;
+      e.preventDefault();
       visLightbox(el.getAttribute('src'), el.getAttribute('alt'));
     });
   });
@@ -1091,6 +1104,27 @@ function vaelgFiler() {
 const greb = { fra: null, til: null, aktiv: false };
 let grebObs = null;
 
+/*
+ * Haandtaget -> dets blok, som en REFERENCE.
+ *
+ * Foer slog `placerGreb` blokken op med `querySelector('[data-blok="…"]')`
+ * for hvert haandtag og skiftede mellem at laese `offsetTop` og skrive
+ * `style.top` - to gange n arbejde, og hver skrivning tvang browseren til at
+ * regne layoutet forfra foer naeste laesning. Maalt paa en note med 900
+ * blokke: **2,3 sekunder** for at tegne haandtagene (v85). Med referencen og
+ * alle laesninger foer alle skrivninger er det én layoutberegning.
+ *
+ * Referencen holder ogsaa, naar dokument-editoren (v85) skriver blokkens
+ * linjer om: `grebLinje()` laeser den AKTUELLE `data-blok`, ikke den, der
+ * stod, da haandtaget blev lavet.
+ */
+const grebBlok = new WeakMap();
+
+function grebLinje(g) {
+  const el = grebBlok.get(g);
+  return el && el.dataset.blok !== undefined ? el.dataset.blok : g.dataset.greb;
+}
+
 /** Blokkens nummer i `blokke()` ud fra dens FØRSTE linje (`data-blok`). */
 function blokNrForLinje(linje) {
   return saguMarkdown.blokke(editor.note.body).findIndex((b) => b.fra === linje);
@@ -1128,6 +1162,8 @@ function tegnGreb(host) {
    * skal ses efter, naar knappen faar en betydning mere.**
    */
   const kanFlyttes = blokke.length > 1;
+  // Alle haandtag i ét hug - ikke ét indsaet (og én optegning) pr. blok.
+  const samlet = document.createDocumentFragment();
 
   for (const el of blokke) {
     const g = document.createElement('button');
@@ -1150,12 +1186,14 @@ function tegnGreb(host) {
     g.title = kanFlyttes ? 'Drag to move — click for options' : 'Click for options';
     g.innerHTML = '<span></span><span></span><span></span>'
       + '<span></span><span></span><span></span>';
-    host.appendChild(g);
+    grebBlok.set(g, el);
+    samlet.appendChild(g);
     g.addEventListener('pointerdown', (e) => startTraek(e, host, g));
     // Klikket haandteres af `startTraek`s afslutning. Det maa ikke ogsaa naa
     // notens egen klikhaandtering - to svar paa ét tryk.
     g.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
   }
+  host.appendChild(samlet);
   placerGreb(host);
 
   if (window.ResizeObserver) {
@@ -1167,13 +1205,18 @@ function tegnGreb(host) {
 
 /** Håndtaget følger sin blok - også når noten vokser under den. */
 function placerGreb(host) {
-  host.querySelectorAll('.blok-greb').forEach((g) => {
-    const el = host.querySelector(`[data-blok="${g.dataset.greb}"]`);
-    if (!el) { g.style.display = 'none'; return; }
+  const alle = [...host.querySelectorAll('.blok-greb')];
+  // Først ALLE læsninger, så alle skrivninger - se `grebBlok`.
+  const pladser = alle.map((g) => {
+    const el = grebBlok.get(g);
+    return el && el.isConnected ? el.offsetTop + 1 : null;
+  });
+  alle.forEach((g, i) => {
+    if (pladser[i] === null) { g.style.display = 'none'; return; }
     g.style.display = '';
     // Første tekstlinje frem for blokkens midte: ud for en lang liste skal
     // håndtaget stå ØVERST, dér hvor listen begynder.
-    g.style.top = `${el.offsetTop + 1}px`;
+    g.style.top = `${pladser[i]}px`;
   });
 }
 
@@ -1192,10 +1235,10 @@ function startTraek(e, host, g) {
    * menuen, og begge dele afgoeres nedenfor.
    */
   if ((e.metaKey || e.ctrlKey || e.shiftKey) && !e.altKey) {
-    skiftBlokValgt(Number(g.dataset.greb), e.shiftKey);
+    skiftBlokValgt(Number(grebLinje(g)), e.shiftKey);
     return;
   }
-  greb.fra = Number(g.dataset.greb);
+  greb.fra = Number(grebLinje(g));
   greb.til = null;
   greb.aktiv = false;
   g.setPointerCapture(e.pointerId);
@@ -1357,7 +1400,7 @@ function visBlokMenu(g) {
    * doda at goere. Havde vagten faaet lov at blive staaende, ville sletningen
    * vaere usynlig for enhver, der ikke har koblet de to apps sammen.
    */
-  const linje = Number(g.dataset.greb);
+  const linje = Number(grebLinje(g));
   const tekst = blokSomOpgave(linje);
   // Uden en tekst er der intet at sende og intet at vise - men blokken kan
   // stadig slettes, saa menuen aabner alligevel.
@@ -1392,6 +1435,24 @@ function visBlokMenu(g) {
    */
   blokMenu.querySelector('#blokVaelg').addEventListener('click', () => {
     lukBlokMenu();
+    /*
+     * I dokumentet (v85) er en markering en RIGTIG markering: blokkens tekst
+     * markeres, og saa virker ⌘C, slet, skriv-hen-over og »Send to doda«,
+     * som de goer paa al anden markeret tekst.
+     */
+    if (dokAktiv()) {
+      const el = dok.el.querySelector(`[data-blok="${linje}"]`);
+      const barn = el ? dokBarn(el) : null;
+      if (barn) {
+        dok.el.focus({ preventScroll: true });
+        const r = document.createRange();
+        r.selectNodeContents(barn);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        return;
+      }
+    }
     skiftBlokValgt(linje, false);
   });
 
@@ -1631,7 +1692,7 @@ function markerValgteBlokke(host) {
     el.classList.toggle('blok-valgt', valgt(el.dataset.blok));
   });
   host.querySelectorAll('.blok-greb').forEach((g) => {
-    g.classList.toggle('greb-valgt', valgt(g.dataset.greb));
+    g.classList.toggle('greb-valgt', valgt(grebLinje(g)));
   });
 }
 

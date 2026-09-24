@@ -4111,6 +4111,7 @@ const ROUTES = {
        */
       prefs: {
         editWhole: getSetting(u.id, 'edit_whole', '') === '1',
+        classicEditor: getSetting(u.id, 'classic_editor', '') === '1',
       },
     });
   },
@@ -5654,7 +5655,14 @@ const MOENSTRE = [
       if (Object.prototype.hasOwnProperty.call(body, 'editWhole')) {
         setSetting(user.id, 'edit_whole', body.editWhole ? '1' : '');
       }
-      sendJson(res, 200, { editWhole: getSetting(user.id, 'edit_whole', '') === '1' });
+      // v85: den gamle blok-editor som et valg - dokumentet er standarden.
+      if (Object.prototype.hasOwnProperty.call(body, 'classicEditor')) {
+        setSetting(user.id, 'classic_editor', body.classicEditor ? '1' : '');
+      }
+      sendJson(res, 200, {
+        editWhole: getSetting(user.id, 'edit_whole', '') === '1',
+        classicEditor: getSetting(user.id, 'classic_editor', '') === '1',
+      });
     },
   },
   {

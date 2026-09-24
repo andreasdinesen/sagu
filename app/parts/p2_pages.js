@@ -838,6 +838,15 @@ async function sideSettings() {
   <h2>Editing</h2>
   <div class="card">
     <label class="switch">
+      <input type="checkbox" id="prefKlassisk" ${state.prefs && state.prefs.classicEditor ? 'checked' : ''}>
+      <span>Use the classic block editor</span></label>
+    <p class="meta saetning">A note is normally <strong>one document</strong>: click anywhere and
+    write, use the arrow keys all the way through, and select across paragraphs — or the whole
+    note with <strong>⌘A</strong>. Code blocks, tables and GitHub cards open as markdown when you
+    click them. Turn this on to go back to the editor that opens one paragraph at a time.</p>
+  </div>
+  <div class="card">
+    <label class="switch">
       <input type="checkbox" id="prefHel" ${state.prefs && state.prefs.editWhole ? 'checked' : ''}>
       <span>Click a line to edit the whole note as markdown</span></label>
     <p class="meta saetning">Normally a click opens just the paragraph you clicked, and it stays
@@ -1156,12 +1165,23 @@ function bindSettings() {
     vis();
   }
 
+  const prefKlassisk = document.getElementById('prefKlassisk');
+  if (prefKlassisk) {
+    prefKlassisk.addEventListener('change', async () => {
+      try {
+        const r = await api('POST', '/api/v1/prefs', { classicEditor: prefKlassisk.checked });
+        state.prefs = Object.assign({}, state.prefs, { classicEditor: r.classicEditor });
+        toast(r.classicEditor ? 'Notes now open one paragraph at a time.' : 'Notes are now one document.');
+      } catch (ex) { toast(ex.message); prefKlassisk.checked = !prefKlassisk.checked; }
+    });
+  }
+
   const prefHel = document.getElementById('prefHel');
   if (prefHel) {
     prefHel.addEventListener('change', async () => {
       try {
         const r = await api('POST', '/api/v1/prefs', { editWhole: prefHel.checked });
-        state.prefs = Object.assign({}, state.prefs, { editWhole: r.editWhole });
+        state.prefs = Object.assign({}, state.prefs, { editWhole: r.editWhole, classicEditor: r.classicEditor });
         toast(r.editWhole ? 'A click now opens the whole note.' : 'A click now opens one paragraph.');
       } catch (ex) { toast(ex.message); prefHel.checked = !prefHel.checked; }
     });

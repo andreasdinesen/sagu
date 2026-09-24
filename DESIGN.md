@@ -4164,3 +4164,75 @@ dér også.
 - **Rulleknappen** bygges af `wiki.js` og deler CSS med appens (`.rulleknap`). Den
   findes kun med JavaScript, fordi den kun virker med det. Samme hop-sikring på en
   telefon som i appen.
+
+## 47 · Noten som ÉT dokument (2026-09-24)
+
+Andreas: »I stedet for en masse elementer, saa skal den se alt tekst som et samlet
+element, saa naar man klikker ind i en note, saa kan man bruge pilene til at komme ned
+igennem hele noten og man kan vaelge hele noten.« Valgt blandt tre veje: ét renderet
+dokument (valgt), rå markdown som standard, eller blokke der »føles« som ét.
+
+**Det vender en tidligere beslutning** (§ om den hybride editor og F30: »Hele noten som
+ét contenteditable ville betyde, at hvert tastetryk oversatte HELE noten tilbage«). Den
+begrundelse holder stadig — derfor er den løst i stedet for ignoreret:
+
+- **Hele kroppen er ét `contenteditable` (`#dok`)**, tegnet af den samme `render()`.
+  Piletaster, ⌘A, markering over flere afsnit og browserens egen ⌘Z virker.
+- **Hvert barn husker sin markdown** (`dok.urort`). En `MutationObserver` noterer, hvilke
+  børn der er rørt. Et urørt barn giver sin gamle markdown tilbage tegn for tegn; kun de
+  rørte går gennem `tilMarkdown`. En fejl kan stadig kun ramme den blok, man skriver i.
+- **Limen er ren** (`saguRedigering.sammensaet`) og prøves uden DOM i
+  `tests/dokument.test.mjs`: urørt giver præcis `body`, en ændring rører kun sine egne
+  linjer, pladserne passer.
+- **Sikkerhedsnettet:** før dokumentet gives fri, sammensættes det én gang urørt. Giver
+  det ikke præcis `body`, bruges blok-editoren for den note (`dok.afvist`), og der skrives
+  ikke et tegn.
+- **Øer:** en blok, der ikke består porten (`kanRedigereRigt`) — kode, tabeller, `---`,
+  GitHub-kort — er `contenteditable="false"`. Et klik åbner den råt ad den gamle vej
+  (`aabnBlok` → `tegnMedAabenBlok`), og Esc fører tilbage til dokumentet. Piletasterne
+  springer hen over dem. En ø er **aldrig** rørt: ændringer i dens pynt (»Copy« →
+  »Copied«, et GitHub-kort der fyldes) tæller ikke, og ⌘Z, der sætter den tilbage, giver
+  dens egen markdown. Backspace lige efter en ø sletter den ikke i ét tryk.
+- **Afstande og ramme læses af optegningen** (`dok.orig`): de tomme linjer mellem to
+  blokke er dem, der stod, når naboen er den samme som ved optegningen, og de tomme linjer
+  foran/bagved hører til den oprindelige første/sidste blok. Uden det gav ⌘Z efter en
+  sletning over flere blokke en note med én tom linje mere (målt i browseren).
+- **Tasterne:** Enter bliver i afsnittet og ⌘Enter laver et nyt (F32, uændret). I en
+  liste og en tjekliste giver Enter et nyt punkt (tjeklisten med boks), en tom række +
+  Enter forlader listen. Enter i en overskrift giver et afsnit.
+- **Værktøjslinjen** svæver over den blok, markøren står i; på en telefon står den i
+  bunden over tastaturet (`visualViewport`), fordi den over blokken dækkede teksten.
+  MD-knappen viser hele noten som markdown — dokumentet ER hele noten.
+- **Indsæt** tegnes om, når det indsatte er markdown (flere linjer, `*`, `#` …), og
+  markøren lander efter det indsatte via et usynligt tegn (`DOK_MARKOER`), som fjernes
+  igen. Ren tekst på én linje lades i fred, så ⌘Z virker på den.
+- **F36 i dokumentet:** en markering af blokke er nu en rigtig tekstmarkering.
+  Blokmenuens »Select this block« markerer blokkens tekst, og så virker ⌘C, slet og
+  »Send to doda« som på al anden markeret tekst. ⌘-klik på en blok følger et link i
+  stedet for at markere.
+- **Links: et klik sætter markøren i linket** (Andreas: »hvordan kan jeg rette et
+  link?«). Første udgave fulgte linket ved et klik, og så var hverken teksten eller
+  adressen til at nå. Nu som i Google Docs: en boble under linket med adressen, **Open**,
+  **Edit** og **Remove link**; ⌘/Ctrl-klik følger linket direkte, og **⌘K** (og
+  »Link« i værktøjet) retter linket, markøren står i, eller laver et af det markerede.
+  Boblen rører kun DOM'en — adressen i `data-md`, et `href` kun til det, der må følges
+  (`https:`, `mailto:`, `#note-`) — og observatøren skriver noten.
+- **Notelinks kan skrives tilbage.** `[[Titel]]` og importens `sagu-note:<id>` gav
+  før appens adresse (`#note-<id>`) tilbage, så porten afviste hvert afsnit med et
+  notelink, og i dokumentet blev de øer. Rendereren sætter nu `data-md` på et oversat
+  link — **kun med `blokAttribut`**, så den offentlige wiki aldrig bærer et internt id —
+  og oversætteren kender `a.notelink`. Et valgt `[[`-forslag tegnes om med det samme,
+  så det står som et link og ikke som `[[…]]`.
+- **Billeder: et klik markerer billedet** (»hvordan sletter jeg billeder eller markerer
+  dem, så jeg kan kopiere og flytte dem rundt?«). Så virker Backspace, ⌘C/⌘X/⌘V og
+  browserens eget træk, som på tekst, og en boble har **View** (det store billede;
+  dobbeltklik gør det samme), **Copy** og **Delete**. Sletningen går gennem
+  browserens egen kommando, så ⌘Z bringer billedet tilbage. Kopien bevarer billedet:
+  det markerede `<img>` har `data-md` (`sagu:<id>`), og indsæt læser HTML'en.
+- **Den gamle editor er et valg** (Settings → Editing → »Use the classic block editor«,
+  `classic_editor`). `editWhole` bruger også den gamle vej.
+
+Målt på en note med 900 blokke: optegning 50 ms, et tastetryk ~6 ms. Håndtagene tog
+2,3 s — i begge editorer — fordi `placerGreb` slog hver blok op med `querySelector` og
+skiftede mellem at læse og skrive layout. Nu en reference pr. håndtag og alle læsninger
+før alle skrivninger: 15 ms.

@@ -593,7 +593,10 @@ async function opfriskAlt(stille) {
     // og et tal, der ikke foelger med, er vaerre end intet tal.
     opdaterNav();
     // 4. Og selve skaermen.
-    if (state.view === 'note' && editor.note && !editor.beskidt) {
+    // Staar man i dokumentet, tegnes det ikke om under markoeren - heller ikke
+    // naar alt er gemt. Man er midt i noget.
+    if (state.view === 'note' && editor.note && !editor.beskidt
+        && !(typeof dokHarFokus === 'function' && dokHarFokus())) {
       await aabnNote(editor.note.id, true);
     } else if (state.view === 'note' && editor.note) {
       // Ugemte rettelser: teksten er MIN, og den hentes ikke over.
@@ -674,6 +677,7 @@ function opfriskHvisFremme() {
   // Skriver man lige nu, roeres skaermen ikke. `opfriskAlt` passer paa selve
   // teksten, men en optegning under haenderne er stadig en afbrydelse.
   if (typeof editor === 'object' && editor.aabenBlok !== null) return;
+  if (typeof dokHarFokus === 'function' && dokHarFokus()) return;
   opfriskAlt(true);
 }
 

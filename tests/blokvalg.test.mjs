@@ -222,8 +222,12 @@ test('haandtaget har en doer for touch - og den kalder markeringen', () => {
   // halvdelen af brugerne uden funktionen, og intet fejler.
   assert.ok(p6.includes('id="blokVaelg"'), 'menupunktet »Select this block« mangler');
   const i = p6.indexOf("querySelector('#blokVaelg')");
-  assert.ok(i > -1 && p6.slice(i, i + 200).includes('skiftBlokValgt('),
+  const handler = p6.slice(i, p6.indexOf('\n  });', i));
+  assert.ok(i > -1 && handler.includes('skiftBlokValgt('),
     'punktet skal faktisk markere blokken');
+  // I dokumentet (v85) er det en rigtig tekstmarkering af blokken.
+  assert.ok(handler.includes('dokAktiv()') && handler.includes('addRange('),
+    'i dokumentet skal punktet markere blokkens tekst');
 });
 
 test('baandets punkter loves kun, naar de kan holdes', () => {

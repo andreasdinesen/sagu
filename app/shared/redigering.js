@@ -260,6 +260,9 @@
         return `![${a.alt || ''}](${kilde})`;
       }
       case 'a': {
+        // `[[note]]`, der FANDT sin note, er et link med klassen - samme spor
+        // som den doede, der er et <span> (v85).
+        if (harKlasse(knude, 'notelink')) return `[[${boern()}]]`;
         const href = a['data-md'] || a.href || '';
         const tekst = boern();
         /*
@@ -368,7 +371,48 @@
     return ud(laes(String(html == null ? '' : html)), opt || {});
   }
 
-  const api = { tilMarkdown, laes, afkod };
+  /**
+   * Hele noten igen, af dokument-editorens blokke (v85).
+   *
+   * Editoren er ét `contenteditable`, men noten skrives aldrig om i ét hug:
+   * en blok, man ikke har roert, giver sin OPRINDELIGE markdown tilbage,
+   * tegn for tegn, og kun de roerte oversaettes (`tilMarkdown`). Det her er
+   * limen imellem dem - og det er dén, der skal kunne proeves uden en DOM.
+   *
+   * Hver del er `{ md, gap, foerst, sidst }`:
+   *   `md`      blokkens markdown (den gamle, eller den oversatte),
+   *   `gap`     linjerne FOER blokken, som de stod - eller null for en ny
+   *             blok eller en, der har faaet en ny nabo. null giver én tom
+   *             linje, som markdown skiller afsnit med.
+   *   `foerst`  blokken var den foerste i noten: saa staar `ramme.foran` foran.
+   *   `sidst`   blokken var den sidste: saa kommer `ramme.bagved` efter.
+   *
+   * Returnerer `{ body, pladser }`, hvor `pladser[i] = { fra, til, gap }` er
+   * de linjer, del i FIK - saa editoren kan skrive sine `data-blok` om uden
+   * at gaette, og naeste sammensaetning giver det samme igen.
+   */
+  function sammensaet(dele, ramme) {
+    const r = ramme || {};
+    const linjer = [];
+    const pladser = [];
+    let sidsteVarSidst = false;
+    for (const d of dele) {
+      const md = String(d.md == null ? '' : d.md);
+      let gap;
+      if (!pladser.length) gap = d.foerst ? (r.foran || []) : [];
+      else gap = Array.isArray(d.gap) ? d.gap : [''];
+      linjer.push(...gap);
+      const fra = linjer.length;
+      linjer.push(...md.split('\n'));
+      pladser.push({ fra, til: linjer.length - 1, gap });
+      sidsteVarSidst = !!d.sidst;
+    }
+    if (!pladser.length) return { body: (r.tom != null ? r.tom : ''), pladser };
+    if (sidsteVarSidst) linjer.push(...(r.bagved || []));
+    return { body: linjer.join('\n'), pladser };
+  }
+
+  const api = { tilMarkdown, laes, afkod, sammensaet };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else global.saguRedigering = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this));
