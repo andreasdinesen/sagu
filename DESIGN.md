@@ -4266,3 +4266,25 @@ noget«.
   man den linje, man skrev i. Rulningen gemmes og sættes tilbage i samme hug.
 - Filvælgeren tager fokus, og det rå felt lukker imens. Filen lægges alligevel i noten,
   og noten tegnes om, så den kan ses.
+
+## 50 · Et billede kopieres som et BILLEDE (2026-09-25)
+
+Andreas: et billede kopieret fra Sagu (Ctrl+C) kom ind i Claude-appen som navnet
+»image.png«. Browserens egen kopi af et markeret `<img>` er HTML med en adresse bag login
+og alt-teksten; andre programmer kan hverken hente adressen eller bruge HTML'en.
+
+- **Copy** i billedets boble og **⌘C/Ctrl+C** på et markeret billede skriver nu både
+  `image/png` (via `tilPngBlob`, som lysboksens »Copy image« allerede brugte) og
+  `text/html` med billedets `data-md` (`sagu:<id>`) — `kopierBilledeUdklip`. Ved tasten
+  kommer browserens egen kopi først, og det rigtige billede lægges oven i straks efter;
+  tasten er den brugerhandling, der tillader det.
+- **Sat ind i Sagu igen er det det SAMME billede**, ikke en ny fil: både `indsaetRent`
+  og det rå felts `haandterIndsaet` foretrækker HTML'en, når den har `data-md="sagu:…"`,
+  og `htmlTilMarkdown` skriver `sagu:<id>` frem for den oversatte api-adresse.
+- En afvist skrivning skrives i konsollen med browserens egen besked. Browserpanelet i
+  Claude-appen nægter udklipsholderen (»Write permission denied«, også for lysboksens
+  kopi), så det er prøvet i koden, ikke i en rigtig browser.
+- **Værktøjslinjen står ved markørens LINJE**, ikke over blokken, og kommer under
+  topbjælken i lagene (z 35). Den lå oven på søgefeltet, når afsnittet var rullet op
+  under bjælken (Andreas' skærmbillede). Ville den havne under bjælken, står den under
+  markørens linje.

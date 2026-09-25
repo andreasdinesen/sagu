@@ -5200,6 +5200,17 @@ function bindDokument(el, host) {
     if (a) { opdaterWikiForslag(a); placerDokWiki(); } else lukWikiForslag();
   });
   el.addEventListener('paste', (e) => indsaetRent(e, el, null));
+  /*
+   * ⌘C/⌘X paa et markeret billede: browserens egen kopi FOERST (saa noget
+   * altid naar frem), og straks efter det rigtige billede oven i - se
+   * `kopierBilledeUdklip`. Tasten er brugerhandlingen, der tillader det.
+   */
+  const billedKopi = () => {
+    const img = dokValgtBillede();
+    if (img) kopierBilledeUdklip(img);
+  };
+  el.addEventListener('copy', billedKopi);
+  el.addEventListener('cut', billedKopi);
   el.addEventListener('dragover', (e) => {
     if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')) {
       e.preventDefault();
@@ -5322,8 +5333,22 @@ function placerDokVaerktoejVedMarkoer() {
   const barn = dokBarn(sel.getRangeAt(0).startContainer);
   const host = document.getElementById('noteBody');
   if (!barn || barn.nodeType !== 1 || !host) return;
-  const top = barn.offsetTop - linje.offsetHeight - 6;
-  linje.style.top = `${Math.max(-linje.offsetHeight - 6, top)}px`;
+  /*
+   * Over den LINJE, markoeren staar paa - ikke over blokken. I et langt
+   * afsnit stod linjen ellers en skaermhoejde over det, man skrev i, og var
+   * afsnittet rullet op under topbjaelken, lagde den sig oven paa soegefeltet
+   * (Andreas' skaermbillede, 2026-09-25). Ville den havne under bjaelken,
+   * staar den UNDER markoerens linje i stedet.
+   */
+  const hr = host.getBoundingClientRect();
+  let r = sel.getRangeAt(0).getBoundingClientRect();
+  if (!r || (!r.height && !r.width)) r = barn.getBoundingClientRect();
+  const bjaelke = document.querySelector('.topbar');
+  const loft = bjaelke ? bjaelke.getBoundingClientRect().bottom : 0;
+  const h = linje.offsetHeight;
+  const over = r.top - h - 6;
+  const y = over >= loft + 4 ? over : r.bottom + 6;
+  linje.style.top = `${Math.round(y - hr.top)}px`;
 }
 
 function bindDokVaerktoej(linje) {
@@ -5730,6 +5755,45 @@ function dokMarkerBillede(img) {
   visBilledBoble(img);
 }
 
+/**
+ * Billedet paa udklipsholderen - som et BILLEDE, ikke kun som HTML.
+ *
+ * »Naar jeg proever at copy og paste et billede ind i fx Claude-appen, saa
+ * faar jeg [kun navnet]« (Andreas, 2026-09-25). Browserens egen kopi af et
+ * markeret <img> er HTML med en adresse bag login og alt-teksten - andre
+ * programmer kan hverken hente adressen eller bruge HTML'en.
+ *
+ * Derfor BEGGE: `image/png` til alle andre programmer, og `text/html` med
+ * billedets `data-md` (`sagu:<id>`), saa et indsaet i Sagu bliver det SAMME
+ * billede og ikke en ny fil (se `indsaetRent`). PNG, fordi det er det eneste
+ * billedformat, udklipsholderen tager overalt; `tilPngBlob` omsaetter.
+ *
+ * Loeftet gives til `ClipboardItem` MED DET SAMME, inde i klikket/tasten -
+ * Safari naegter en skrivning, der foerst kommer efter et `await`.
+ */
+async function kopierBilledeUdklip(img) {
+  if (!navigator.clipboard || !window.ClipboardItem) return false;
+  const src = img.getAttribute('src');
+  const html = `<img src="${esc(img.src)}" alt="${esc(img.getAttribute('alt') || '')}"${
+    img.dataset.md ? ` data-md="${esc(img.dataset.md)}"` : ''}>`;
+  const htmlBlob = new Blob([html], { type: 'text/html' });
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': tilPngBlob(src), 'text/html': htmlBlob })]);
+    return true;
+  } catch (ex1) {
+    // Nogle browsere tager kun ét format ad gangen - saa er billedet det vigtigste.
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': tilPngBlob(src) })]);
+      return true;
+    } catch (ex2) {
+      // Hvad browseren sagde, staar i konsollen - »kunne ikke« alene er svaert
+      // at fejlsoege paa en maskine, man ikke sidder ved.
+      if (window.console) console.warn('billedkopi afvist', ex1 && ex1.message, ex2 && ex2.message);
+      return false;
+    }
+  }
+}
+
 /** Det billede, markeringen er - praecis ét, og intet andet. */
 function dokValgtBillede() {
   const sel = window.getSelection();
@@ -5766,10 +5830,10 @@ function visBilledBoble(img) {
       const hvad = k.dataset.bb;
       if (hvad === 'vis') { visLightbox(img.getAttribute('src'), img.getAttribute('alt')); return; }
       if (hvad === 'kopi') {
-        dokMarkerBillede(img);
-        let ok = false;
-        try { ok = document.execCommand('copy'); } catch { ok = false; }
-        toast(ok ? 'Image copied — paste it anywhere in a note.' : 'Press ⌘C to copy the image.');
+        kopierBilledeUdklip(img).then((ok) => {
+          toast(ok ? 'Image copied — paste it here or in any other app.'
+            : 'Could not copy the image here — use View, then Copy image.');
+        });
         return;
       }
       if (hvad === 'slet') {
@@ -5802,7 +5866,7 @@ document.addEventListener('selectionchange', () => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 87;
+const APP_VERSION = 88;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -12458,7 +12522,13 @@ async function indsaetRent(e, vaert, b) {
    * at bygge `![...]` mod `[...]` ville kunne drive fra hinanden.
    */
   const filer = [...(dt.files || [])];
-  if (filer.length) {
+  /*
+   * Et billede kopieret FRA Sagu har baade selve billedet og HTML'en med
+   * `data-md="sagu:<id>"` (se `kopierBilledeUdklip`). Saa er det HTML'en,
+   * der gaelder: det samme billede, ikke en ny fil med en kopi af det.
+   */
+  const egetBillede = /data-md="sagu:[a-f0-9]{32}"/.test(dt.getData('text/html') || '');
+  if (filer.length && !egetBillede) {
     e.preventDefault();
     await indsaetFilerIBlok(filer, vaert, b);
     return;
@@ -15428,7 +15498,10 @@ async function haandterIndsaet(e, felt) {
   if (!dt) return false;
 
   const filer = [...(dt.files || [])];
-  if (filer.length) {
+  // Et billede kopieret FRA Sagu: HTML'en (samme billede), ikke filen (en
+  // kopi). Se `kopierBilledeUdklip` og samme regel i `indsaetRent`.
+  const egetBillede = /data-md="sagu:[a-f0-9]{32}"/.test(dt.getData('text/html') || '');
+  if (filer.length && !egetBillede) {
     e.preventDefault();
     for (const f of filer) await indsaetFil(f, felt);
     return true;
@@ -15523,7 +15596,10 @@ function htmlTilMarkdown(html) {
         const href = saguMarkdown.sikkerUrl(n.getAttribute('href') || '');
         ud += href ? `[${indre.trim() || saguMarkdown.pentNavn(href)}](${href})` : indre;
       } else if (t === 'img') {
-        const src = saguMarkdown.sikkerUrl(n.getAttribute('src') || '');
+        // Et billede fra Sagu selv baerer sin egen adresse (`sagu:<id>`) - den,
+        // ikke den oversatte api-adresse, der kun virker bag login.
+        const eget = /^sagu:[a-f0-9]{32}$/.test(n.getAttribute('data-md') || '') ? n.getAttribute('data-md') : '';
+        const src = eget || saguMarkdown.sikkerUrl(n.getAttribute('src') || '');
         if (src) ud += `![${(n.getAttribute('alt') || '').replace(/[[\]]/g, '')}](${src})`;
       } else ud += indre;
     }

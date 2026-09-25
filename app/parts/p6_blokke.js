@@ -343,7 +343,10 @@ async function haandterIndsaet(e, felt) {
   if (!dt) return false;
 
   const filer = [...(dt.files || [])];
-  if (filer.length) {
+  // Et billede kopieret FRA Sagu: HTML'en (samme billede), ikke filen (en
+  // kopi). Se `kopierBilledeUdklip` og samme regel i `indsaetRent`.
+  const egetBillede = /data-md="sagu:[a-f0-9]{32}"/.test(dt.getData('text/html') || '');
+  if (filer.length && !egetBillede) {
     e.preventDefault();
     for (const f of filer) await indsaetFil(f, felt);
     return true;
@@ -438,7 +441,10 @@ function htmlTilMarkdown(html) {
         const href = saguMarkdown.sikkerUrl(n.getAttribute('href') || '');
         ud += href ? `[${indre.trim() || saguMarkdown.pentNavn(href)}](${href})` : indre;
       } else if (t === 'img') {
-        const src = saguMarkdown.sikkerUrl(n.getAttribute('src') || '');
+        // Et billede fra Sagu selv baerer sin egen adresse (`sagu:<id>`) - den,
+        // ikke den oversatte api-adresse, der kun virker bag login.
+        const eget = /^sagu:[a-f0-9]{32}$/.test(n.getAttribute('data-md') || '') ? n.getAttribute('data-md') : '';
+        const src = eget || saguMarkdown.sikkerUrl(n.getAttribute('src') || '');
         if (src) ud += `![${(n.getAttribute('alt') || '').replace(/[[\]]/g, '')}](${src})`;
       } else ud += indre;
     }

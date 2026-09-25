@@ -16,12 +16,13 @@
  *                deres egen boks
  *  20  wikitop   wikiens klaebende topbjaelke (.wtop)
  *  30  oversigt  sideoversigten i hoejre side (.toc)
+ *  35  svaevere  dokumentets vaerktoej (.dok-vaerktoej) og link- og
+ *                billedboblen (.linkboble) - UNDER topbjaelken, saa de ikke
+ *                kan laegge sig oven paa soegefeltet, naar noten er rullet
  *  40  topbjaelke appens klaebende topbjaelke (.topbar) - og de lister, der
  *                folder sig ud under et felt og skal over indholdet:
  *                [[-forslag (.wikiforslag), maerkeforslag (.maerke-forslag),
- *                wikiens traefferliste (.wtraefliste), dokumentets
- *                svaevende vaerktoej (.dok-vaerktoej), link- og
- *                billedboblen (.linkboble) - og rulleknappen
+ *                wikiens traefferliste (.wtraefliste) - og rulleknappen
  *                nederst til hoejre (.rulleknap), der skal UNDER sløret,
  *                naar sidebaren er foldet ud paa en telefon
  *  45  slør      baggrunden bag den udfoldede sidebar (.backdrop)
@@ -2938,7 +2939,7 @@ body.traekker { cursor: grabbing; user-select: none; }
 .dok.traekker { outline: 2px dashed var(--accent); outline-offset: 6px; }
 /* Vaerktoejet svaever over den blok, markoeren staar i - til hoejre. */
 .blok-vaerktoej.dok-vaerktoej {
-  position: absolute; right: 0; z-index: 40; margin: 0;
+  position: absolute; right: 0; z-index: 35; margin: 0;
   background: var(--card); border: 1px solid var(--border); border-radius: var(--r-sm);
   box-shadow: var(--shadow-lift); padding: 2px 4px;
 }
@@ -2959,7 +2960,7 @@ body.dok-skriver .rulleknap { display: none; }
 }
 /* Link- og billedboblen: under linket eller billedet, markoeren staar i. */
 .linkboble {
-  position: absolute; z-index: 40; display: flex; align-items: center; gap: 2px;
+  position: absolute; z-index: 35; display: flex; align-items: center; gap: 2px;
   max-width: min(460px, 100%); padding: 4px; font-size: 13px;
   background: var(--card); border: 1px solid var(--border); border-radius: var(--r-sm);
   box-shadow: var(--shadow-lift);

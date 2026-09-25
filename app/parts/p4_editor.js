@@ -2874,7 +2874,13 @@ async function indsaetRent(e, vaert, b) {
    * at bygge `![...]` mod `[...]` ville kunne drive fra hinanden.
    */
   const filer = [...(dt.files || [])];
-  if (filer.length) {
+  /*
+   * Et billede kopieret FRA Sagu har baade selve billedet og HTML'en med
+   * `data-md="sagu:<id>"` (se `kopierBilledeUdklip`). Saa er det HTML'en,
+   * der gaelder: det samme billede, ikke en ny fil med en kopi af det.
+   */
+  const egetBillede = /data-md="sagu:[a-f0-9]{32}"/.test(dt.getData('text/html') || '');
+  if (filer.length && !egetBillede) {
     e.preventDefault();
     await indsaetFilerIBlok(filer, vaert, b);
     return;
