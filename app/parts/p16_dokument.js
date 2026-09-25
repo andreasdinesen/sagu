@@ -55,7 +55,7 @@ const DOK_BLOKKE = new Set(['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
   'BLOCKQUOTE', 'UL', 'OL', 'PRE', 'TABLE', 'HR', 'SECTION', 'ARTICLE', 'FIGURE']);
 
 /* Pynt, der aldrig maa skrives med tilbage som tekst. */
-const DOK_PYNT = '.inlinekode-kopi, .kodeblok-top, .blok-greb, .blok-indsaet, .wikiforslag, .linkboble';
+const DOK_PYNT = '.inlinekode-kopi, .kodeblok-top, .blok-greb, .blok-indsaet, .wikiforslag, .linkboble, .upload-venter';
 
 /** Skal noten redigeres som ét dokument? */
 function brugDokument(n) {
@@ -1434,3 +1434,83 @@ document.addEventListener('selectionchange', () => {
   if (img) { img.classList.add('valgt'); visBilledBoble(img); return; }
   if (linkBoble.a && linkBoble.a.nodeName === 'IMG' && !linkBoble.redigerer) lukLinkBoble();
 });
+
+/* ========================================================= filer ind (v91) */
+
+/*
+ * »Nu virker det, men den tager lidt tid, foer den saetter billedet ind«
+ * (Andreas, 2026-09-25).
+ *
+ * Tiden er uploaden: billedet skaleres (op til 1.600 px) og sendes hele vejen
+ * til serveren, og et skaermbillede fra Windows er stort. Det kan ikke goeres
+ * meget hurtigere - men det behoever ikke at SES. Billedet staar i noten med
+ * det samme, vist fra ens egen maskine (`URL.createObjectURL`) med en
+ * diskret »Uploading…«, og man kan skrive videre imens. Naar uploaden er
+ * faerdig, bliver pladsholderen til billedets markdown, og noten tegnes om -
+ * markoeren staar, hvor man selv har sat den.
+ *
+ * Pladsholderen er PYNT (`.upload-venter` i `DOK_PYNT`): den skrives aldrig
+ * med i noten, heller ikke hvis noten gemmes, mens uploaden stadig koerer.
+ */
+function lavUploadVenter(fil) {
+  const v = document.createElement('span');
+  v.className = 'upload-venter';
+  v.setAttribute('contenteditable', 'false');
+  if (/^image\//.test(fil.type || '')) {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(fil);
+    img.alt = '';
+    img.addEventListener('load', () => URL.revokeObjectURL(img.src), { once: true });
+    v.appendChild(img);
+  }
+  const tekst = document.createElement('span');
+  tekst.className = 'upload-venter-tekst meta';
+  tekst.textContent = `Uploading ${fil.name || 'file'}…`;
+  v.appendChild(tekst);
+  return v;
+}
+
+async function dokIndsaetFiler(filer) {
+  if (!dokAktiv()) return;
+  const liste = filer.slice(0, 20);
+  // Pladsholderne ind MED DET SAMME, dér hvor markoeren staar.
+  const ventere = liste.map((f) => {
+    const v = lavUploadVenter(f);
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && dok.el.contains(sel.getRangeAt(0).startContainer)) {
+      const r = sel.getRangeAt(0);
+      r.deleteContents();
+      if (r.startContainer === dok.el) {
+        const p = document.createElement('p');
+        r.insertNode(p);
+        p.appendChild(v);
+      } else r.insertNode(v);
+      const efter = document.createRange();
+      efter.setStartAfter(v);
+      efter.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(efter);
+    } else {
+      const p = document.createElement('p');
+      p.appendChild(v);
+      dok.el.appendChild(p);
+    }
+    return v;
+  });
+
+  let lagt = 0;
+  for (let i = 0; i < liste.length; i += 1) {
+    const fil = await indsaetFil(liste[i], null);
+    const v = ventere[i];
+    // Er pladsholderen slettet imens, har man fortrudt - saa laegges intet ind.
+    if (!v.isConnected) continue;
+    if (fil && fil.markdown) {
+      v.replaceWith(document.createTextNode(fil.markdown));
+      lagt += 1;
+    } else v.remove();
+  }
+  if (!lagt) return;
+  // Tegn om, saa markdownen bliver til billeder - markoeren bliver, hvor den er.
+  if (dokHarFokus()) dokTegnOmVedMarkoer();
+  else { dokTvingSkriv(); tegnKrop(); }
+}

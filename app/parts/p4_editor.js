@@ -2819,6 +2819,7 @@ function liveFormatering(vaert) {
  * hver sit.
  */
 async function indsaetFilerIBlok(filer, vaert, b) {
+  if (vaert && vaert === dok.el) { await dokIndsaetFiler(filer); return; }
   let lagt = 0;
   for (const f of filer.slice(0, 20)) {
     const fil = await indsaetFil(f, null);

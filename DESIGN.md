@@ -4318,3 +4318,15 @@ var ældre end det — fra v85 — og den var min egen:
 - Indsæt skriver nu i konsollen, hvad der lå på udklipsholderen (`indsaet (dokument): …`
   / `indsaet (markdown): …`), så det næste, der driller på en maskine, jeg ikke sidder
   ved, kan ses.
+
+## 52 · Billedet vises, mens det uploades (2026-09-25)
+
+»Nu virker det, men den tager lidt tid, før den sætter billedet ind.« Konsollen fra
+Windows viste en ren fil (`Files filer=1 html=0`), så tiden er uploaden: skalering til
+1.600 px og hele vejen til serveren. Den kan ikke gøres meget hurtigere, men den behøver
+ikke at ses. I dokumentet står billedet nu med det samme, vist fra ens egen maskine
+(`URL.createObjectURL`), nedtonet og med »Uploading …«; man kan skrive videre imens. Når
+uploaden er færdig, bliver pladsholderen til billedets markdown, og noten tegnes om med
+markøren, hvor man selv har sat den. Pladsholderen er pynt (`.upload-venter` i
+`DOK_PYNT`) og kommer aldrig i noten — heller ikke hvis noten gemmes midt i uploaden —
+og er den slettet imens, lægges intet ind.

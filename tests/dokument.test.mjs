@@ -223,3 +223,14 @@ test('et <img> alene paa oeverste niveau bliver til markdown i det raa felt', ()
   const krop = p6.slice(i, p6.indexOf('\n}\n', i));
   assert.match(krop, /t === 'img' \? inline\(\{ childNodes: \[n\] \}\)/);
 });
+
+test('et billede vises MENS det uploades - og pladsholderen kommer aldrig i noten', () => {
+  // v91: »den tager lidt tid foer den saetter billedet ind«. Pladsholderen er
+  // pynt: noten kan gemmes midt i uploaden, og en `blob:`-adresse maa ikke med.
+  assert.match(p16, /const DOK_PYNT = '[^']*\.upload-venter/);
+  const i = p4.indexOf('async function indsaetFilerIBlok(');
+  assert.match(p4.slice(i, i + 200), /dokIndsaetFiler\(filer\)/, 'dokumentet bruger pladsholder-vejen');
+  // Er pladsholderen slettet under uploaden, laegges intet ind.
+  const j = p16.indexOf('async function dokIndsaetFiler(');
+  assert.match(p16.slice(j, p16.indexOf('\n}\n', j)), /if \(!v\.isConnected\) continue;/);
+});
