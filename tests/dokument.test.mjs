@@ -179,3 +179,47 @@ test('et afsnit med links til NOTER kan skrives tilbage - saa det ikke bliver en
   const wiki = md.render(`[en note](sagu-note:${id})`, { linkUrl: valg.linkUrl }).html;
   assert.doesNotMatch(wiki, /sagu-note:/);
 });
+
+/* ----------------------------------------------- indsaet af billeder (v90) */
+
+const p6 = readFileSync(path.join(ROD, 'app', 'parts', 'p6_blokke.js'), 'utf8');
+
+test('et afsnit med ét billede er IKKE tomt - markoeroprydningen fjerner det ikke', () => {
+  // v85-v89: oprydningen efter markoertegnet fjernede et afsnit uden TEKST, og
+  // et afsnit med kun et billede har ingen - saa hvert billede, der blev sat
+  // ind paa en tom linje, forsvandt i samme hug (Andreas, Windows, 2026-09-25).
+  const i = p16.indexOf("if (hvor === 'tegn')");
+  const krop = p16.slice(i, p16.indexOf("if (hvor === 'start'", i));
+  assert.match(krop, /!barn\.querySelector\('img/, 'et billede taeller som indhold');
+});
+
+test('data:-billeder i indsat HTML afkodes UDEN fetch - CSP forbyder det', () => {
+  const i = p6.indexOf('function dataUrlTilBlob(');
+  const kilde = p6.slice(i, p6.indexOf('\n}\n', i) + 2);
+  assert.doesNotMatch(kilde, /fetch\(/, "`connect-src 'self'` blokerer fetch('data:…')");
+  // eslint-disable-next-line no-new-func
+  const dataUrlTilBlob = new Function(`${kilde}\nreturn dataUrlTilBlob;`)();
+  const b = dataUrlTilBlob('data:image/png;base64,iVBORw0KGgo=');
+  assert.equal(b.type, 'image/png');
+  assert.equal(b.size, 8);
+  assert.equal(dataUrlTilBlob('ikke en data-adresse'), null);
+  assert.equal(dataUrlTilBlob('data:text/plain,hej%20dig').size, 7);
+  // Og uploaden bruger den - ikke fetch.
+  const j = p6.indexOf('async function dataBillederTilSagu(');
+  assert.match(p6.slice(j, p6.indexOf('\n}\n', j)), /dataUrlTilBlob\(src\)/);
+});
+
+test('udklipsholderen laeses FOER det foerste await i indsaet', () => {
+  // Bagefter giver `getData` tomme strenge - haendelsen er forbi.
+  const i = p4.indexOf('async function indsaetRent(');
+  const krop = p4.slice(i, p4.indexOf('\n}\n', i));
+  const foersteAwait = krop.indexOf('await dataBillederTilSagu(');
+  assert.ok(foersteAwait > -1);
+  assert.ok(krop.indexOf("const flad = dt.getData('text/plain')") < foersteAwait);
+});
+
+test('et <img> alene paa oeverste niveau bliver til markdown i det raa felt', () => {
+  const i = p6.indexOf('function htmlTilMarkdown(');
+  const krop = p6.slice(i, p6.indexOf('\n}\n', i));
+  assert.match(krop, /t === 'img' \? inline\(\{ childNodes: \[n\] \}\)/);
+});

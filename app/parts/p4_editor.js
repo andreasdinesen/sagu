@@ -2873,6 +2873,7 @@ async function indsaetRent(e, vaert, b) {
    * `indsaetFil()` bygger markdownen; vi laeser den bare tilbage. To steder
    * at bygge `![...]` mod `[...]` ville kunne drive fra hinanden.
    */
+  logIndsaet(dt, 'dokument');
   const filer = [...(dt.files || [])];
   /*
    * Et billede kopieret FRA Sagu har baade selve billedet og HTML'en med
@@ -2887,7 +2888,14 @@ async function indsaetRent(e, vaert, b) {
   }
 
   e.preventDefault();
-  const ren = indsatMarkdown(dt.getData('text/html'), dt.getData('text/plain'));
+  // Alt laeses FOER det foerste `await`: udklipsholderen kan kun laeses,
+  // mens haendelsen staar paa - bagefter giver `getData` tomme strenge.
+  const raaHtml = dt.getData('text/html');
+  const flad = dt.getData('text/plain');
+  // `data:`-billeder (OneNote, Word, Sagus egen kopi uden en fil ved siden
+  // af) bliver til rigtige filer, foer HTML'en oversaettes - se p6.
+  const html = await dataBillederTilSagu(raaHtml);
+  const ren = indsatMarkdown(html, flad);
   // Markdown indsaettes som TEKST og formateres af live-reglerne bagefter -
   // saa er der kun ét sted, der laver formatering.
   const sel = window.getSelection();

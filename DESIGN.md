@@ -4294,3 +4294,27 @@ og alt-teksten; andre programmer kan hverken hente adressen eller bruge HTML'en.
   topbjælken i lagene (z 35). Den lå oven på søgefeltet, når afsnittet var rullet op
   under bjælken (Andreas' skærmbillede). Ville den havne under bjælken, står den under
   markørens linje.
+
+## 51 · Billeder kunne ikke sættes ind (v85–v89) (2026-09-25)
+
+Andreas, fra Windows: »i v88 og v89 kunne jeg ikke paste billede ind i en note«. Fejlen
+var ældre end det — fra v85 — og den var min egen:
+
+- **Oprydningen efter markørtegnet fjernede et afsnit uden TEKST.** Efter et indsæt
+  tegnes dokumentet om, og markøren findes via et usynligt tegn, der fjernes igen; stod
+  tegnet alene, blev det tomme afsnit fjernet. Men et afsnit med ét billede har heller
+  ingen tekst — så hvert billede, der blev sat ind på en TOM linje, forsvandt i samme hug.
+  Mine egne prøver satte billedet ind efter tekst på samme linje og ramte det aldrig. Nu
+  tæller `img`, `hr`, `iframe` og `video` som indhold.
+- **`data:`-billeder i indsat HTML** (OneNote, Word, Sagus egen kopi fra v89) uden en fil
+  ved siden af blev kasseret — oversætteren tager ikke `data:`. Nu uploades de som
+  rigtige filer (`dataBillederTilSagu`), `<img>` får `data-md="sagu:<id>"`, og teksten
+  omkring bliver. Afkodningen sker UDEN `fetch`: Sagus egen CSP (`connect-src 'self'`)
+  blokerer `fetch('data:…')` (målt).
+- **Udklipsholderen læses før det første `await`** — bagefter giver `getData` tomme
+  strenge.
+- **Det rå felts `htmlTilMarkdown` så ikke et `<img>` alene på øverste niveau** — den
+  læser et elements børn, og et billede har ingen.
+- Indsæt skriver nu i konsollen, hvad der lå på udklipsholderen (`indsaet (dokument): …`
+  / `indsaet (markdown): …`), så det næste, der driller på en maskine, jeg ikke sidder
+  ved, kan ses.

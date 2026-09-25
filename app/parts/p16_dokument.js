@@ -447,7 +447,14 @@ function dokSaetMarkoer(hvor) {
     const barn = dokBarn(t);
     if (barn) {
       dok.roert.add(barn);
-      if (!barn.textContent.trim() && barn.tagName === 'P' && dok.el.children.length > 1) {
+      /*
+       * Kun et afsnit, der er HELT tomt. Et afsnit med ét billede har heller
+       * ingen tekst - og her stod `textContent` alene, saa hvert billede, der
+       * blev sat ind paa en tom linje, blev fjernet igen i samme hug (Andreas,
+       * 2026-09-25: »kunne ikke paste billede ind fra Windows«).
+       */
+      if (!barn.textContent.trim() && !barn.querySelector('img, hr, iframe, video')
+          && barn.tagName === 'P' && dok.el.children.length > 1) {
         const foer = barn.previousElementSibling;
         const nabo = foer || barn.nextElementSibling;
         barn.remove();

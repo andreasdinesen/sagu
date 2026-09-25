@@ -338,10 +338,76 @@ function bindBilleder(host) {
  *   5. **Ren tekst** -> ordret. Markdown er allerede vores format, saa der er
  *      intet at konvertere - det er hele pointen med at gemme markdown.
  */
+/**
+ * `data:`-billeder i indsat HTML bliver til RIGTIGE filer i Sagu.
+ *
+ * OneNote, Word og Sagus egen kopi (v89) laegger billederne IND i HTML'en som
+ * `data:`-adresser. Kommer der ingen fil med ved siden af, var HTML'en det
+ * eneste - og oversaetteren kasserer `data:` (det er ikke en adresse, noten
+ * maa gemme), saa billedet forsvandt i tavshed (Andreas, 2026-09-25, Windows).
+ *
+ * Hvert billede uploades, og `<img>` faar `data-md="sagu:<id>"`, saa den
+ * almindelige vej tilbage til markdown skriver henvisningen. Teksten omkring
+ * bliver staaende. Et billede, der ALLEREDE er Sagus (`data-md`), roeres ikke.
+ */
+async function dataBillederTilSagu(html) {
+  if (!/src\s*=\s*["']?data:image\//i.test(html || '')) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  for (const img of doc.querySelectorAll('img')) {
+    const src = img.getAttribute('src') || '';
+    if (/^sagu:[a-f0-9]{32}$/.test(img.getAttribute('data-md') || '')) continue;
+    if (!/^data:image\//i.test(src)) continue;
+    try {
+      const blob = dataUrlTilBlob(src);
+      if (!blob) { img.remove(); continue; }
+      const endelse = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      const fil = await indsaetFil(new File([blob], `image.${endelse}`, { type: blob.type }), null);
+      const m = fil && fil.markdown ? /\((sagu:[a-f0-9]{32})\)/.exec(fil.markdown) : null;
+      if (m) img.setAttribute('data-md', m[1]);
+      else img.remove();
+    } catch { img.remove(); }
+  }
+  return doc.body.innerHTML;
+}
+
+/*
+ * `data:` -> Blob UDEN `fetch`.
+ *
+ * Sagus egen CSP (`connect-src 'self'`) forbyder `fetch('data:…')` - maalt:
+ * »Refused to connect because it violates the document's Content Security
+ * Policy«. Afkodningen er ren streng-arbejde, saa den kan ikke blokeres.
+ */
+function dataUrlTilBlob(src) {
+  const m = /^data:([^;,]+)?((?:;[^;,]+)*?)(;base64)?,(.*)$/is.exec(String(src || ''));
+  if (!m) return null;
+  const type = m[1] || 'application/octet-stream';
+  try {
+    if (m[3]) {
+      const bin = atob(m[4].replace(/\s+/g, ''));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type });
+    }
+    return new Blob([decodeURIComponent(m[4])], { type });
+  } catch { return null; }
+}
+
+/** Hvad der laa paa udklipsholderen - til konsollen, naar et indsaet driller. */
+function logIndsaet(dt, hvor) {
+  if (!window.console) return;
+  const html = dt.getData('text/html') || '';
+  console.info(`indsaet (${hvor}):`, [...(dt.types || [])].join(', '),
+    `filer=${(dt.files || []).length}`, `html=${html.length}`,
+    `img=${(html.match(/<img/gi) || []).length}`,
+    `data:=${(html.match(/src\s*=\s*["']?data:image/gi) || []).length}`,
+    `sagu=${/data-md="sagu:/.test(html)}`);
+}
+
 async function haandterIndsaet(e, felt) {
   const dt = e.clipboardData || e.dataTransfer;
   if (!dt) return false;
 
+  logIndsaet(dt, 'markdown');
   const filer = [...(dt.files || [])];
   // Et billede kopieret FRA Sagu: HTML'en (samme billede), ikke filen (en
   // kopi). Se `kopierBilledeUdklip` og samme regel i `indsaetRent`.
@@ -388,6 +454,14 @@ async function haandterIndsaet(e, felt) {
     return true;
   }
   if (html && html.trim()) {
+    // `data:`-billeder uploades foerst - ellers kasseres de (se ovenfor).
+    // `preventDefault` FOER det foerste `await`: bagefter er det for sent.
+    if (/src\s*=\s*["']?data:image\//i.test(html)) {
+      e.preventDefault();
+      const md = htmlTilMarkdown(await dataBillederTilSagu(html));
+      if (md && md.trim()) indsaetITekst(felt, md);
+      return true;
+    }
     const md = htmlTilMarkdown(html);
     // Kun hvis omsaetningen faktisk gav noget MERE end den rene tekst -
     // ellers er den rene tekst det aerligste valg.
@@ -489,7 +563,10 @@ function htmlTilMarkdown(html) {
       }
       if (t === 'hr') { blokke.push('---'); continue; }
       if (['div', 'section', 'article', 'main', 'body'].includes(t)) { gaa(n, dybde); continue; }
-      const tekst = inline(n).trim();
+      // Et <img> ALENE paa oeverste niveau (OneNote, Word, Sagus egen kopi):
+      // `inline` laeser et elements BOERN, og et billede har ingen - saa det
+      // blev til ingenting. Det gives som sit eget barn.
+      const tekst = (t === 'img' ? inline({ childNodes: [n] }) : inline(n)).trim();
       if (tekst) blokke.push(tekst);
     }
   };
