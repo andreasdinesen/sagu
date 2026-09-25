@@ -4281,6 +4281,12 @@ og alt-teksten; andre programmer kan hverken hente adressen eller bruge HTML'en.
 - **Sat ind i Sagu igen er det det SAMME billede**, ikke en ny fil: både `indsaetRent`
   og det rå felts `haandterIndsaet` foretrækker HTML'en, når den har `data-md="sagu:…"`,
   og `htmlTilMarkdown` skriver `sagu:<id>` frem for den oversatte api-adresse.
+- **OneNote tager HTML'en frem for PNG'en** (Andreas, samme dag, Windows): den indsatte
+  kun »Fra <https://sagu.dk/#note-…>«, fordi `<img src>` pegede på en adresse bag
+  login. Derfor lægges billederne nu IND i HTML'en som `data:`-adresser
+  (`kopierMedBilleder`) — samme greb som hele-noten-kopien, der er målt i OneNote. Det
+  gælder enhver markering med billeder i dokumentet (tekst og billeder sammen), ikke kun
+  et billede alene; ren tekst kopieres stadig af browseren selv.
 - En afvist skrivning skrives i konsollen med browserens egen besked. Browserpanelet i
   Claude-appen nægter udklipsholderen (»Write permission denied«, også for lysboksens
   kopi), så det er prøvet i koden, ikke i en rigtig browser.

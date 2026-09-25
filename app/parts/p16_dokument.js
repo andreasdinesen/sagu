@@ -733,16 +733,12 @@ function bindDokument(el, host) {
   });
   el.addEventListener('paste', (e) => indsaetRent(e, el, null));
   /*
-   * ⌘C/⌘X paa et markeret billede: browserens egen kopi FOERST (saa noget
-   * altid naar frem), og straks efter det rigtige billede oven i - se
-   * `kopierBilledeUdklip`. Tasten er brugerhandlingen, der tillader det.
+   * ⌘C/⌘X paa en markering med billeder: browserens egen kopi FOERST (saa
+   * noget altid naar frem), og straks efter billederne oven i - se
+   * `kopierMedBilleder`. Tasten er brugerhandlingen, der tillader det.
    */
-  const billedKopi = () => {
-    const img = dokValgtBillede();
-    if (img) kopierBilledeUdklip(img);
-  };
-  el.addEventListener('copy', billedKopi);
-  el.addEventListener('cut', billedKopi);
+  el.addEventListener('copy', dokKopiMedBilleder);
+  el.addEventListener('cut', dokKopiMedBilleder);
   el.addEventListener('dragover', (e) => {
     if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')) {
       e.preventDefault();
@@ -1288,34 +1284,58 @@ function dokMarkerBillede(img) {
 }
 
 /**
- * Billedet paa udklipsholderen - som et BILLEDE, ikke kun som HTML.
+ * En markering med billeder paa udklipsholderen - saa andre programmer faar
+ * BILLEDERNE og ikke en adresse.
  *
- * »Naar jeg proever at copy og paste et billede ind i fx Claude-appen, saa
- * faar jeg [kun navnet]« (Andreas, 2026-09-25). Browserens egen kopi af et
- * markeret <img> er HTML med en adresse bag login og alt-teksten - andre
- * programmer kan hverken hente adressen eller bruge HTML'en.
+ * Browserens egen kopi af et <img> er HTML med Sagus adresse, og den ligger
+ * bag login. Claude-appen fik derfor »image.png« (v88 rettede det med en
+ * PNG), og OneNote paa Windows fik »Fra <https://sagu.dk/#note-…>« og intet
+ * billede (Andreas, 2026-09-25): OneNote tager HTML'en frem for PNG'en og
+ * kan ikke hente adressen.
  *
- * Derfor BEGGE: `image/png` til alle andre programmer, og `text/html` med
- * billedets `data-md` (`sagu:<id>`), saa et indsaet i Sagu bliver det SAMME
- * billede og ikke en ny fil (se `indsaetRent`). PNG, fordi det er det eneste
- * billedformat, udklipsholderen tager overalt; `tilPngBlob` omsaetter.
+ * Derfor som hele-noten-kopien, der er maalt i OneNote (p6, `skrivToFlavours`):
+ * billederne lagt IND i HTML'en som `data:`-adresser. Og er markeringen ét
+ * billede, kommer det ogsaa med som ren `image/png` til de programmer, der
+ * kun tager et billede. `data-md` (`sagu:<id>`) bliver paa hvert <img>, saa
+ * et indsaet i Sagu er det SAMME billede og ikke en ny fil (`indsaetRent`).
  *
- * Loeftet gives til `ClipboardItem` MED DET SAMME, inde i klikket/tasten -
+ * Loefterne gives til `ClipboardItem` MED DET SAMME, inde i klikket/tasten -
  * Safari naegter en skrivning, der foerst kommer efter et `await`.
  */
-async function kopierBilledeUdklip(img) {
+function tilDataUrl(src) {
+  return fetch(src).then((svar) => {
+    if (!svar.ok) throw new Error('Could not read the image.');
+    return svar.blob();
+  }).then((blob) => new Promise((ok, nej) => {
+    const l = new FileReader();
+    l.onload = () => ok(l.result);
+    l.onerror = () => nej(new Error('kunne ikke laese'));
+    l.readAsDataURL(blob);
+  }));
+}
+
+async function kopierMedBilleder(fragment, ren, eneste) {
   if (!navigator.clipboard || !window.ClipboardItem) return false;
-  const src = img.getAttribute('src');
-  const html = `<img src="${esc(img.src)}" alt="${esc(img.getAttribute('alt') || '')}"${
-    img.dataset.md ? ` data-md="${esc(img.dataset.md)}"` : ''}>`;
-  const htmlBlob = new Blob([html], { type: 'text/html' });
+  const ramme = document.createElement('div');
+  ramme.appendChild(fragment);
+  ramme.querySelectorAll(DOK_PYNT).forEach((x) => x.remove());
+  ramme.querySelectorAll('img').forEach((x) => x.classList.remove('valgt'));
+  const html = Promise.all([...ramme.querySelectorAll('img')].map(async (img) => {
+    try { img.setAttribute('src', await tilDataUrl(img.getAttribute('src'))); } catch { /* adressen bliver */ }
+    img.removeAttribute('loading');
+  })).then(() => new Blob([ramme.innerHTML], { type: 'text/html' }));
+
+  const typer = { 'text/html': html };
+  if (ren) typer['text/plain'] = new Blob([ren], { type: 'text/plain' });
+  if (eneste) typer['image/png'] = tilPngBlob(eneste.getAttribute('src'));
   try {
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': tilPngBlob(src), 'text/html': htmlBlob })]);
+    await navigator.clipboard.write([new ClipboardItem(typer)]);
     return true;
   } catch (ex1) {
-    // Nogle browsere tager kun ét format ad gangen - saa er billedet det vigtigste.
+    // Nogle browsere tager ikke alle formater paa én gang - saa det vigtigste.
     try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': tilPngBlob(src) })]);
+      const enkelt = eneste ? { 'image/png': tilPngBlob(eneste.getAttribute('src')) } : { 'text/html': html };
+      await navigator.clipboard.write([new ClipboardItem(enkelt)]);
       return true;
     } catch (ex2) {
       // Hvad browseren sagde, staar i konsollen - »kunne ikke« alene er svaert
@@ -1324,6 +1344,24 @@ async function kopierBilledeUdklip(img) {
       return false;
     }
   }
+}
+
+/** Ét billede - Copy-knappen i billedets boble. */
+function kopierBilledeUdklip(img) {
+  const r = document.createRange();
+  r.selectNode(img);
+  return kopierMedBilleder(r.cloneContents(), '', img);
+}
+
+/** ⌘C/Ctrl+C og ⌘X i dokumentet: er der billeder i markeringen, dem med. */
+function dokKopiMedBilleder() {
+  const sel = window.getSelection();
+  if (!dokAktiv() || !sel || !sel.rangeCount || sel.isCollapsed) return;
+  const r = sel.getRangeAt(0);
+  const fragment = r.cloneContents();
+  // Ren tekst: browserens egen kopi er den rigtige, og intet skal oven i.
+  if (!fragment.querySelector || !fragment.querySelector('img')) return;
+  kopierMedBilleder(fragment, String(sel).trim(), dokValgtBillede());
 }
 
 /** Det billede, markeringen er - praecis ét, og intet andet. */
