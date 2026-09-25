@@ -5802,7 +5802,7 @@ document.addEventListener('selectionchange', () => {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 86;
+const APP_VERSION = 87;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -11700,6 +11700,7 @@ function tegnMedAabenBlok(host, n) {
 
   const felt = document.getElementById('blokFelt');
   if (!felt) return;
+  bindRaaVaerktoej(felt);
   autoHoejde(felt);
   felt.focus();
   /*
@@ -11823,9 +11824,21 @@ function tilpasTitel(titel) {
   }
 }
 
+/*
+ * Feltet vokser med teksten.
+ *
+ * `height: auto` et ojeblik er den eneste maade at maale, hvor hoejt det
+ * SKAL vaere - men i det ojeblik er siden kortere, og browseren klemmer
+ * rulningen. Paa en telefon hoppede siden derfor ved hvert tastetryk i en
+ * lang note, og man mistede den linje, man skrev i (Andreas, 2026-09-25:
+ * »kunne ikke rette i noget paa mobil« i hele noten som markdown).
+ * Rulningen gemmes og saettes tilbage i samme hug.
+ */
 function autoHoejde(felt) {
+  const y = typeof rulletNed === 'function' ? rulletNed() : 0;
   felt.style.height = 'auto';
   felt.style.height = `${felt.scrollHeight}px`;
+  if (typeof rulTil === 'function' && Math.abs(rulletNed() - y) > 1) rulTil(y);
 }
 
 /* ==================================================================== F30
@@ -11885,6 +11898,118 @@ function kanRedigereRigt(raa, b) {
  * (2026-09-05), og en knap, ingen har bedt om, er en knap, der skal
  * vedligeholdes.
  */
+/* Knapperne i den RAA tekst - de skriver markdown (se `raaOmslut`). */
+const RAA_VAERKTOEJER = [
+  { goer: 'fed', navn: 'Bold', vis: '<b>B</b>' },
+  { goer: 'kursiv', navn: 'Italic', vis: '<i>I</i>' },
+  { goer: 'kode', navn: 'Code', vis: '&lt;/&gt;' },
+  { goer: 'link', navn: 'Link', vis: 'Link', tekst: true },
+  { goer: 'tjek', navn: 'Checklist', vis: icon('tjekboks', 15) },
+];
+
+/**
+ * Markdown om det markerede i et tekstfelt. REN: tekst og markering ind,
+ * erstatning ud - saa den kan proeves uden en DOM.
+ *
+ * @returns {{fra, til, ny, selA, selB}} erstat `fra..til` med `ny`, og
+ *   markér `selA..selB` bagefter (absolutte positioner i den NYE tekst).
+ */
+function raaOmslut(vaerdi, a, b, hvad) {
+  const v = String(vaerdi);
+  if (hvad === 'tjek') {
+    // Hele linjerne i markeringen - samme regel som knappen i den rige blok.
+    const fra = v.lastIndexOf('\n', a - 1) + 1;
+    let til = v.indexOf('\n', b > a && v[b - 1] === '\n' ? b - 1 : b);
+    if (til < 0) til = v.length;
+    const linjer = v.slice(fra, til).split('\n');
+    const fyldte = linjer.filter((l) => l.trim());
+    const alle = fyldte.length > 0 && fyldte.every((l) => TJEK_LINJE.test(l));
+    const ny = linjer.map((l) => {
+      if (!l.trim()) return l;
+      if (alle) return l.replace(TJEK_LINJE, '$1');
+      const uden = TJEK_LINJE.test(l) ? l.replace(TJEK_LINJE, '$1') : l.replace(BLOKMAERKE, '$1');
+      const ind = (uden.match(/^\s*/) || [''])[0];
+      return `${ind}- [ ] ${uden.slice(ind.length)}`;
+    }).join('\n');
+    return { fra, til, ny, selA: fra + ny.length, selB: fra + ny.length };
+  }
+  if (hvad === 'link') {
+    const tekst = v.slice(a, b);
+    const erAdr = /^https?:\/\/\S+$/.test(tekst);
+    // En markeret ADRESSE bliver maalet; en markeret tekst bliver teksten, og
+    // adressen er det, man skriver bagefter - den staar markeret.
+    const ny = erAdr ? `[](${tekst})` : `[${tekst}](https://)`;
+    const selA = erAdr ? a + 1 : a + tekst.length + 3;
+    return { fra: a, til: b, ny, selA, selB: erAdr ? a + 1 : selA + 8 };
+  }
+  const mk = { fed: '**', kursiv: '*', kode: '`' }[hvad];
+  if (!mk) return null;
+  // Staar markeringen allerede i maerkerne, tages de af igen.
+  if (v.slice(a - mk.length, a) === mk && v.slice(b, b + mk.length) === mk
+      && !(mk === '*' && (v[a - 2] === '*' || v[b + 1] === '*'))) {
+    return { fra: a - mk.length, til: b + mk.length, ny: v.slice(a, b),
+      selA: a - mk.length, selB: b - mk.length };
+  }
+  return { fra: a, til: b, ny: `${mk}${v.slice(a, b)}${mk}`, selA: a + mk.length, selB: b + mk.length };
+}
+
+/** Udfoer `raaOmslut` i feltet - gennem browserens indsaet, saa ⌘Z virker. */
+function raaFormat(felt, hvad) {
+  const r = raaOmslut(felt.value, felt.selectionStart, felt.selectionEnd, hvad);
+  if (!r) return;
+  felt.focus();
+  felt.setSelectionRange(r.fra, r.til);
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, r.ny); } catch { ok = false; }
+  if (!ok) {
+    felt.setRangeText(r.ny, r.fra, r.til, 'end');
+    felt.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  felt.setSelectionRange(r.selA, r.selB);
+}
+
+/** Knapperne over et RAA felt: fil, markdown-knapperne og datoerne. */
+function bindRaaVaerktoej(felt) {
+  const linje = document.getElementById('blokVaerktoej');
+  if (!linje || !felt) return;
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  linje.querySelectorAll('[data-raagoer]').forEach((k) => {
+    k.addEventListener('mousedown', (e) => { stop(e); raaFormat(felt, k.dataset.raagoer); });
+  });
+  linje.querySelectorAll('[data-genvej]').forEach((k) => {
+    k.addEventListener('mousedown', (e) => {
+      stop(e);
+      const g = TEKSTGENVEJE.find((x) => x.ord === k.dataset.genvej);
+      if (!g) return;
+      felt.focus();
+      let ok = false;
+      try { ok = document.execCommand('insertText', false, g.lav(new Date())); } catch { ok = false; }
+      if (!ok) indsaetITekst(felt, g.lav(new Date()));
+    });
+  });
+  const fil = linje.querySelector('[data-fil]');
+  if (fil) {
+    fil.addEventListener('mousedown', stop);
+    fil.addEventListener('click', (e) => {
+      stop(e);
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.multiple = true;
+      inp.style.display = 'none';
+      document.body.appendChild(inp);
+      inp.addEventListener('change', async () => {
+        const valgte = [...inp.files];
+        inp.remove();
+        for (const f of valgte.slice(0, 20)) await indsaetFil(f, felt);
+        // Filvaelgeren tog fokus, og feltet lukkede imens. Filen ER lagt i
+        // noten (feltets `input` skriver den) - nu skal den ogsaa kunne ses.
+        if (!felt.isConnected) tegnKrop();
+      });
+      inp.click();
+    });
+  }
+}
+
 const VAERKTOEJER = [
   { goer: 'strong', navn: 'Bold', tast: '⌘B', vis: '<b>B</b>' },
   { goer: 'em', navn: 'Italic', tast: '⌘I', vis: '<i>I</i>' },
@@ -11954,8 +12079,31 @@ function helNoteKnapHtml() {
 function vaerktoejslinjeHtml(rigt, medMd = true) {
   // I markdown er der kun vejen tilbage og omfanget. En fed-knap, der ikke
   // kunne goere noget, ville vaere en knap, der loej.
-  if (!rigt) return `<div class="blok-vaerktoej" id="blokVaerktoej">${
-    medMd ? mdKnapHtml(false) : ''}${helNoteKnapHtml()}</div>`;
+  /*
+   * I markdown staar de SAMME knapper - de skriver bare markdown om det
+   * markerede (`raaOmslut`). Foer stod her kun MD og »Whole note« med
+   * begrundelsen, at en fed-knap ingenting kunne i raa tekst. Paa en telefon
+   * er det forkert: `**` er langt vaek paa tastaturet, og en tabel, en
+   * kodeblok og hele noten som markdown er alle raa (Andreas, 2026-09-25:
+   * »hjaelpemenuen dukker ikke altid op paa mobil, saa man kan lave tekst
+   * fed«).
+   */
+  if (!rigt) {
+    return `<div class="blok-vaerktoej" id="blokVaerktoej">
+    <button type="button" class="vt-knap" data-fil="1" tabindex="-1"
+      title="Add an image or a file" aria-label="Add an image or a file">${icon('klips', 15)}</button>
+    <span class="vt-skel" aria-hidden="true"></span>
+    ${RAA_VAERKTOEJER.map((v) => `
+    <button type="button" class="vt-knap${v.tekst ? ' vt-tekst' : ''}" data-raagoer="${v.goer}" tabindex="-1"
+      title="${esc(v.navn)}" aria-label="${esc(v.navn)}">${v.vis}</button>`).join('')}
+    <span class="vt-skel" aria-hidden="true"></span>
+    ${DATOKNAPPER.map((o) => {
+    const g = TEKSTGENVEJE.find((x) => x.ord === o.ord);
+    return g ? `<button type="button" class="vt-knap vt-tekst" data-genvej="${g.ord}" tabindex="-1"
+      title="${esc(g.navn)} (${esc(g.ord)})" aria-label="${esc(g.navn)}">${o.vis}</button>` : '';
+  }).join('')}
+    ${medMd ? mdKnapHtml(false) : ''}${helNoteKnapHtml()}</div>`;
+  }
   const genvej = (o) => {
     const g = TEKSTGENVEJE.find((x) => x.ord === o.ord);
     return g ? `<button type="button" class="vt-knap vt-tekst" data-genvej="${g.ord}"
@@ -13921,6 +14069,7 @@ function tegnHeleNoten(host, n) {
   felt.value = n.body;
   autoHoejde(felt);
   bindMdKnap();
+  bindRaaVaerktoej(felt);
 
   const hj = document.getElementById('blokHjaelp');
   // `mousedown`, ikke `click`: et klik ville tage fokus fra feltet, og `blur`

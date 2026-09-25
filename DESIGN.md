@@ -4247,3 +4247,22 @@ får hele bredden — kun på en bred skærm; på en telefon står knapperne i f
 Afgørelsen tages altid **uden** klassen, ellers ville den bredere titel passe, klassen
 ryge af, og titlen hoppe frem og tilbage. Titlen er stadig én linje i noten: Enter går
 ned i teksten, og et linjeskift i et indsæt bliver et mellemrum.
+
+## 49 · Knapperne også i markdown, og feltet hopper ikke (2026-09-25)
+
+Andreas, fra en iPhone: »hjælpemenuen dukker ikke altid op på mobil, så man kan lave
+tekst fed« og »hvis jeg valgte at gøre noten til fuld markdown, så kunne jeg ikke rette i
+noget«.
+
+- **Den rå tekst har nu de samme knapper** — fil, B, I, kode, Link, tjekliste, datoerne
+  — men de skriver MARKDOWN om det markerede (`raaOmslut`, ren og prøvet). Reglen »i
+  markdown er MD den eneste knap, for B kan ingenting i et textarea« var forkert på en
+  telefon: en tabel, en kodeblok og hele noten som markdown er alle rå, og `**` er langt
+  væk på tastaturet. Et andet tryk tager mærkerne af igen; Link gør en markeret tekst til
+  teksten og markerer `https://`, klar til at skrive adressen.
+- Knapperne skriver gennem `execCommand('insertText')`, så ⌘Z virker på dem.
+- **Feltet hopper ikke.** `autoHoejde` sætter `height: auto` et øjeblik for at måle, og i
+  det øjeblik er siden kortere — browseren klemmer rulningen, og på en telefon mistede
+  man den linje, man skrev i. Rulningen gemmes og sættes tilbage i samme hug.
+- Filvælgeren tager fokus, og det rå felt lukker imens. Filen lægges alligevel i noten,
+  og noten tegnes om, så den kan ses.

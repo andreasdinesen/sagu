@@ -104,10 +104,16 @@ test('#tag er ikke en overskrift og maa ikke miste sit tegn', () => {
 
 /* ====================================================== formen ========== */
 
-test('tjeklisteknappen staar FOER Date', () => {
+/** Den RIGE raekke i `vaerktoejslinjeHtml` - efter den raa gren. */
+function rigRaekke() {
   const i = p4.indexOf('function vaerktoejslinjeHtml(');
   assert.ok(i > -1, 'vaerktoejslinjeHtml findes ikke');
   const krop = p4.slice(i, p4.indexOf('\n}\n', i));
+  return krop.slice(krop.indexOf('const genvej ='));
+}
+
+test('tjeklisteknappen staar FOER Date', () => {
+  const krop = rigRaekke();
   const tjek = krop.indexOf('data-blokform="tjekliste"');
   const dato = krop.indexOf('DATOKNAPPER.map');
   assert.ok(tjek > -1, 'tjeklisteknappen findes ikke i raekken');
@@ -116,23 +122,75 @@ test('tjeklisteknappen staar FOER Date', () => {
 });
 
 test('MD-knappen staar EFTER Now', () => {
-  const i = p4.indexOf('function vaerktoejslinjeHtml(');
-  const krop = p4.slice(i, p4.indexOf('\n}\n', i));
+  const krop = rigRaekke();
   const dato = krop.indexOf('DATOKNAPPER.map');
   const md = krop.indexOf('mdKnapHtml(true)');
   assert.ok(md > -1, 'MD-knappen findes ikke i raekken');
   assert.ok(dato < md, 'MD-knappen skal staa efter Now');
 });
 
-test('i markdown er MD den eneste knap i raekken', () => {
+test('i markdown skriver knapperne MARKDOWN - ikke den rige bloks HTML', () => {
   /*
-   * B, I og U kan ingenting i et `<textarea>`. En knap, der ikke kan det,
-   * den viser, er vaerre end ingen knap.
+   * Foer stod kun MD i den raa raekke: »B, I og U kan ingenting i et
+   * textarea«. Paa en telefon var det forkert - en tabel, en kodeblok og hele
+   * noten som markdown havde ingen vej til fed (Andreas, 2026-09-25). Nu har
+   * raekken sine egne knapper (`data-raagoer`), og de rige (`data-goer`,
+   * som pakker DOM ind) staar der ikke.
    */
   const i = p4.indexOf('function vaerktoejslinjeHtml(');
   const krop = p4.slice(i, p4.indexOf('\n}\n', i));
-  assert.match(krop, /if \(!rigt\) return [\s\S]{0,120}mdKnapHtml\(false\)/,
-    'den raa raekke er ikke kun MD-knappen');
+  const raa = krop.slice(krop.indexOf('if (!rigt) {'), krop.indexOf('const genvej ='));
+  assert.match(raa, /data-raagoer/);
+  assert.match(raa, /mdKnapHtml\(false\)/);
+  assert.doesNotMatch(raa, /data-goer=/);
+});
+
+/** `raaOmslut` hentet ud af kilden - ren streng ind, streng ud. */
+function hentRaaOmslut() {
+  const linje = (m) => p4.match(m)[0];
+  const i = p4.indexOf('function raaOmslut(');
+  // eslint-disable-next-line no-new-func
+  return new Function(`${linje(/^const TJEK_LINJE = .*$/m)}
+    ${linje(/^const BLOKMAERKE = .*$/m)}
+    ${p4.slice(i, p4.indexOf('\n}\n', i) + 2)}
+    return raaOmslut;`)();
+}
+const raaOmslut = hentRaaOmslut();
+const anvend = (v, a, b, hvad) => {
+  const r = raaOmslut(v, a, b, hvad);
+  return { tekst: v.slice(0, r.fra) + r.ny + v.slice(r.til), sel: [r.selA, r.selB] };
+};
+
+test('fed, kursiv og kode om det markerede - og af igen', () => {
+  const v = 'en vigtig ting';
+  const f = anvend(v, 3, 9, 'fed');
+  assert.equal(f.tekst, 'en **vigtig** ting');
+  assert.deepEqual(f.sel, [5, 11], 'markeringen foelger ordet');
+  assert.equal(anvend(f.tekst, 5, 11, 'fed').tekst, v, 'andet tryk tager maerkerne af');
+  assert.equal(anvend(v, 3, 9, 'kursiv').tekst, 'en *vigtig* ting');
+  assert.equal(anvend(v, 3, 9, 'kode').tekst, 'en `vigtig` ting');
+  // Kursiv om noget, der er FED, er ikke at tage fed af.
+  assert.equal(anvend('**x**', 2, 3, 'kursiv').tekst, '***x***');
+  // Intet markeret: maerkerne med markoeren imellem.
+  const tom = anvend('ab', 1, 1, 'fed');
+  assert.equal(tom.tekst, 'a****b');
+  assert.deepEqual(tom.sel, [3, 3]);
+});
+
+test('link: markeret tekst bliver teksten, en markeret adresse bliver maalet', () => {
+  const t = anvend('se docs her', 3, 7, 'link');
+  assert.equal(t.tekst, 'se [docs](https://) her');
+  assert.equal(t.tekst.slice(t.sel[0], t.sel[1]), 'https://', 'adressen staar markeret, klar til at skrive');
+  const a = anvend('se https://dr.dk her', 3, 16, 'link');
+  assert.equal(a.tekst, 'se [](https://dr.dk) her');
+  assert.deepEqual(a.sel, [4, 4], 'markoeren i teksten');
+});
+
+test('tjekliste i den raa tekst: hele linjerne, og af igen', () => {
+  const v = 'foer\nkoebe maelk\n- brod\nefter';
+  const t = anvend(v, 7, 20, 'tjek');
+  assert.equal(t.tekst, 'foer\n- [ ] koebe maelk\n- [ ] brod\nefter');
+  assert.equal(anvend(t.tekst, 7, 30, 'tjek').tekst, 'foer\nkoebe maelk\nbrod\nefter');
 });
 
 test('porten spoerger OGSAA, om man selv har bedt om markdown', () => {

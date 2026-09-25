@@ -365,7 +365,8 @@ test('dato-knappen virker, ogsaa naar markoeren staar paa selve feltet', () => {
   assert.match(p4, /function indsaetVedMarkoer/);
   assert.match(p4, /if \(r\.startContainer === vaert\)/,
     'markoeren paa selve feltet flyttes ikke ind i afsnittet');
-  const i = p4.indexOf("linje.querySelectorAll('[data-genvej]')");
+  // I den RIGE blok - den raa raekke har sin egen (bindRaaVaerktoej).
+  const i = p4.indexOf("linje.querySelectorAll('[data-genvej]')", p4.indexOf('function bindRigBlok('));
   const stykke = p4.slice(i, i + 500);
   assert.match(stykke, /indsaetVedMarkoer/, 'knappen bruger stadig den, der kraever en tekstknude');
 });
