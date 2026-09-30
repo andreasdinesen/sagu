@@ -1843,6 +1843,8 @@ body.fokus .topbar { display: none; }
   background: rgba(0, 0, 0, .88);
 }
 
+/* Et billede i wikien kan aabnes stort. */
+.wnote img.wbillede { cursor: zoom-in; }
 .lightbox img { max-width: 100%; max-height: 82vh; object-fit: contain; border-radius: var(--r-sm); }
 .lightbox-tekst { color: #ddd; max-width: 60ch; text-align: center; }
 

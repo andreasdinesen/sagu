@@ -5,8 +5,9 @@
  * her kender ingen adresser og laver ingen forespoergsler. Alt hvad wikien kan
  * uden JavaScript, GOER den uden JavaScript: navigation, soegning, links og
  * temaet virker med scriptet slaaet fra. Det her er det, der ikke kan:
- * kopier-knappen paa en kodeblok, temaskiftet, den levende soegning,
- * knappen til bunden/toppen og »/« til soegefeltet.
+ * kopier-knapperne paa kode, billederne i stort (med »Copy image«),
+ * temaskiftet, den levende soegning, knappen til bunden/toppen og »/« til
+ * soegefeltet.
  */
 (function () {
   'use strict';
@@ -74,6 +75,193 @@
         navigator.clipboard.writeText(tekst).then(function () { sig('Copied'); }, markerTekst);
       } else markerTekst();
     });
+  });
+
+  /* --- SVG-ikonerne, som appen bruger dem ------------------------------- */
+
+  function ikon(sti, stoerrelse) {
+    var n = stoerrelse || 16;
+    return '<svg width="' + n + '" height="' + n + '" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+      + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + sti + '</svg>';
+  }
+  var IKON_KOPI = '<path d="M9 9h10v10a1.5 1.5 0 01-1.5 1.5H9z"/><path d="M15 9V4.5A1.5 1.5 0 0013.5 3H5.5A1.5 1.5 0 004 4.5v9A1.5 1.5 0 005.5 15H9"/>';
+  var IKON_UD = '<path d="M14.5 4.5H18a1.5 1.5 0 011.5 1.5v12a1.5 1.5 0 01-1.5 1.5h-3.5"/><path d="M4.5 12h10M11 8.5l3.5 3.5-3.5 3.5"/>';
+  var IKON_LUK = '<path d="M6 6l12 12M18 6L6 18"/>';
+  var IKON_TJEK = '<path d="M20 6.5L9.5 17 4 11.5"/>';
+
+  /** Tekst paa udklipsholderen - med en vej ud over http (se kodeblokkene). */
+  function kopierTekst(tekst) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(tekst).then(function () { return true; }, function () { return false; });
+    }
+    return Promise.resolve(false);
+  }
+
+  /* --- kopier-knap paa kode INDE i teksten ------------------------------ */
+
+  /*
+   * »Kan du goere saa naar man benytter wiki mode at det er muligt at benytte
+   * kopi af kodestykker« (Andreas, 2026-09-30). Kodeblokkene havde en knap;
+   * en adresse som `http://<server>/cc1/licdump.php#` inde i en saetning
+   * havde ingen. Samme knap og samme klasser som i appen (`pyntInlineKode`):
+   * den dukker op, naar musen staar over koden, og paa en telefon (ingen
+   * hover) er den skjult - dér markerer man med et langt tryk.
+   */
+  document.querySelectorAll('.wnote code').forEach(function (kode) {
+    if (kode.closest('pre')) return;
+    if (kode.parentElement && kode.parentElement.classList.contains('inlinekode')) return;
+    var ramme = document.createElement('span');
+    ramme.className = 'inlinekode';
+    kode.parentNode.insertBefore(ramme, kode);
+    ramme.appendChild(kode);
+    var knap = document.createElement('button');
+    knap.type = 'button';
+    knap.className = 'inlinekode-kopi';
+    knap.tabIndex = -1;
+    knap.title = 'Copy';
+    knap.setAttribute('aria-label', 'Copy ' + kode.textContent);
+    knap.innerHTML = ikon(IKON_KOPI, 12);
+    knap.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      kopierTekst(kode.textContent).then(function (ok) {
+        if (!ok) {
+          // Kan det ikke kopieres herfra, markeres koden - saa er ⌘C/Ctrl+C nok.
+          var r = document.createRange();
+          r.selectNodeContents(kode);
+          var s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        }
+        knap.classList.add('kopieret');
+        knap.title = ok ? 'Copied' : 'Press Ctrl+C';
+        setTimeout(function () { knap.classList.remove('kopieret'); knap.title = 'Copy'; }, 1400);
+      });
+    });
+    ramme.appendChild(knap);
+  });
+
+  /* --- billederne: stort, og en kopi, andre programmer kan bruge -------- */
+
+  /*
+   * Klik paa et billede aabner det stort - med »Copy image« og »Open«, som i
+   * appen (Andreas, 2026-09-30). Kopien er baade `image/png` (til programmer,
+   * der kun tager et billede) og HTML med billedet LAGT IND som `data:`, for
+   * OneNote og Word tager HTML'en frem for billedet og kan ikke hente en
+   * adresse bag wikiens adgangskode (appen v89).
+   *
+   * `fetch` gaar til wikiens egen adresse (`connect-src 'self'`), og en
+   * wiki med adgangskode sender cookien med - samme vej, som billedet blev
+   * vist ad.
+   */
+  function hentBlob(src) {
+    return fetch(src, { credentials: 'same-origin' }).then(function (svar) {
+      if (!svar.ok) throw new Error('Could not read the image.');
+      return svar.blob();
+    });
+  }
+
+  function tilPng(blob) {
+    if (blob.type === 'image/png') return Promise.resolve(blob);
+    return createImageBitmap(blob).then(function (bm) {
+      var c = document.createElement('canvas');
+      c.width = bm.width;
+      c.height = bm.height;
+      c.getContext('2d').drawImage(bm, 0, 0);
+      return new Promise(function (ok, nej) {
+        c.toBlob(function (b) { if (b) ok(b); else nej(new Error('png')); }, 'image/png');
+      });
+    });
+  }
+
+  function tilDataUrl(blob) {
+    return new Promise(function (ok, nej) {
+      var l = new FileReader();
+      l.onload = function () { ok(l.result); };
+      l.onerror = function () { nej(new Error('read')); };
+      l.readAsDataURL(blob);
+    });
+  }
+
+  function kopierBillede(src, alt) {
+    if (!navigator.clipboard || !window.ClipboardItem) return Promise.resolve(false);
+    // Loefterne gives til ClipboardItem MED DET SAMME, inde i klikket -
+    // Safari naegter en skrivning, der foerst kommer efter et `await`.
+    var blob = hentBlob(src);
+    var png = blob.then(tilPng);
+    var html = blob.then(tilDataUrl).then(function (data) {
+      var a = String(alt || '').replace(/"/g, '&quot;');
+      return new Blob(['<img src="' + data + '" alt="' + a + '">'], { type: 'text/html' });
+    });
+    return navigator.clipboard.write([new ClipboardItem({ 'image/png': png, 'text/html': html })])
+      .then(function () { return true; }, function () {
+        return navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+          .then(function () { return true; }, function (ex) {
+            if (window.console) console.warn('billedkopi afvist', ex && ex.message);
+            return false;
+          });
+      });
+  }
+
+  function visLysboks(img) {
+    var gammel = document.getElementById('lightbox');
+    if (gammel) gammel.remove();
+    var src = img.currentSrc || img.src;
+    var alt = img.getAttribute('alt') || '';
+    var boks = document.createElement('div');
+    boks.className = 'lightbox';
+    boks.id = 'lightbox';
+    boks.innerHTML = '<div class="lightbox-vaerktoej">'
+      + '<button type="button" class="lightbox-knap" id="lbKopi">' + ikon(IKON_KOPI) + '<span>Copy image</span></button>'
+      + '<a class="lightbox-knap" id="lbAaben" target="_blank" rel="noopener">' + ikon(IKON_UD) + '<span>Open</span></a>'
+      + '<button type="button" class="lightbox-luk" aria-label="Close">' + ikon(IKON_LUK, 20) + '</button>'
+      + '</div><img alt="">'
+      + (alt ? '<div class="lightbox-tekst"></div>' : '');
+    boks.querySelector('img').src = src;
+    boks.querySelector('img').alt = alt;
+    boks.querySelector('#lbAaben').href = src;
+    if (alt) boks.querySelector('.lightbox-tekst').textContent = alt;
+    document.body.appendChild(boks);
+
+    function luk() {
+      boks.remove();
+      document.removeEventListener('keydown', paaTast);
+    }
+    function paaTast(e) { if (e.key === 'Escape') { e.preventDefault(); luk(); } }
+    document.addEventListener('keydown', paaTast);
+    boks.querySelector('.lightbox-luk').addEventListener('click', luk);
+    boks.querySelector('#lbAaben').addEventListener('click', function (e) { e.stopPropagation(); });
+    boks.addEventListener('click', function (e) { if (e.target === boks) luk(); });
+
+    var kopiKnap = boks.querySelector('#lbKopi');
+    var foer = kopiKnap.innerHTML;
+    kopiKnap.addEventListener('click', function (e) {
+      e.stopPropagation();
+      kopiKnap.disabled = true;
+      kopierBillede(src, alt).then(function (ok) {
+        kopiKnap.disabled = false;
+        kopiKnap.innerHTML = ok ? ikon(IKON_TJEK) + '<span>Copied</span>'
+          : '<span>Could not copy — use Open</span>';
+        setTimeout(function () { if (boks.isConnected) kopiKnap.innerHTML = foer; }, 2500);
+      });
+    });
+
+    // Swipe lukker - en telefon har ingen Esc-tast.
+    var start = null;
+    boks.addEventListener('pointerdown', function (e) { start = { x: e.clientX, y: e.clientY }; });
+    boks.addEventListener('pointerup', function (e) {
+      if (!start) return;
+      var d = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      start = null;
+      if (d > 80) luk();
+    });
+  }
+
+  document.querySelectorAll('.wnote img').forEach(function (img) {
+    // Et billede, der ER et link, foelger linket.
+    if (img.closest('a')) return;
+    img.classList.add('wbillede');
+    img.addEventListener('click', function () { visLysboks(img); });
   });
 
   /* --- deep-link paa hver overskrift ------------------------------------ */

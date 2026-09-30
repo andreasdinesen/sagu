@@ -13,6 +13,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { startServer, klient, tags, gaest } from './hjaelp.mjs';
 
 let srv;
@@ -715,4 +716,18 @@ test('en trukket adresse bliver ledig igen', async () => {
   await a.kald('DELETE', `/api/v1/shares/${s1.id}`);
   assert.equal((await a.kald('POST', '/api/v1/shares', { noteId: n2.id, slug: 'genbrug' })).status, 200,
     'navnet er ledigt igen, naar udgivelsen er trukket tilbage');
+});
+
+test('wikien har kopi paa kode i teksten og billeder i stort med »Copy image« (v92)', () => {
+  // »Kan du goere saa naar man benytter wiki mode at det er muligt at benytte
+  // kopi af kodestykker. Samt muligheden for at aabne billeder op i stort og
+  // lave en kopi af billederne« (Andreas, 2026-09-30). Wikien henter ikke
+  // app.js - det skal staa i dens egen fil.
+  const w = readFileSync(new URL('../app/public/wiki.js', import.meta.url), 'utf8');
+  assert.match(w, /\.wnote code/, 'kode i teksten skal findes');
+  assert.match(w, /inlinekode-kopi/, 'samme knap som i appen');
+  assert.match(w, /function visLysboks\(/);
+  assert.match(w, /'image\/png': png, 'text\/html': html/, 'baade billedet og HTML med billedet lagt ind (OneNote)');
+  assert.match(w, /credentials: 'same-origin'/, 'en wiki med adgangskode sender cookien med');
+  assert.doesNotMatch(w, /fetch\(['"]data:/, "CSP'en forbyder fetch af data:");
 });

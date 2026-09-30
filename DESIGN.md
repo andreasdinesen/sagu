@@ -4330,3 +4330,20 @@ uploaden er færdig, bliver pladsholderen til billedets markdown, og noten tegne
 markøren, hvor man selv har sat den. Pladsholderen er pynt (`.upload-venter` i
 `DOK_PYNT`) og kommer aldrig i noten — heller ikke hvis noten gemmes midt i uploaden —
 og er den slettet imens, lægges intet ind.
+
+## 53 · Wikien: kopi af kode og billeder i stort (2026-09-30)
+
+»Kan du gøre så når man benytter wiki mode at det er muligt at benytte kopi af
+kodestykker. Samt muligheden for at åbne billeder op i stort og lave en kopi af
+billederne.« Wikien henter ikke `app.js`, så begge dele står i dens egen `wiki.js`, med
+appens klasser og CSS:
+
+- **Kode i teksten** (`` `…` ``) får appens kopiér-knap (`.inlinekode-kopi`): synlig ved
+  hover, skjult på en telefon. Kan udklipsholderen ikke skrives (http), markeres koden, så
+  Ctrl+C er nok. Kodeblokkene havde allerede deres knap.
+- **Et billede åbner stort** i appens lysboks (`.lightbox`) med **Copy image**, **Open** og
+  luk (Esc, klik udenfor, swipe). Kopien er `image/png` OG HTML med billedet lagt ind som
+  `data:` — samme greb som appens v89, for OneNote tager HTML'en og kan ikke hente en
+  adresse bag wikiens adgangskode. `fetch` går til wikiens egen adresse med
+  `credentials: 'same-origin'`, så en wiki med adgangskode sender sin cookie med.
+- Et billede, der selv er et link, følger linket.
