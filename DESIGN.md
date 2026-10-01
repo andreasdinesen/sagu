@@ -4347,3 +4347,20 @@ appens klasser og CSS:
   adresse bag wikiens adgangskode. `fetch` går til wikiens egen adresse med
   `credentials: 'same-origin'`, så en wiki med adgangskode sender sin cookie med.
 - Et billede, der selv er et link, følger linket.
+
+## 54 · Quicknote: ⌘⌥N / Ctrl+Alt+N (2026-10-01)
+
+»En taste-kommando, der åbner en note, så jeg kan skrive med det samme — både som
+hjemmeside og som app, på Windows og macOS« (Andreas). `N` fandtes, men kun når man
+*ikke* skriver; en quicknote skal kunne tages midt i en sætning i en anden note, og det
+kræver en modifikator. Det er derfor genvej nummer to med modifikator efter ⌘K.
+
+- **Ikke ⌘N / Ctrl+N og ikke ⌘⇧N / Ctrl+Shift+N.** Nyt vindue og inkognito — Chrome giver
+  dem aldrig til en side i en fane, så de ville kun virke i den installerede app.
+- **⌘⌥N på Mac, Ctrl+Alt+N på Windows.** Fri i Chrome, Edge, Safari og Firefox.
+- **Matches på `e.code === 'KeyN'`**, ikke `e.key`: Option+N er død-tasten for ˜ på en Mac.
+- **På Mac kræves ⌘, ikke Ctrl:** Ctrl+Option er VoiceOvers tast.
+- **Ctrl+Alt er AltGr på Windows.** AltGr+N skriver intet på et dansk tastatur, og kun
+  `KeyN` matches, så `@`, `{`, `€` osv. går uberørt igennem.
+- Den gør det samme som `N` (`opretOgAaben({})`): ny note, titlen markeret, Enter går ned
+  i teksten. Den står i `GENVEJE`, så `?`-oversigten viser den med tastaturets egne navne.

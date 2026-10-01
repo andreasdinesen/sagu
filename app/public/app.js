@@ -2826,8 +2826,8 @@ const GENVEJE = [
   },
   {
     /*
-     * Den ENESTE genvej med modifikator - og den er en bevidst undtagelse
-     * fra reglen tre skaerme laengere nede.
+     * Den FOERSTE genvej med modifikator - og den er en bevidst undtagelse
+     * fra reglen tre skaerme laengere nede. Quicknoten herunder er den anden.
      *
      * `Cmd`/`Ctrl+K` er blevet den maade, man aabner soegningen paa (Notion,
      * Linear, Slack, GitHub), og en app, der ikke svarer paa den, foeles
@@ -2842,6 +2842,29 @@ const GENVEJE = [
     tast: 'k', modifikator: true, vis: modTast() + 'K',
     hvad: 'Search — from anywhere, even mid-sentence',
     gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
+  },
+  {
+    /*
+     * Quicknote - genvej nummer to MED modifikator (Andreas, 2026-10-01).
+     *
+     * `N` herunder goer det samme, men kun naar man IKKE skriver. En
+     * quicknote skal kunne tages midt i en saetning i en anden note, og det
+     * kraever en modifikator. Prisen fra `Cmd/Ctrl+K` er laest:
+     *
+     * - `Ctrl/Cmd+N` og `Ctrl/Cmd+Shift+N` er nyt vindue og inkognito. Chrome
+     *   giver dem ALDRIG til en side i en fane, saa de ville kun virke i den
+     *   installerede app - og Andreas bruger Sagu som begge dele.
+     * - `Cmd+Option+N` (Mac) / `Ctrl+Alt+N` (Windows) er fri i Chrome, Edge,
+     *   Safari og Firefox. Den matches paa `e.code`, fordi Option aendrer
+     *   `e.key` paa en Mac (`Option+N` er doed-tasten for ˜).
+     * - Paa en Mac kraeves Cmd, ikke Ctrl: `Ctrl+Option` er VoiceOvers tast.
+     * - Paa Windows er `Ctrl+Alt` det samme som AltGr. `AltGr+N` skriver
+     *   intet paa et dansk tastatur, saa der aedes ikke et bogstav her.
+     */
+    tast: 'n', kode: 'KeyN', modifikator: 'alt',
+    vis: modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N',
+    hvad: 'Quick note — a new note from anywhere, even mid-sentence',
+    gør: () => opretOgAaben({}),
   },
   {
     tast: 'n', vis: 'N', hvad: 'New note',
@@ -2924,8 +2947,9 @@ const genvejGaelder = (g) => !g.kunVist && (!g.naar || g.naar());
  *
  * Og genvejene er enkelttaster UDEN modifikator med vilje — `Cmd`/`Ctrl`
  * hører browseren til, og at stjæle dem er at ødelægge noget, der virkede.
- * Den ene undtagelse er `Cmd/Ctrl+K`; begrundelsen står ved genvejen selv,
- * så den, der får lyst til at tilføje nummer to, læser prisen først.
+ * Undtagelserne er `Cmd/Ctrl+K` og quicknoten; begrundelsen står ved
+ * genvejene selv, så den, der får lyst til at tilføje nummer tre, læser
+ * prisen først.
  */
 document.addEventListener('keydown', (e) => {
   if (!state.user) return;
@@ -2967,8 +2991,21 @@ document.addEventListener('keydown', (e) => {
    * midt i en saetning. `altKey` er ikke med - `Alt+K` skriver et tegn paa
    * flere tastaturer, og en genvej maa ikke aede et bogstav.
    */
+  /*
+   * Quicknote: Cmd+Option (Mac) / Ctrl+Alt (Windows). Begrundelsen staar
+   * ved genvejen. Kun `e.code` - `e.key` er et andet tegn med Option nede.
+   */
+  const macMod = modTast() === '⌘';
+  if (e.altKey && (macMod ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.shiftKey) {
+    const m = GENVEJE.find((x) => x.modifikator === 'alt' && x.kode === e.code);
+    if (!m || !genvejGaelder(m)) return;
+    e.preventDefault();
+    try { m.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }
+    return;
+  }
+
   if ((e.metaKey || e.ctrlKey) && !e.altKey) {
-    const m = GENVEJE.find((x) => x.modifikator && passer(x));
+    const m = GENVEJE.find((x) => x.modifikator === true && passer(x));
     if (!m || !genvejGaelder(m)) return;
     e.preventDefault();
     try { m.gør(); } catch (ex) { if (window.console) console.error('genvej fejlede', ex); }
@@ -3007,7 +3044,7 @@ function visGenvejsPanel() {
           </tr>`).join('')}
         </tbody></table></div>
         <p class="meta saetning">Greyed-out shortcuts do something on other screens.
-        Apart from ${esc(modTast())}K, no key uses ⌘ or Ctrl — those belong to the browser.</p>
+        Apart from ${esc(modTast())}K and the quick note, no key uses ⌘ or Ctrl — those belong to the browser.</p>
       </div>
     </div>`;
   document.body.appendChild(host);
@@ -5991,7 +6028,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 92;
+const APP_VERSION = 93;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
