@@ -1197,7 +1197,7 @@ function tegnTrae() {
   bindTrae();
 }
 
-async function opretOgAaben(felter) {
+async function opretOgAaben(felter, valg) {
   try {
     // Svaret INDEHOLDER elementet. At kalde "hent alt igen" bagefter er en
     // ekstra rundtur for noget, man har i haanden (RUNE-ERFARINGER, doda v27).
@@ -1211,6 +1211,8 @@ async function opretOgAaben(felter) {
     await hentTrae();
     tegnTrae();
     await aabnNote(d.note.id);
+    // En quicknote har allerede sin titel - dér skal man skrive i teksten.
+    if (valg && valg.iTeksten) { aabnSidste(); return; }
     const t = document.getElementById('noteTitle');
     if (t) { t.focus(); t.select(); }
   } catch (ex) { toast(ex.message); }

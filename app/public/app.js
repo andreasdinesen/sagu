@@ -2863,8 +2863,8 @@ const GENVEJE = [
      */
     tast: 'n', kode: 'KeyN', modifikator: 'alt',
     vis: modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N',
-    hvad: 'Quick note — a new note from anywhere, even mid-sentence',
-    gør: () => opretOgAaben({}),
+    hvad: 'Quick note — a new note in Quicknotes, from anywhere, even mid-sentence',
+    gør: () => opretQuicknote(),
   },
   {
     tast: 'n', vis: 'N', hvad: 'New note',
@@ -2934,6 +2934,45 @@ const GENVEJE = [
     kunVist: true,
   },
 ];
+
+/*
+ * Quicknoten (v94): titel med dato og klokkeslaet, i notesbogen »Quicknotes«,
+ * og markoeren nede i teksten - titlen er der jo allerede.
+ *
+ * Bogen findes paa NAVNET, ikke paa et gemt id. Slettes den, kommer den igen
+ * ved naeste quicknote; omdoebes den, er det en anden bog, og der laves en ny.
+ * Det er det, man ser i traeet, og intet skjult id kan pege forkert.
+ */
+const QUICKNOTE_BOG = 'Quicknotes';
+let quicknoteIGang = null;
+
+function quicknoteTitel(nu) {
+  const to = (x) => String(x).padStart(2, '0');
+  return `Quicknote - ${nu.getFullYear()}-${to(nu.getMonth() + 1)}-${to(nu.getDate())} `
+    + `${to(nu.getHours())}:${to(nu.getMinutes())}`;
+}
+
+async function quicknoteBog() {
+  const find = () => (state.notebooks || [])
+    .find((b) => String(b.name || '').trim().toLowerCase() === QUICKNOTE_BOG.toLowerCase());
+  const fundet = find();
+  if (fundet) return fundet.id;
+  const d = await api('POST', '/api/v1/notebooks', { name: QUICKNOTE_BOG });
+  return d && d.notebook ? d.notebook.id : null;
+}
+
+function opretQuicknote() {
+  // To hurtige tryk maa ikke lave to boeger: det andet venter paa det foerste.
+  if (quicknoteIGang) return quicknoteIGang;
+  quicknoteIGang = (async () => {
+    try {
+      const bog = await quicknoteBog();
+      await opretOgAaben(Object.assign({ title: quicknoteTitel(new Date()) },
+        bog ? { notebookId: bog } : {}), { iTeksten: true });
+    } catch (ex) { toast(ex.message); }
+  })().finally(() => { quicknoteIGang = null; });
+  return quicknoteIGang;
+}
 
 /** Gælder genvejen lige nu? */
 const genvejGaelder = (g) => !g.kunVist && (!g.naar || g.naar());
@@ -6028,7 +6067,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 93;
+const APP_VERSION = 94;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -11007,7 +11046,7 @@ function tegnTrae() {
   bindTrae();
 }
 
-async function opretOgAaben(felter) {
+async function opretOgAaben(felter, valg) {
   try {
     // Svaret INDEHOLDER elementet. At kalde "hent alt igen" bagefter er en
     // ekstra rundtur for noget, man har i haanden (RUNE-ERFARINGER, doda v27).
@@ -11021,6 +11060,8 @@ async function opretOgAaben(felter) {
     await hentTrae();
     tegnTrae();
     await aabnNote(d.note.id);
+    // En quicknote har allerede sin titel - dér skal man skrive i teksten.
+    if (valg && valg.iTeksten) { aabnSidste(); return; }
     const t = document.getElementById('noteTitle');
     if (t) { t.focus(); t.select(); }
   } catch (ex) { toast(ex.message); }

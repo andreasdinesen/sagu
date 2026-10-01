@@ -4362,5 +4362,16 @@ kræver en modifikator. Det er derfor genvej nummer to med modifikator efter ⌘
 - **På Mac kræves ⌘, ikke Ctrl:** Ctrl+Option er VoiceOvers tast.
 - **Ctrl+Alt er AltGr på Windows.** AltGr+N skriver intet på et dansk tastatur, og kun
   `KeyN` matches, så `@`, `{`, `€` osv. går uberørt igennem.
-- Den gør det samme som `N` (`opretOgAaben({})`): ny note, titlen markeret, Enter går ned
-  i teksten. Den står i `GENVEJE`, så `?`-oversigten viser den med tastaturets egne navne.
+- Den står i `GENVEJE`, så `?`-oversigten viser den med tastaturets egne navne.
+
+**v94 — quicknoten er en rigtig quicknote** (Andreas, samme dag):
+
+- **Titlen er `Quicknote - ÅÅÅÅ-MM-DD TT:MM`** (lokal tid, samme datoform som dagens
+  note), og **markøren står nede i teksten** (`opretOgAaben(felter, { iTeksten: true })`
+  → `aabnSidste()`). Titlen er der jo allerede.
+- **Den lægges i notesbogen »Quicknotes«**, som laves første gang. Bogen findes på
+  **navnet** (uden hensyn til store/små bogstaver), ikke på et gemt id: slettes den,
+  kommer den igen; omdøbes den, laves en ny. Det, man ser i træet, er sandheden.
+- **To hurtige tryk laver én bog og én note:** et tryk, mens det forrige er i gang,
+  venter på det i stedet for at starte forfra.
+- `N` er uændret — en almindelig ny note med titlen markeret.
