@@ -6096,7 +6096,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 96;
+const APP_VERSION = 97;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -19266,10 +19266,15 @@ function sideApi() {
     key of its own; Claude Code and Desktop can also just carry a <strong>full</strong> key
     in an <code>Authorization</code> header. Either way the connection shows up under
     Settings → Connected apps, and revoking it cuts the app off at once.</p>
-    <p class="meta saetning">Claude sees nine tools, and no more than the key allows: a
+    <p class="meta saetning">Claude sees ten tools, and no more than the key allows: a
     <strong>read</strong> connection cannot even see the ones that write. Publishing a page
     is one of them — it puts the page on the <em>open web</em>, so Claude is told to ask
     first.</p>
+    <p class="meta saetning"><strong>Images and files:</strong> Claude asks for an upload
+    link to one note and sends the file with <code>curl</code>. The link works once, for 15
+    minutes, and the image lands at the end of the note. It needs a Claude that can run
+    commands, such as Claude Code — an image pasted into a chat cannot be passed on this
+    way.</p>
   </div>
 
   <h2>When something goes wrong</h2>

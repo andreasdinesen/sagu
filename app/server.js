@@ -3711,6 +3711,191 @@ function hentKommentarFor(userId, id) {
 
 /* --------------------------------------------------------------- ruter */
 
+/**
+ * Tager imod én fil og gemmer den - for appens upload OG for MCP's upload-link.
+ *
+ * Kvoten, skrive-tjekket paa noten og den streamede sha256 staar kun her, saa
+ * en ny vej ind ikke kan glemme en af dem. Svarer SELV ved en fejl og
+ * returnerer da null; ved succes returneres filen, og kalderen svarer.
+ *
+ * @param {{noteId?: string|null, navn: string, mime: string, w?: number|null, h?: number|null}} opt
+ */
+async function modtagFil(req, res, u, opt) {
+  const noteId = opt.noteId || null;
+  /*
+   * Kvoten haandhaeves UNDER uploaden, ikke kun foer den.
+   *
+   * Et tjek foer modtagelsen kan kun se, hvad der allerede ligger - saa en
+   * enkelt fil paa 10 GB ville slippe forbi en kvote paa 2 GB, fordi der var
+   * plads, da den begyndte. Loftet for DENNE upload er derfor det mindste af
+   * fil-loftet og den plads, brugeren har tilbage.
+   */
+  const brugt = brugtPlads(u.id);
+  const tilbage = maxSamlet() - brugt;
+  if (tilbage <= 0) {
+    apiFejl(res, 413, 'quota_full',
+      `You have used all ${visBytes(maxSamlet())} of file storage. Delete something first.`);
+    return null;
+  }
+  const loft = Math.min(MAX_FIL, tilbage);
+  /*
+   * En fil kan kun haenges paa en note, man maa SKRIVE i.
+   *
+   * Her stod `hentNote()`, altsaa laese-adgang - kommentaren sagde »skrive
+   * i«, koden spurgte om noget andet. Med én bruger var de to det samme;
+   * fra F11 er de det ikke, og forskellen ville vaere, at en kollega med
+   * laese-adgang kunne haenge filer paa en fremmed side.
+   */
+  if (noteId && !maaSkrive(u.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return null; }
+
+  sikreDir(FILES_DIR);
+  const id = newId();
+  const maal = filSti(id);
+  try {
+    const { size, sha } = await modtagStroem(req, maal, loft);
+    if (!size) {
+      fs.unlink(maal, () => {});
+      apiFejl(res, 400, 'empty_file', 'The file was empty.');
+      return null;
+    }
+    // Klientens Content-Type er et HINT, ikke en sandhed. Den gemmes, men
+    // afgoer kun inline/download gennem hvidlisten (doda F7).
+    const mime = str(String(opt.mime || ''), 100) || 'application/octet-stream';
+    const navn = renseFilnavn(opt.navn || 'file');
+    db.prepare(`INSERT INTO attachments (id, user_id, note_id, name, mime, size, sha, width, height, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, u.id, noteId, navn, mime, size, sha, opt.w || null, opt.h || null, now());
+    return { id, name: navn, mime, size, url: `/api/v1/files/${id}`, inline: INLINE_MIME.has(mime) };
+  } catch (err) {
+    const status = err.status || 400;
+    // Sig HVILKEN graense der blev ramt. »Filen er for stor« er forkert og
+    // sender brugeren efter et mindre billede, naar problemet er, at
+    // arkivet er fuldt.
+    const ramteKvoten = status === 413 && loft < MAX_FIL;
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', Connection: 'close' });
+    res.end(JSON.stringify({
+      error: status === 413 ? (ramteKvoten ? 'quota_full' : 'too_large') : 'upload_failed',
+      message: ramteKvoten
+        ? `That file does not fit in your remaining ${Math.round(tilbage / 1024 / 1024)} MB. Delete something first.`
+        : err.message,
+    }));
+    // Svar FOERST, luk BAGEFTER. Kalder man req.destroy() med det samme,
+    // ser klienten "connection reset" i stedet for vores 413, og en
+    // API-klient aner ikke hvorfor (RUNE-ERFARINGER, doda F7).
+    res.on('finish', () => req.destroy());
+    return null;
+  }
+}
+
+/* ------------------------------------------------- upload-links (MCP) */
+
+/*
+ * Et billede ind via MCP (v97, Andreas 2026-10-02).
+ *
+ * En MCP-klient kan ikke sende en fil som andet end tekst i et vaerktoejskald,
+ * og en fil som base64 i et kald koster en token pr. tre bytes. Derfor laver
+ * vaerktoejet `create_upload_link` et kortvarigt link, og klienten sender
+ * filen dertil med `curl --data-binary @fil <link>` - i Claude Code og alle
+ * andre steder, hvor modellen kan koere en kommando.
+ *
+ *  - **Linket ER legitimationen**, saa det er kort (15 min), til ÉN note og
+ *    forbruges ved den foerste upload, der lykkes. En fejlet upload (for stor,
+ *    kvoten fuld) lader det leve, saa man kan proeve igen.
+ *  - **Det bor i hukommelsen.** En genstart smider alle links vaek - det er
+ *    det rigtige: et link, ingen naaede at bruge paa 15 min, er alligevel dødt.
+ *  - **Skrive-tjekket sker baade ved udstedelsen og ved uploaden** (i
+ *    modtagFil), saa en deling, der er trukket tilbage imens, ogsaa lukker
+ *    linket.
+ */
+const UPLOAD_LINKS = new Map();
+const UPLOAD_LINK_LEVETID = 15 * 60;
+
+/** Filnavnets endelse -> type, naar klienten ikke selv siger det (curl siger form-urlencoded). */
+const TYPE_AF_ENDELSE = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  avif: 'image/avif', pdf: 'application/pdf', txt: 'text/plain', log: 'text/plain', md: 'text/markdown',
+  csv: 'text/csv', json: 'application/json', zip: 'application/zip',
+};
+
+function gaetFiltype(navn, sendt) {
+  const t = String(sendt || '').split(';')[0].trim().toLowerCase();
+  if (t && t !== 'application/x-www-form-urlencoded' && t !== 'application/octet-stream') return t;
+  const endelse = (String(navn || '').match(/\.([a-z0-9]+)$/i) || [])[1];
+  return (endelse && TYPE_AF_ENDELSE[endelse.toLowerCase()]) || 'application/octet-stream';
+}
+
+function ryddUploadLinks() {
+  const nu = now();
+  for (const [k, v] of UPLOAD_LINKS) if (v.udloeber <= nu) UPLOAD_LINKS.delete(k);
+}
+
+/**
+ * Udsteder et upload-link. Returnerer `{ token, udloeber }` eller `{ fejl }`.
+ * Samme 404-sprog som resten: en note, man ikke maa skrive i, findes ikke.
+ */
+function lavUploadLink(userId, noteId, navn, indsaet) {
+  if (!noteId || !maaSkrive(userId, noteId)) return { fejl: 'No note with that id that you can write to.' };
+  const rent = renseFilnavn(navn || 'file');
+  ryddUploadLinks();
+  const token = crypto.randomBytes(24).toString('base64url');
+  const udloeber = now() + UPLOAD_LINK_LEVETID;
+  UPLOAD_LINKS.set(token, { userId, noteId, navn: rent, indsaet: indsaet !== false, udloeber, iBrug: false });
+  return { token, udloeber, navn: rent };
+}
+
+/** Markdown for en fil i noten - samme form som appens `filMarkdown()`. */
+function filMarkdownServer(fil) {
+  const navn = String(fil.name || 'file').replace(/[[\]]/g, '');
+  return fil.inline ? `![${navn}](sagu:${fil.id})` : `[${navn}](sagu:${fil.id})`;
+}
+
+async function modtagUploadLink(req, res, token) {
+  if (!rateAllow(`upload-link:${clientIp(req)}`, 60, 600)) {
+    apiFejl(res, 429, 'rate_limited', 'Too many uploads. Wait a few minutes.');
+    return;
+  }
+  ryddUploadLinks();
+  const link = UPLOAD_LINKS.get(token);
+  if (!link || link.iBrug) {
+    apiFejl(res, 404, 'unknown_link', 'This upload link is unknown, used or expired. Ask for a new one.');
+    return;
+  }
+  const u = db.prepare('SELECT id FROM users WHERE id = ?').get(link.userId);
+  if (!u) { UPLOAD_LINKS.delete(token); apiFejl(res, 404, 'unknown_link', 'This upload link is no longer valid.'); return; }
+  link.iBrug = true;
+  let fil;
+  try {
+    fil = await modtagFil(req, res, u, {
+      noteId: link.noteId,
+      navn: link.navn,
+      mime: gaetFiltype(link.navn, req.headers['content-type']),
+    });
+  } finally {
+    link.iBrug = false;
+  }
+  if (!fil) return;               // modtagFil har svaret; linket lever videre
+  UPLOAD_LINKS.delete(token);
+  audit('upload-link-brugt', u.id, link.noteId, fil.name);
+
+  let indsat = false;
+  if (link.indsaet) {
+    const n = hentNote(u.id, link.noteId);
+    if (n) {
+      const md = filMarkdownServer(fil);
+      const svar = gemNote(u.id, n.id, { body: `${String(n.body || '').replace(/\s+$/, '')}\n\n${md}\n` });
+      indsat = !svar.fejl;
+    }
+  }
+  sendJson(res, 200, {
+    ok: true,
+    file: fil,
+    inserted: indsat,
+    message: indsat
+      ? `Uploaded ${fil.name} (${visBytes(fil.size)}) and added it to the end of the note.`
+      : `Uploaded ${fil.name} (${visBytes(fil.size)}) to the note's attachments.`,
+  });
+}
+
 const ROUTES = {
   'GET /api/public-config': (req, res) => {
     sendJson(res, 200, {
@@ -4956,76 +5141,14 @@ const ROUTES = {
       apiFejl(res, 400, 'missing_header', 'Uploads must send the X-Sagu-Upload header.');
       return;
     }
-    const u = auth.user;
-    /*
-     * Kvoten haandhaeves UNDER uploaden, ikke kun foer den.
-     *
-     * Et tjek foer modtagelsen kan kun se, hvad der allerede ligger - saa en
-     * enkelt fil paa 10 GB ville slippe forbi en kvote paa 2 GB, fordi der var
-     * plads, da den begyndte. Loftet for DENNE upload er derfor det mindste af
-     * fil-loftet og den plads, brugeren har tilbage.
-     */
-    const brugt = brugtPlads(u.id);
-    const tilbage = maxSamlet() - brugt;
-    if (tilbage <= 0) {
-      apiFejl(res, 413, 'quota_full',
-        `You have used all ${visBytes(maxSamlet())} of file storage. Delete something first.`);
-      return;
-    }
-    const loft = Math.min(MAX_FIL, tilbage);
-    const noteId = ctx.query.get('note') || null;
-    /*
-     * En fil kan kun haenges paa en note, man maa SKRIVE i.
-     *
-     * Her stod `hentNote()`, altsaa laese-adgang - kommentaren sagde »skrive
-     * i«, koden spurgte om noget andet. Med én bruger var de to det samme;
-     * fra F11 er de det ikke, og forskellen ville vaere, at en kollega med
-     * laese-adgang kunne haenge filer paa en fremmed side.
-     */
-    if (noteId && !maaSkrive(u.id, noteId)) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
-
-    sikreDir(FILES_DIR);
-    const id = newId();
-    const maal = filSti(id);
-    try {
-      const { size, sha } = await modtagStroem(req, maal, loft);
-      if (!size) {
-        fs.unlink(maal, () => {});
-        apiFejl(res, 400, 'empty_file', 'The file was empty.');
-        return;
-      }
-      // Klientens Content-Type er et HINT, ikke en sandhed. Den gemmes, men
-      // afgoer kun inline/download gennem hvidlisten (doda F7).
-      const mime = str(String(req.headers['content-type'] || '').split(';')[0], 100)
-        || 'application/octet-stream';
-      const navn = renseFilnavn(ctx.query.get('name') || 'file');
-      db.prepare(`INSERT INTO attachments (id, user_id, note_id, name, mime, size, sha, width, height, created_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(id, u.id, noteId, navn, mime, size, sha,
-          Number(ctx.query.get('w')) || null, Number(ctx.query.get('h')) || null, now());
-      sendJson(res, 200, {
-        file: { id, name: navn, mime, size, url: `/api/v1/files/${id}`, inline: INLINE_MIME.has(mime) },
-      });
-    } catch (err) {
-      // Svar FOERST, luk bagefter - ellers ser klienten "connection reset"
-      // i stedet for vores 413.
-      const status = err.status || 400;
-      // Sig HVILKEN graense der blev ramt. »Filen er for stor« er forkert og
-      // sender brugeren efter et mindre billede, naar problemet er, at
-      // arkivet er fuldt.
-      const ramteKvoten = status === 413 && loft < MAX_FIL;
-      res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', Connection: 'close' });
-      res.end(JSON.stringify({
-        error: status === 413 ? (ramteKvoten ? 'quota_full' : 'too_large') : 'upload_failed',
-        message: ramteKvoten
-          ? `That file does not fit in your remaining ${Math.round(tilbage / 1024 / 1024)} MB. Delete something first.`
-          : err.message,
-      }));
-      // Svar FOERST, luk BAGEFTER. Kalder man req.destroy() med det samme,
-      // ser klienten "connection reset" i stedet for vores 413, og en
-      // API-klient aner ikke hvorfor (RUNE-ERFARINGER, doda F7).
-      res.on('finish', () => req.destroy());
-    }
+    const fil = await modtagFil(req, res, auth.user, {
+      noteId: ctx.query.get('note') || null,
+      navn: ctx.query.get('name') || 'file',
+      mime: String(req.headers['content-type'] || '').split(';')[0],
+      w: Number(ctx.query.get('w')) || null,
+      h: Number(ctx.query.get('h')) || null,
+    });
+    if (fil) sendJson(res, 200, { file: fil });
   },
 
   'GET /api/v1/files': (req, res, ctx) => {
@@ -5128,6 +5251,15 @@ const ROUTES = {
 /* Ruter med et id i stien. Regexen skal vaere ANKRET - uden ^ og $ ville
    /api/v1/notes/abc/andet ogsaa matche. */
 const MOENSTRE = [
+  /* ------------------------------------------- upload-link fra MCP (v97) */
+  {
+    metode: 'POST', re: /^\/api\/v1\/upload\/([A-Za-z0-9_-]{20,64})$/,
+    kald: (req, res, ctx) => modtagUploadLink(req, res, ctx.params[0]),
+  },
+  {
+    metode: 'PUT', re: /^\/api\/v1\/upload\/([A-Za-z0-9_-]{20,64})$/,
+    kald: (req, res, ctx) => modtagUploadLink(req, res, ctx.params[0]),
+  },
   /* --------------------------------- administratorens kodeordsnulstilling */
   {
     /*
@@ -6153,6 +6285,9 @@ const MAKS_KVOTE = 64 * 1024 * 1024 * 1024 * 1024;   // 64 TB - et tal, ingen di
 function visBytes(n) {
   const gb = n / 1024 / 1024 / 1024;
   if (gb >= 1) return `${Math.round(gb * 10) / 10} GB`;
+  // Kvoten er aldrig under en MB, men en enkelt fil er det tit - »0 MB« om
+  // et billede, der lige er lagt op, ligner en upload, der fejlede.
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
   return `${Math.round(n / 1024 / 1024)} MB`;
 }
 
@@ -7510,6 +7645,8 @@ const mcp = require('./mcp.js').opret({
   hentMaerker,
   opretKommentar,
   udgivNote,
+  lavUploadLink,
+  vaert,
 });
 
 /* ------------------------------------------------------------- oauth */

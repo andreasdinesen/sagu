@@ -4394,3 +4394,27 @@ lille menu« — og »også nede i Attachments for alle filer« (Andreas).
 - **v96: på en fil, der er ude af noten, står kun »Insert« altid fremme.** Siden v37 stod
   alle knapper fremme på sådan en række, fordi Insert er redningsvejen. Med Download blev det
   tre knapper på hver forladt række. Download og Remove kommer nu ved hover som på de andre.
+
+## 56 · Billeder via MCP: et upload-link (2026-10-02)
+
+»Kan du lave så man kan uploade billeder via MCP-forbindelsen?« (Andreas). Valgt: **kun
+upload-linket** — ikke »hent fra en webadresse« og ikke base64 i kaldet.
+
+- **Hvorfor et link:** en MCP-klient kan kun sende tekst i et værktøjskald. Base64 koster en
+  token pr. tre bytes, og et billede, man indsætter i en chat, kan modellen *se* men ikke
+  sende videre som bytes. Et link + `curl --data-binary @fil <link>` flytter filen uden om
+  modellen. Det virker dér, hvor Claude kan køre kommandoer (Claude Code).
+- **`create_upload_link`** (scope `write`; `link`- og `read`-nøgler ser det ikke): `id`,
+  `filename`, `insert` (standard ja). Svaret er linket og den færdige curl-linje.
+- **Linket ER legitimationen:** 15 minutter, én note, forbruges ved den første upload, der
+  lykkes. En fejlet upload (tom, for stor, kvoten fuld) lader det leve. Det bor i
+  hukommelsen — en genstart dræber alle links, og det er rigtigt.
+- **Samme vej ind som appen:** `modtagFil()` er trukket ud af `POST /api/v1/files` og bruges
+  af begge, så kvoten, skrive-tjekket og sha256'en kun står ét sted. Skrive-tjekket sker
+  både ved udstedelsen og ved uploaden.
+- **Typen gættes af filnavnet**, når klienten ikke siger den: curl sender
+  `application/x-www-form-urlencoded` med `--data-binary`.
+- `POST` og `PUT` (`curl -T`). Linket bygges af kaldets egen vært, ikke af `public_url`.
+- **Cloudflare:** `/api/v1/upload/` skal ikke undtages fra WAF-reglen — curl kører på
+  brugerens egen maskine, ikke i et datacenter.
+

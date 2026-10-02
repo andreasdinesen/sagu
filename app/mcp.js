@@ -234,6 +234,37 @@ function opret(srv) {
         };
       },
     },
+    {
+      name: 'create_upload_link',
+      scope: 'write',
+      description:
+        'Get a short-lived link for putting an image or another file into a note. Then send '
+        + 'the file with a shell command, exactly as returned — e.g. '
+        + '`curl -sS --data-binary @photo.png "<url>"`. The link works once, for 15 minutes, '
+        + 'for this one note; by default the image is added at the end of the note. You need '
+        + 'to be able to run commands (Claude Code, a terminal); you cannot send an image '
+        + 'from the chat itself this way.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The note id, from a search or create_note.' },
+          filename: { type: 'string', description: 'The name to store, with extension, e.g. "diagram.png".' },
+          insert: { type: 'boolean', description: 'Add it to the end of the note. Default true.' },
+        },
+        required: ['id', 'filename'],
+      },
+      kald(a, ctx) {
+        const svar = srv.lavUploadLink(ctx.userId, String(a.id || ''), String(a.filename || ''), a.insert);
+        if (svar.fejl) return { fejl: svar.fejl };
+        const url = `${ctx.base}/api/v1/upload/${svar.token}`;
+        return {
+          tekst: `Upload link for ${svar.navn} (valid 15 minutes, one upload):\n${url}\n\n`
+            + `Send the file with:\ncurl -sS --data-binary @"<path to the file>" "${url}"\n\n`
+            + 'The answer is JSON with a message saying whether it landed in the note.',
+          data: { url, expires_at: svar.udloeber, filename: svar.navn },
+        };
+      },
+    },
   ];
 
   /* ---------------------------------------------------------- protokollen */
@@ -262,7 +293,8 @@ function opret(srv) {
           + 'id — read it from a search result. Prefer append_note over update_note when '
           + 'you are adding, because update_note replaces the whole body. Small things go '
           + 'in today\'s note (create_note with to="today"). publish_note puts a page on '
-          + 'the OPEN web — ask first.',
+          + 'the OPEN web — ask first. To add an image or a file to a note, call '
+          + 'create_upload_link and send the file with the curl command it returns.',
       });
     }
     if (method === 'ping') return ok(id, {});
@@ -297,7 +329,7 @@ function opret(srv) {
       }
       let svar;
       try {
-        svar = v.kald((params && params.arguments) || {}, { userId: auth.userId });
+        svar = v.kald((params && params.arguments) || {}, { userId: auth.userId, base: auth.base || '' });
       } catch (err) {
         srv.logError(`mcp ${navn}: ${err && err.stack ? err.stack : err}`);
         return ok(id, {
@@ -352,6 +384,8 @@ function opret(srv) {
     }
 
     const auth = srv.godkendMcp(req);
+    // Upload-linket skal pege paa den vaert, klienten rent faktisk taler med.
+    if (auth && srv.vaert) auth.base = srv.vaert(req);
     if (!auth) {
       /*
        * **Hele indgangen er én header.**
