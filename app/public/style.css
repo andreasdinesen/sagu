@@ -2212,8 +2212,11 @@ body.fokus .topbar { display: none; }
 
 /* En forladt fil viser ALTID sine knapper. »Insert« er vejen tilbage, og en
    redningsvej, man skal pege på for at se, er ingen redningsvej — allermindst
-   når mærket ved siden af siger, at filen forsvinder om et døgn. */
-.fil-forladt .btn { opacity: 1; }
+   når mærket ved siden af siger, at filen forsvinder om et døgn.
+   Men KUN »Insert« (v96): med Download kom der tre knapper, der altid stod
+   fremme. Download og Remove er ikke redningsvejen og kommer ved hover som
+   på de andre rækker. */
+.fil-forladt .fil-ind { opacity: 1; }
 
 /* En traukket fil skal kunne SES lande. Uden en ramme aner man ikke, om
    siden overhovedet tager imod. */

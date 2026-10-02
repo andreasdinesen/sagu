@@ -35,3 +35,11 @@ test('bilagslisten i noten og fillisten i Settings har Download', () => {
   assert.match(p6, /class="btn ghost fil-hent" href="\$\{esc\(f\.url\)\}" download/);
   assert.match(p2, /href="\$\{esc\(f\.url\)\}"\s+download>Download<\/a>/);
 });
+
+test('en forladt fil viser kun Insert hele tiden - Download og Remove ved hover (v96)', () => {
+  const css = readFileSync(new URL('../app/public/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.fil-forladt \.fil-ind \{ opacity: 1; \}/);
+  assert.ok(!/\.fil-forladt \.btn \{ opacity: 1/.test(css), 'alle tre knapper maa ikke staa fremme');
+  // Insert-knappen skal stadig have klassen, reglen haenger paa.
+  assert.match(p6, /class="btn ghost fil-ind" data-filind=/);
+});

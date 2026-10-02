@@ -4391,3 +4391,6 @@ lille menu« — og »også nede i Attachments for alle filer« (Andreas).
   og et billede, der stadig uploades (`blob:`), har ingen fil at hente endnu.
 - I listerne er knappen et `<a class="btn">` — det virker uden JavaScript og skal ikke
   bindes. `a.btn` har derfor fået sin egen linje i CSS'en, så den ikke ser ud som et link.
+- **v96: på en fil, der er ude af noten, står kun »Insert« altid fremme.** Siden v37 stod
+  alle knapper fremme på sådan en række, fordi Insert er redningsvejen. Med Download blev det
+  tre knapper på hver forladt række. Download og Remove kommer nu ved hover som på de andre.
