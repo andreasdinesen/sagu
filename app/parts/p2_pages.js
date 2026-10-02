@@ -517,7 +517,8 @@ async function tegnFilListe() {
           <td><a href="${esc(f.url)}" ${f.inline ? '' : 'download'}>${esc(f.name)}</a></td>
           <td class="meta saetning">${esc(f.inline ? 'image' : f.mime)}</td>
           <td class="num">${esc(visStoerrelse(f.size))}</td>
-          <td style="text-align:right"><button class="btn ghost danger"
+          <td style="text-align:right;white-space:nowrap"><a class="btn ghost" href="${esc(f.url)}"
+            download>Download</a> <button class="btn ghost danger"
             data-filslet2="${esc(f.id)}">Remove</button></td>
         </tr>`).join('')}</tbody>
       </table></div></details>`;

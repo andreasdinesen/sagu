@@ -1010,6 +1010,8 @@ function filerHtml(n) {
           <button class="btn ghost fil-ind" data-filind="${esc(f.id)}"
             title="${f.orphan_since ? 'Put it back in the note and keep it'
     : 'Insert a link to this file in the note'}">Insert</button>
+          <a class="btn ghost fil-hent" href="${esc(f.url)}" download
+            title="Save ${esc(f.name)} to this computer">Download</a>
           <button class="btn ghost danger" data-filslet="${esc(f.id)}">Remove</button>
         </div>`).join('')}
       </details>

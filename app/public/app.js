@@ -5625,6 +5625,31 @@ function foelgLink(a) {
   }
 }
 
+/*
+ * »Download« i boblen (Andreas, 2026-10-02).
+ *
+ * Et `<a download>` paa Sagus EGEN adresse: browseren gemmer filen i stedet
+ * for at vise den, ogsaa naar serveren svarer `inline` (billeder, PDF). Uden
+ * en vaerdi i `download` tager browseren navnet fra serverens
+ * `Content-Disposition`, saa filen hedder det, den hed, da den blev lagt op.
+ * Kun `/api/v1/files/` - en fremmed adresse ignorerer `download` alligevel,
+ * og et billede, der stadig uploades, har endnu ingen fil at hente.
+ */
+function kanHentes(adr) {
+  return String(adr || '').startsWith('/api/v1/files/');
+}
+
+function hentFilNed(adr) {
+  if (!kanHentes(adr)) return;
+  const a = document.createElement('a');
+  a.href = adr;
+  a.setAttribute('download', '');
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function lukLinkBoble() {
   if (linkBoble.el) linkBoble.el.remove();
   linkBoble.el = null;
@@ -5659,6 +5684,7 @@ function visLinkBoble(a) {
   b.innerHTML = `
     <button type="button" class="linkboble-adr" data-lb="aabn" title="Open">${esc(linkVisning(a))}</button>
     ${kanFoelges ? '<button type="button" class="linkboble-knap" data-lb="aabn">Open</button>' : ''}
+    ${kanHentes(a.getAttribute('href')) ? '<button type="button" class="linkboble-knap" data-lb="hent">Download</button>' : ''}
     <button type="button" class="linkboble-knap" data-lb="ret">Edit</button>
     <button type="button" class="linkboble-knap" data-lb="fjern">Remove link</button>`;
   host.appendChild(b);
@@ -5672,6 +5698,7 @@ function visLinkBoble(a) {
       e.stopPropagation();
       const hvad = k.dataset.lb;
       if (hvad === 'aabn') { foelgLink(a); return; }
+      if (hvad === 'hent') { hentFilNed(a.getAttribute('href')); return; }
       if (hvad === 'ret') { visLinkRet(a, null); return; }
       if (hvad === 'fjern') {
         lukLinkBoble();
@@ -5938,6 +5965,7 @@ function visBilledBoble(img) {
   b.innerHTML = `
     <button type="button" class="linkboble-knap" data-bb="vis">View</button>
     <button type="button" class="linkboble-knap" data-bb="kopi">Copy</button>
+    ${kanHentes(img.getAttribute('src')) ? '<button type="button" class="linkboble-knap" data-bb="hent">Download</button>' : ''}
     <button type="button" class="linkboble-knap farlig" data-bb="slet">Delete</button>
     <span class="linkboble-hint meta">Drag to move · ⌘X ⌘V</span>`;
   host.appendChild(b);
@@ -5950,6 +5978,7 @@ function visBilledBoble(img) {
       e.stopPropagation();
       const hvad = k.dataset.bb;
       if (hvad === 'vis') { visLightbox(img.getAttribute('src'), img.getAttribute('alt')); return; }
+      if (hvad === 'hent') { hentFilNed(img.getAttribute('src')); return; }
       if (hvad === 'kopi') {
         kopierBilledeUdklip(img).then((ok) => {
           toast(ok ? 'Image copied — paste it here or in any other app.'
@@ -6067,7 +6096,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 94;
+const APP_VERSION = 95;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -8191,7 +8220,8 @@ async function tegnFilListe() {
           <td><a href="${esc(f.url)}" ${f.inline ? '' : 'download'}>${esc(f.name)}</a></td>
           <td class="meta saetning">${esc(f.inline ? 'image' : f.mime)}</td>
           <td class="num">${esc(visStoerrelse(f.size))}</td>
-          <td style="text-align:right"><button class="btn ghost danger"
+          <td style="text-align:right;white-space:nowrap"><a class="btn ghost" href="${esc(f.url)}"
+            download>Download</a> <button class="btn ghost danger"
             data-filslet2="${esc(f.id)}">Remove</button></td>
         </tr>`).join('')}</tbody>
       </table></div></details>`;
@@ -16377,6 +16407,8 @@ function filerHtml(n) {
           <button class="btn ghost fil-ind" data-filind="${esc(f.id)}"
             title="${f.orphan_since ? 'Put it back in the note and keep it'
     : 'Insert a link to this file in the note'}">Insert</button>
+          <a class="btn ghost fil-hent" href="${esc(f.url)}" download
+            title="Save ${esc(f.name)} to this computer">Download</a>
           <button class="btn ghost danger" data-filslet="${esc(f.id)}">Remove</button>
         </div>`).join('')}
       </details>

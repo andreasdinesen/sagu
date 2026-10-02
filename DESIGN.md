@@ -4375,3 +4375,19 @@ kræver en modifikator. Det er derfor genvej nummer to med modifikator efter ⌘
 - **To hurtige tryk laver én bog og én note:** et tryk, mens det forrige er i gang,
   venter på det i stedet for at starte forfra.
 - `N` er uændret — en almindelig ny note med titlen markeret.
+
+## 55 · Download i boblerne og i bilagslisterne (2026-10-02)
+
+»Når man markerer eller klikker en fil, skal der også være en download-mulighed i den
+lille menu« — og »også nede i Attachments for alle filer« (Andreas).
+
+- **Fil-linkets boble** (Attached file · Open · **Download** · Edit · Remove link) og
+  **billedets boble** (View · Copy · **Download** · Delete).
+- **Attachments under noten** (Insert · **Download** · Remove) og **fillisten i Settings**.
+- **Ét `<a download>` på Sagus EGEN adresse**, ingen serverændring: browseren gemmer også
+  det, serveren svarer `inline` på (billeder), og uden en værdi i `download` tager den
+  navnet fra `Content-Disposition` — filen hedder det, den hed ved upload.
+- **Kun `/api/v1/files/`** (`kanHentes`). Et fremmed link ignorerer `download` alligevel,
+  og et billede, der stadig uploades (`blob:`), har ingen fil at hente endnu.
+- I listerne er knappen et `<a class="btn">` — det virker uden JavaScript og skal ikke
+  bindes. `a.btn` har derfor fået sin egen linje i CSS'en, så den ikke ser ud som et link.

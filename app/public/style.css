@@ -373,6 +373,8 @@ body.navskjult #pageHost { padding-left: var(--navtoggle-plads); }
 .btn.ghost { border-color: transparent; background: none; }
 .btn.ghost:hover { background: var(--card-hover); }
 .btn.danger { color: var(--danger); }
+/* En download er et <a download> med knappens udseende (v95) - uden linkets streg. */
+a.btn, a.btn:hover { text-decoration: none; color: var(--text); }
 .btn:disabled { opacity: .5; cursor: default; }
 
 /* En fodraekke med knapper skal kunne bryde fra dag ét - fire knapper er for
