@@ -151,10 +151,13 @@ function klipFunktion(k) {
   var adr = k.base + '/api/v1/capture';
   if (k.notesbog) adr += '?notebook=' + encodeURIComponent(k.notesbog);
 
+  /* Sidens adresse sendes OGSAA for sig (`source`): er qlk forbundet, renser
+     Sagu den for sporing (utm_ og venner) - kun den, og kun hvor den staar
+     ordret i teksten (v98). Svarer qlk ikke, gemmes den uaendret. */
   fetch(adr, {
     method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8', Authorization: 'Bearer ' + k.noegle },
-    body: tekstUd,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + k.noegle },
+    body: JSON.stringify({ text: tekstUd, source: location.href }),
   }).then(function (r) {
     return r.json().catch(function () { return {}; });
   }).then(function (svar) {

@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 97;
+const APP_VERSION = 98;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -25,6 +25,8 @@ const state = {
   counts: {},
   notes: [],
   publicUrl: '',
+  // v98: qlk-forbindelsen - om den findes, og kortlinkenes vaert. Aldrig noeglen.
+  qlk: { connected: false, shortBase: '' },
   today: '',
   prefs: {},
   // F14: viser vi noget, der kom fra offline-cachen?
@@ -923,6 +925,7 @@ async function hentState() {
     state.prefs = d.prefs || {};
     // Tom betyder "brug den vaert, browseren staar paa" - se offentligBase().
     state.publicUrl = d.publicUrl || '';
+    state.qlk = d.qlk || { connected: false, shortBase: '' };
   } catch (ex) {
     if (ex.status !== 401) toast(ex.message);
   }
@@ -1516,12 +1519,24 @@ function fortsaetTilConnector() {
  *
  * Saa kan et soegeresultat deles som et link, og en genindlaesning lander
  * samme sted i stedet for paa forsiden.
+ *
+ * `#notebook-<id>` (v98) viser notesbogen: foldet ud og fremhaevet i
+ * sidebaren - Sagu har ingen side for en bog (se `visBogITraeet`). Det er den
+ * interne adresse, et kortlink fra qlk peger paa, naar bogen ikke er udgivet.
  */
 function aabnFraAdressen() {
   if (!state.user) return;
-  const m = String(location.hash || '').match(/^#note-([a-f0-9]{32})$/);
+  const h = String(location.hash || '');
+  const m = h.match(/^#note-([a-f0-9]{32})$/);
   // I en NY fane: et link udefra maa ikke skifte en fane ud (F35).
-  if (m) aabnNoteFraAdresseIFane(m[1]);
+  if (m) { aabnNoteFraAdresseIFane(m[1]); return; }
+  const b = h.match(/^#notebook-([a-f0-9]{32})$/);
+  if (b && (state.notebooks || []).some((x) => x.id === b[1])) {
+    // Adressen ryddes bagefter: den er en indgang, ikke en tilstand, og en
+    // opfriskning skal ikke folde bogen ud igen og igen.
+    try { history.replaceState(null, '', `${location.pathname}${location.search}`); } catch { /* ligegyldigt */ }
+    visBogITraeet(b[1]);
+  }
 }
 
 window.addEventListener('hashchange', aabnFraAdressen);

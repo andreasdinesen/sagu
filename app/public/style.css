@@ -3750,3 +3750,12 @@ body.solo .notefaner { display: none; }
 
 /* Glimtet, der siger »her er den«. */
 .tree-row.fremhaevet { background: var(--accent-soft); transition: background .4s; }
+
+/* v98 - kortlink og QR-kode fra qlk i udgivelsesruden. Billedet staar paa
+   hvidt, ogsaa i moerkt tema: en QR-kode paa en moerk flade kan ikke scannes. */
+.qlk-qr { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.qlk-qr img { width: 148px; height: auto; background: #fff; padding: 6px; border-radius: 6px;
+  border: 1px solid var(--border-soft); }
+.qlk-qr .btnrow { flex: 1 1 200px; }
+/* Tallene ved et kortlink i noten - som dodas statusmaerke, bare uden farve. */
+.qlk-tal { flex: none; }

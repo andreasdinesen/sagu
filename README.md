@@ -32,6 +32,7 @@ forsyningskæde at holde patchet.
 | **Offline** | Hele appen kan læses uden net — træet, favoritterne og noterne med tekst og mærker. Rettelser parkeres på enheden og sendes, når nettet kommer igen; er siden ændret et andet sted i mellemtiden, får du begge tekster at se og vælger selv. På telefonen henter et træk nedad nye data — ikke siden, så den åbne note og køen af rettelser overlever |
 | **API** | Skrevet til en iPhone-genvej med ét tekstfelt: fangst som JSON, formulardata, ren tekst eller `?text=`, `?format=md` ud, `changes?since=` med slettede id'er — og en indbygget guide med færdige opskrifter. Et bogmærke, »Save to Sagu«, gemmer en side eller en markering fra en hvilken som helst browser |
 | **doda-bro** | En note kan sende en tjeklistelinje til søsterappen [doda](https://github.com/andreasdinesen/doda) som en opgave og vise dens status igen — med links, aldrig synkronisering |
+| **qlk-bro** | En note eller notesbog får et kortlink og en QR-kode fra søsterappen qlk — til den udgivne side, eller til siden inde i Sagu, når den ikke er udgivet. Stoppes udgivelsen, peger det samme kortlink indad igen, så en trykt QR-kode altid virker. Klik og scanninger vises i noten og i listen over udgivelser, og »Save to Sagu« renser adressen for sporing |
 | **Claude** | MCP-server på `/mcp` med ti værktøjer (også billeder via et upload-link), og OAuth 2.1 med samtykkeside, så claude.ai's webklient forbinder sig selv. Scopet håndhæves både i listen og ved kaldet |
 
 ## Installation
@@ -127,6 +128,7 @@ app/
   zip.js           egen ZIP-læser og -skriver oven på node:zlib
   webauthn.js      håndskrevet WebAuthn (passkeys)
   doda.js          broen til opgave-appen
+  qlk.js           broen til kortlink-appen (kortlinks, QR-koder, rens af adresser)
   github.js        kode og sager i en note; ETag-cache, frossen commit-sha
   mcp.js           ti værktøjer over JSON-RPC
   oauth.js         OAuth 2.1 — motoren kender hverken database eller HTTP
@@ -177,6 +179,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **98** | **qlk-broen: kortlink og QR-kode til en note.** Forbind qlk under Settings → Connections (adresse + en `link`-nøgle fra qlk; nøglen forlader aldrig serveren). Udgivelsesdialogen har fået **Short link & QR code** — også for en note, der ikke er udgivet (så er linket internt) — med kopiér, QR-kode, download som SVG/PNG og »Customize in qlk«. Kortlinket følger udgivelsen: trækkes den tilbage, peger samme kode på noten inde i Sagu (`#note-<id>`), udgives den igen, peger den på den offentlige side igen, og en ny adresse følger med med det samme. QR-billedet hentes gennem Sagus egen server (kun egne koder). En note med qlk-links viser **Short links in this note** med klik og scanninger, `#notebook-<id>` folder en notesbog ud, og »Save to Sagu« fjerner sporing fra adressen med qlk's regler. DESIGN.md §57. |
 | **97** | **Billeder via MCP.** Det nye værktøj `create_upload_link` giver Claude et upload-link til én note, og Claude sender filen med `curl --data-binary @fil <link>`. Billedet lægges nederst i noten (kan slås fra). Linket virker én gang, i 15 minutter, kun til den note og kun med en nøgle, der må skrive; en fejlet upload lader det leve. Upload-logikken er trukket ud i én funktion, som appen og linket deler, så kvoten og rettighedstjekket kun står ét sted. Typen gættes af filnavnet, fordi curl ikke siger den. Virker dér, hvor Claude kan køre kommandoer (Claude Code). Små filer vises nu i KB i stedet for »0 MB«. |
 | **96** | **Ro på de filer, der er ude af noten.** Siden v37 stod alle knapper altid fremme på en fil, noten ikke længere peger på, fordi Insert er vejen tilbage, før den ryddes op. Med Download i v95 blev det tre knapper på hver af de rækker. Nu står kun **Insert** altid fremme; Download og Remove kommer, når musen er over rækken, som på de andre filer. |
 | **95** | **Download overalt, hvor der er en fil.** Klikker man på en fil i noten, har boblen nu Open · **Download** · Edit · Remove link, og et markeret billede har View · Copy · **Download** · Delete. Attachments under noten har Insert · **Download** · Remove for alle filer, og det samme gælder fillisten i Settings. Filen gemmes med det navn, den havde ved upload, og billeder hentes ned i stedet for at blive åbnet. Det er et almindeligt `<a download>` på Sagus egen adresse, så serveren er uændret. |

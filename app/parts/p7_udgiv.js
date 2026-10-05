@@ -93,6 +93,8 @@ async function visUdgivPanel(maal) {
 
   const krop = host.querySelector('#udgivKrop');
   let share = await hentUdgivelse(m);
+  // Kortlinket fra qlk (v98) - ét kald, og kun naar qlk er forbundet.
+  let kortlink = await hentKortlink(m);
   /*
    * Hvad laeserne ledte efter uden at finde noget.
    *
@@ -110,7 +112,8 @@ async function visUdgivPanel(maal) {
 
   /** Tegner ruden om ud fra tilstanden. Ét sted, saa de to tilstande ikke driver. */
   function tegn() {
-    krop.innerHTML = share ? udgivetHtml(share, m, { forgaeves }) : ikkeUdgivetHtml(m);
+    const qlkHtml = kortlinkHtml(kortlink, share);
+    krop.innerHTML = share ? udgivetHtml(share, m, { forgaeves, qlkHtml }) : ikkeUdgivetHtml(m, qlkHtml);
     bind();
     // Knappen i vaerktoejsraekken skal foelge med med det samme - ellers ser
     // man ikke, at noget skete, foer siden tegnes forfra. Og notens eget felt
@@ -143,6 +146,8 @@ async function visUdgivPanel(maal) {
             }));
           share = d.share;
           toast('Published. Anyone with the link can read it.');
+          // Et kortlink peger nu paa den offentlige adresse - vis det.
+          if (kortlink && kortlink.link) kortlink = await hentKortlink(m);
           tegn();
           // Traeet viser, hvilke boeger der er udgivet - det skal med samme.
           if (m.slags === 'bog') { await hentTrae(); tegnTrae(); }
@@ -218,6 +223,8 @@ async function visUdgivPanel(maal) {
       });
     }
 
+    bindKortlink(krop, m, (ny) => { kortlink = ny; tegn(); });
+
     const stop = q('udgivStop');
     if (stop) {
       stop.addEventListener('click', async () => {
@@ -225,7 +232,10 @@ async function visUdgivPanel(maal) {
         try {
           await api('DELETE', `/api/v1/shares/${share.id}`);
           share = null;
-          toast('Withdrawn. The link is dead from the next click.');
+          toast(kortlink && kortlink.link
+            ? 'Withdrawn. The short link now leads to the page inside Sagu.'
+            : 'Withdrawn. The link is dead from the next click.');
+          if (kortlink && kortlink.link) kortlink = await hentKortlink(m);
           tegn();
           if (m.slags === 'bog') { await hentTrae(); tegnTrae(); }
         } catch (ex) { fejl(ex.message); }
@@ -242,6 +252,10 @@ async function visUdgivPanel(maal) {
     try {
       const d = await api('PATCH', `/api/v1/shares/${share.id}`, felter);
       share = d.share;
+      // En ny adresse eller udloebsdato flytter kortlinkets maal.
+      if (kortlink && kortlink.link && (felter.slug !== undefined || felter.expiresAt !== undefined)) {
+        kortlink = await hentKortlink(m);
+      }
       tegn();
     } catch (ex) { fejl(ex.message); }
   }
@@ -251,7 +265,7 @@ async function visUdgivPanel(maal) {
 
 /* ------------------------------------------------------------ de to sider */
 
-function ikkeUdgivetHtml(m) {
+function ikkeUdgivetHtml(m, qlkHtml) {
   const erBog = m.slags === 'bog';
   const forslag = (m.titel || 'wiki').toLowerCase()
     .replace(/[æ]/g, 'ae').replace(/[ø]/g, 'oe').replace(/[å]/g, 'aa')
@@ -280,7 +294,8 @@ function ikkeUdgivetHtml(m) {
     <p class="wfejl" id="udgivFejl" hidden></p>
     <div class="btnrow" style="margin-top:16px">
       <button class="btn primary" id="udgivNu">Publish</button>
-    </div>`;
+    </div>
+    ${qlkHtml || ''}`;
 }
 
 function udgivetHtml(share, m, opt) {
@@ -299,6 +314,7 @@ function udgivetHtml(share, m, opt) {
     ? 'Password protected. Visitors are asked for it before they see anything.'
     : 'Open — anyone with the link can read it. No account needed.'}
       ${share.views ? ` · read ${share.views} time${share.views === 1 ? '' : 's'}` : ' · not read yet'}</p>
+    ${o.qlkHtml || ''}
 
     <h3 class="udgiv-hoved">What is published</h3>
     ${erBog
@@ -381,28 +397,201 @@ function udgivetHtml(share, m, opt) {
     </div>`;
 }
 
+/* ------------------------------------------- kortlink og QR (v98) ------ */
+
+/*
+ * Kortlinket fra qlk - til en udgivet side ELLER en, der ikke er det.
+ *
+ * Er siden udgivet, peger kortlinket paa den offentlige adresse; ellers paa
+ * den interne (`#note-<id>`), som kun ejeren kan aabne. Stoppes udgivelsen,
+ * peger det SAMME kortlink paa den interne igen - en trykt QR-kode doer
+ * aldrig (kontrakten qlk-sagu, beslutning 3). Koden staar i qlk; Sagu
+ * gemmer kun, hvilken kode der hoerer til hvilken side.
+ *
+ * Noeglen til qlk forlader aldrig serveren. Billedet hentes gennem Sagu
+ * (`/api/v1/qlk/qr/<kode>.svg`), saa PNG'en kan tegnes af et billede fra
+ * SAMME oprindelse - et fremmed billede goer et canvas ulaeseligt.
+ */
+
+/** `{link, connected}` - eller null, naar qlk ikke er forbundet. */
+async function hentKortlink(maal) {
+  if (!state.qlk || !state.qlk.connected) return null;
+  const kind = maal.slags === 'bog' ? 'notebook' : 'note';
+  try {
+    return await api('GET', `/api/v1/qlk/link?kind=${kind}&id=${encodeURIComponent(maal.id)}`);
+  } catch (ex) {
+    return { link: null, connected: true, staleReason: ex.message };
+  }
+}
+
+/** Adressen uden `https://` - det er den, man laeser hoejt eller skriver af. */
+function kortVist(url) {
+  return String(url || '').replace(/^https?:\/\//, '');
+}
+
+function kortlinkTal(l) {
+  if (l.clicks === null && l.scans === null) return '';
+  const k = l.clicks || 0;
+  const sk = l.scans || 0;
+  return `${k} click${k === 1 ? '' : 's'} · ${sk} scan${sk === 1 ? '' : 's'}`;
+}
+
+function kortlinkHtml(d, share) {
+  if (!d) return '';
+  const l = d.link;
+  const hoved = '<h3 class="udgiv-hoved">Short link &amp; QR code</h3>';
+  if (!l) {
+    return `${hoved}
+    <p class="meta saetning">${share
+    ? 'A short link to the published page, and a QR code for it — made in qlk.'
+    : 'The page is not published, so the short link opens it inside Sagu, where only you can '
+      + 'read it. Publish it later, and the same link and QR code lead to the published page.'}</p>
+    <div class="udgiv-adresse">
+      <input class="input" id="qlkKode" placeholder="Short code — empty picks one"
+        autocomplete="off" spellcheck="false" style="max-width:240px">
+      <button class="btn" id="qlkLav">Make a short link</button>
+    </div>
+    <p class="wfejl" id="qlkFejl"${d.staleReason ? '' : ' hidden'}>${esc(d.staleReason || '')}</p>`;
+  }
+  const tal = kortlinkTal(l);
+  const filnavn = `${l.code}.svg`;
+  return `${hoved}
+    <div class="udgiv-link">
+      <input class="input" id="qlkUrl" value="${esc(l.shortUrl)}" readonly>
+      <button class="btn" id="qlkKopi">Copy</button>
+    </div>
+    <p class="meta saetning">${l.public
+    ? 'Leads to the published page.'
+    : 'Leads to the page inside Sagu — only you can open it. Publish the page, and the same '
+      + 'link leads to the published one.'}${tal ? ` · ${esc(tal)}` : ''}${l.pending
+    ? ' · qlk is being updated' : ''}</p>
+    <div class="qlk-qr">
+      <img src="${esc(l.qrUrl)}" alt="QR code for ${esc(kortVist(l.shortUrl))}" width="148">
+      <div class="btnrow">
+        <a class="btn" href="${esc(l.qrUrl)}" download="${esc(filnavn)}">Download SVG</a>
+        <button class="btn" id="qlkPng" data-kode="${esc(l.code)}">Download PNG</button>
+        ${l.editUrl ? `<a class="btn" href="${esc(saguMarkdown.sikkerUrl(l.editUrl) || '')}"
+          target="_blank" rel="noopener">Customize in qlk</a>` : ''}
+      </div>
+    </div>
+    <p class="wfejl" id="qlkFejl"${d.staleReason ? '' : ' hidden'}>${esc(d.staleReason
+    ? `Showing what qlk last said — ${d.staleReason}` : '')}</p>`;
+}
+
+/**
+ * PNG'en tegnes i browseren af SVG'en - ingen rute mere paa serveren, og
+ * intet kald til qlk. 1024 px er nok til et tryk; hvid baggrund, fordi en
+ * gennemsigtig QR-kode paa en moerk flade ikke kan scannes.
+ */
+async function hentKortlinkPng(e) {
+  const knap = e.currentTarget;
+  const kode = knap.dataset.kode;
+  const img = new Image();
+  img.src = `/api/v1/qlk/qr/${encodeURIComponent(kode)}.svg`;
+  try {
+    await img.decode();
+    const b = 1024;
+    const h = img.naturalWidth && img.naturalHeight
+      ? Math.round(b * (img.naturalHeight / img.naturalWidth)) : b;
+    const c = document.createElement('canvas');
+    c.width = b;
+    c.height = h;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, b, h);
+    g.drawImage(img, 0, 0, b, h);
+    const blob = await new Promise((ok) => c.toBlob(ok, 'image/png'));
+    if (!blob) throw new Error('The browser could not make the PNG.');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${kode}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (ex) {
+    toast(ex && ex.message ? ex.message : 'Could not make the PNG.');
+  }
+}
+
+function bindKortlink(krop, maal, nyTilstand) {
+  const q = (id) => krop.querySelector(`#${id}`);
+  const lav = q('qlkLav');
+  if (lav) {
+    lav.addEventListener('click', async () => {
+      lav.disabled = true;
+      lav.textContent = 'Making…';
+      const fejlEl = q('qlkFejl');
+      try {
+        const kode = q('qlkKode').value.trim();
+        const d = await api('POST', '/api/v1/qlk/link', Object.assign(
+          { kind: maal.slags === 'bog' ? 'notebook' : 'note', id: maal.id },
+          kode ? { code: kode } : {}));
+        toast(d.created ? 'Short link made in qlk.' : 'Found the short link qlk already had.');
+        nyTilstand({ link: d, connected: true });
+      } catch (ex) {
+        if (fejlEl) { fejlEl.textContent = ex.message; fejlEl.hidden = false; } else toast(ex.message);
+        lav.disabled = false;
+        lav.textContent = 'Make a short link';
+      }
+    });
+  }
+  const kopi = q('qlkKopi');
+  if (kopi) {
+    kopi.addEventListener('click', async () => {
+      const felt = q('qlkUrl');
+      if (await kopier(felt.value)) kopi.textContent = 'Copied';
+      else if (markerTekst(felt)) kopi.textContent = 'Press ⌘C';
+      else kopi.textContent = 'Could not copy';
+      setTimeout(() => { kopi.textContent = 'Copy'; }, 1600);
+    });
+  }
+  const png = q('qlkPng');
+  if (png) png.addEventListener('click', hentKortlinkPng);
+}
+
 /* ------------------------------------------------- listen i Settings ----- */
 
 async function udgivelsesListeHtml() {
   let shares = [];
   try { shares = (await api('GET', '/api/v1/shares')).shares; } catch { /* vist som tom */ }
+  /*
+   * Kortlinkene med klik og scanninger - ÉT kald for hele listen, ikke ét pr.
+   * raekke (v98). Kolonnen findes kun, naar qlk er forbundet.
+   */
+  let kort = null;
+  if (shares.length && state.qlk && state.qlk.connected) {
+    try {
+      kort = new Map(((await api('GET', '/api/v1/qlk/links')).links || [])
+        .map((l) => [`${l.kind}:${l.id}`, l]));
+    } catch { kort = new Map(); }
+  }
   if (!shares.length) {
     return `<p class="meta saetning">Nothing is published yet. Open a note and use the
       globe in its toolbar — the page and everything under it becomes a wiki
       your colleagues can read without an account.</p>`;
   }
   return `<div class="tablewrap"><table class="data">
-    <thead><tr><th>Page</th><th>Address</th><th>Access</th><th class="num">Reads</th><th></th></tr></thead>
+    <thead><tr><th>Page</th><th>Address</th>${kort ? '<th>Short link</th>' : ''}<th>Access</th><th class="num">Reads</th><th></th></tr></thead>
     <tbody>${shares.map((s) => `<tr>
       <td><button class="linkknap" data-udgivnote="${esc(s.noteId)}">${esc(s.noteTitle || 'Untitled')}</button>
         ${s.mode === 'single' ? '<span class="meta"> · single page</span>' : ''}</td>
       <td><a href="${esc(s.path)}/" target="_blank" rel="noopener">${esc(s.path)}</a></td>
+      ${kort ? `<td>${kortlinkCelle(kort.get(`${s.kind}:${s.kind === 'notebook' ? s.notebookId : s.noteId}`))}</td>` : ''}
       <td>${s.hasPassword ? 'Password' : 'Open'}${s.expiresAt
     ? ` · until ${esc(new Date(s.expiresAt * 1000).toISOString().slice(0, 10))}` : ''}</td>
       <td class="num">${s.views}</td>
       <td style="text-align:right"><button class="btn ghost danger"
         data-udgivstop="${esc(s.id)}">Withdraw</button></td>
     </tr>`).join('')}</tbody></table></div>`;
+}
+
+/** Kortlink og tal i én celle. Ingen raekke i qlk = en streg. */
+function kortlinkCelle(l) {
+  if (!l) return '<span class="adressepraefiks">—</span>';
+  const tal = kortlinkTal(l);
+  return `<a href="${esc(saguMarkdown.sikkerUrl(l.shortUrl) || '')}" target="_blank"
+    rel="noopener">${esc(kortVist(l.shortUrl))}</a>${tal ? `<div class="meta">${esc(tal)}</div>` : ''}`;
 }
 
 function bindUdgivelsesListe() {

@@ -744,6 +744,45 @@ async function sideSettings() {
   </div>`;
   } catch { /* vist som tom */ }
 
+  /*
+   * qlk (v98) - kortlinks og QR-koder. Samme kort som doda: adresse, noegle,
+   * proev foer gem, og noeglen forlader aldrig serveren.
+   */
+  let qlkDel = '';
+  try {
+    const k = await api('GET', '/api/v1/qlk');
+    state.qlk = { connected: !!k.connected, shortBase: k.connected ? (k.shortBase || '') : '' };
+    qlkDel = `
+  <h2>qlk</h2>
+  <div class="card">
+    <p class="meta saetning">qlk makes short links and QR codes. Connected, a note or notebook
+    can get a short link from its <strong>Publish</strong> window — to the published page, or to
+    the page inside Sagu if it is not published. Withdraw a page, and its short link leads inside
+    Sagu again; publish it again, and the same link and QR code lead to the published page.
+    A printed code keeps working.</p>
+    ${k.connected ? `<p class="doda-forbundet">Connected to <strong>${esc(k.url)}</strong>${
+  k.links ? ` · ${k.links} short link${k.links === 1 ? '' : 's'} made from Sagu` : ''}</p>` : ''}
+    <label class="field"><span>qlk address</span>
+      <input class="input" id="qlkUrlFelt" value="${esc(k.url || '')}"
+        placeholder="https://qlk.example.com" autocomplete="off" spellcheck="false"></label>
+    <label class="field" style="margin-top:10px"><span>API key from qlk</span>
+      <input class="input" id="qlkKey" type="password" autocomplete="off"
+        placeholder="${k.connected ? 'Leave empty to keep the saved key' : 'qlk_…'}"></label>
+    ${k.connected ? `<p class="gemt-noegle">${icon('laas', 14)}
+      <span><strong>An API key is saved</strong> on the server. It never leaves it again —
+      not even to this page, which is why the field looks empty.</span></p>` : ''}
+    <div class="btnrow" style="margin-top:10px">
+      <button class="btn primary" id="qlkGem">${k.connected ? 'Save and test' : 'Connect'}</button>
+      ${k.connected ? '<button class="btn" id="qlkFjern">Disconnect</button>' : ''}
+    </div>
+    <p class="meta saetning">In qlk: Settings → Tools → API keys → create a <strong>link</strong>
+    key (it can make links and read their numbers, but never change or delete one). The key is
+    tested before it is saved. A page you save with »Save to Sagu« also has its address cleaned
+    of tracking (<code>utm_…</code> and friends) by qlk — if qlk does not answer, it is saved
+    as it was.</p>
+  </div>`;
+  } catch { /* vist som tom */ }
+
   let ghDel = '';
   try {
     const g = await api('GET', '/api/v1/github/status');
@@ -895,6 +934,8 @@ async function sideSettings() {
 
   <section class="fane" data-fane="broer">
   ${dodaDel}
+
+  ${qlkDel}
 
   ${ghDel}
 
@@ -1280,6 +1321,40 @@ function bindSettings() {
       try {
         await api('DELETE', '/api/v1/doda');
         toast('doda disconnected.');
+        await tegnSide();
+      } catch (ex) { toast(ex.message); }
+    });
+  }
+
+  const qlkGem = document.getElementById('qlkGem');
+  if (qlkGem) {
+    qlkGem.addEventListener('click', async () => {
+      const url = document.getElementById('qlkUrlFelt').value.trim();
+      const key = document.getElementById('qlkKey').value.trim();
+      qlkGem.disabled = true;
+      qlkGem.textContent = 'Testing…';
+      try {
+        // Proevet FOER det gemmes, og rullet tilbage ved fejl - som doda.
+        const r = await api('POST', '/api/v1/qlk', { url, key });
+        state.qlk = { connected: true, shortBase: r.shortBase || '' };
+        toast(r.message || 'Connected to qlk.');
+        await tegnSide();
+      } catch (ex) {
+        toast(ex.message);
+        qlkGem.disabled = false;
+        qlkGem.textContent = 'Connect';
+      }
+    });
+  }
+  const qlkFjern = document.getElementById('qlkFjern');
+  if (qlkFjern) {
+    qlkFjern.addEventListener('click', async () => {
+      if (!window.confirm('Disconnect qlk? The short links you have made stay in qlk and keep '
+        + 'working — they just stop following your pages until you connect again.')) return;
+      try {
+        await api('DELETE', '/api/v1/qlk');
+        state.qlk = { connected: false, shortBase: '' };
+        toast('qlk disconnected.');
         await tegnSide();
       } catch (ex) { toast(ex.message); }
     });

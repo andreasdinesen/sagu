@@ -546,6 +546,61 @@ document.addEventListener('visibilitychange', async () => {
   } catch { /* doda kan vaere nede - raekkerne staar der stadig */ }
 });
 
+/* ============================== kortlinks i noten (qlk, v98) ============ */
+
+/*
+ * »Short links in this note«: klik og scanninger for de qlk-kortlinks, der
+ * STAAR i notens tekst.
+ *
+ * Hentes, naar noten aabnes - aldrig pr. optegning - og kun, naar teksten
+ * overhovedet naevner kortlinkenes vaert. Serveren cacher tallene et minut,
+ * saa et hurtigt spring frem og tilbage ikke bliver til et kald til qlk hver
+ * gang. Afsnittet staar ikke der, hvis noten ingen kortlinks har.
+ */
+const BILAG_QLK = 'bilag:qlk';
+const qlkNote = { noteId: null, links: [], gammel: null };
+
+/** Naevner teksten kortlinkenes vaert? Afgjort i browseren - intet kald. */
+function harKortlinks(tekst) {
+  const b = state.qlk && state.qlk.connected ? String(state.qlk.shortBase || '') : '';
+  return !!b && String(tekst || '').includes(`${b}/`);
+}
+
+async function hentKortlinksINoten(note) {
+  qlkNote.noteId = note.id;
+  qlkNote.links = [];
+  qlkNote.gammel = null;
+  if (!harKortlinks(note.body)) return;
+  const r = await api('GET', `/api/v1/notes/${note.id}/qlk`);
+  if (qlkNote.noteId !== note.id) return;
+  qlkNote.links = r.links || [];
+  qlkNote.gammel = r.staleReason || null;
+}
+
+function kortlinksINotenHtml() {
+  if (!qlkNote.links.length && !qlkNote.gammel) return '';
+  return `<section class="dodaopgaver" id="qlkINoten">
+    <details class="bilagfold"${bilagAabent(BILAG_QLK) ? ' open' : ''}>
+      <summary><span class="bilag-navn">Short links in this note</span>
+        ${qlkNote.links.length ? `<span class="group-count">${qlkNote.links.length}</span>` : ''}
+        ${qlkNote.gammel ? '<span class="kom-maerke venter">not fresh</span>' : ''}</summary>
+    ${qlkNote.gammel ? `<p class="meta saetning">qlk did not answer — ${esc(qlkNote.gammel)}</p>` : ''}
+    <ul class="doda-liste">${qlkNote.links.map((l) => `
+      <li class="doda-opgave">
+        <a class="doda-titel doda-link" href="${esc(saguMarkdown.sikkerUrl(l.shortUrl) || '')}"
+          target="_blank" rel="noopener" title="${esc(l.url)}">${esc(kortVist(l.shortUrl))}${
+  l.title ? ` — ${esc(l.title)}` : ''}</a>
+        <span class="kom-maerke qlk-tal">${esc(kortlinkTal(l))}</span>
+      </li>`).join('')}</ul>
+    </details>
+  </section>`;
+}
+
+function bindKortlinksINoten() {
+  const host = document.getElementById('qlkINoten');
+  if (host) bindBilagsfold(host, BILAG_QLK);
+}
+
 /* ==================== markér en linje -> en opgave i doda (F16) ========= */
 
 /*

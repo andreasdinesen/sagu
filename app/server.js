@@ -32,6 +32,7 @@ const maerker = require('./shared/maerker.js');
 const importModul = require('./import.js');
 const wikiModul = require('./wiki.js');
 const dodaModul = require('./doda.js');
+const qlkModul = require('./qlk.js');
 /*
  * TOTP og QR er kopieret RAAT fra doda og har ingen kobling til nogen af de
  * to apps: `totp.js` kraever kun `node:crypto`, `qr.js` kraever intet
@@ -841,6 +842,43 @@ const MIGRATIONS = [
      */
     d.exec('ALTER TABLE notebooks ADD COLUMN starred_at INTEGER');
   },
+
+  function m19(d) {
+    /*
+     * v98 - kortlinkene, qlk har lavet til en note eller en notesbog.
+     *
+     * Tabellen findes af samme grund som `doda_tasks`: **der maa ikke gaa et
+     * kald til qlk pr. optegning**, og synken skal kunne afgoere, om et link
+     * skal rettes, uden at spoerge qlk foerst. `last_url` er det, qlk sidst
+     * fik at vide; afviger den oenskede adresse, sendes én rettelse.
+     *
+     * `base` er den Sagu-adresse, linket blev lavet med, og den GEMMES. Begge
+     * apps regner den interne adresse (`<base>/#note-<id>`) ud fra den gemte
+     * base - ellers ville to apps paa hver sin vaert skiftevis skrive to
+     * forskellige adresser (kontrakten qlk-sagu).
+     *
+     * `ref_kind` + `ref_id` og ikke en fremmednoegle: en ref kan vaere en
+     * note ELLER en notesbog, og raekken skal ryddes ved en 404 fra qlk, ikke
+     * ved en kaskade. En slettet note efterlader et link, der stadig peger
+     * paa noget - det er qlk's sag at sige, det er doedt.
+     */
+    d.exec(`
+      CREATE TABLE qlk_links (
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        ref_kind   TEXT NOT NULL,
+        ref_id     TEXT NOT NULL,
+        link_id    TEXT NOT NULL DEFAULT '',
+        code       TEXT NOT NULL,
+        short_url  TEXT NOT NULL DEFAULT '',
+        base       TEXT NOT NULL,
+        last_url   TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, ref_kind, ref_id)
+      );
+      CREATE INDEX qlk_links_kode ON qlk_links(user_id, code);
+    `);
+  },
 ];
 
 /*
@@ -858,8 +896,8 @@ const MIGRATIONS = [
  * `totp_secret` ER det andet led. Kan den laeses ud, er hele
  * totrinsbekraeftelsen pynt (RUNE-ERFARINGER §9d).
  */
-const HEMMELIGE_SETTINGS = new Set(['github_token', 'doda_key', 'server_secret', 'vapid_private',
-  'totp_secret', 'totp_last']);
+const HEMMELIGE_SETTINGS = new Set(['github_token', 'doda_key', 'qlk_key', 'server_secret',
+  'vapid_private', 'totp_secret', 'totp_last']);
 
 function migrate() {
   const cur = db.prepare('PRAGMA user_version').get().user_version || 0;
@@ -4286,6 +4324,15 @@ const ROUTES = {
       storage: { used: brugtPlads(u.id), quota: maxSamlet(), maxFile: MAX_FIL },
       // Tom betyder "brug den vaert, du selv staar paa" - se offentligVaert().
       publicUrl: offentligUrl(),
+      /*
+       * qlk-forbindelsen (v98): om den findes, og kortlinkenes vaert. Fladen
+       * skal vide det FOER en note aabnes - saa den kan se, om teksten har
+       * kortlinks, uden at spoerge serveren ved hver note. Aldrig noeglen.
+       */
+      qlk: (() => {
+        const o = qlk.opsaetning(u.id);
+        return { connected: o.connected, shortBase: o.connected ? o.short : '' };
+      })(),
       today: new Date().toISOString().slice(0, 10),
       /*
        * Personlige valg om, hvordan fladen opfoerer sig.
@@ -4635,8 +4682,10 @@ const ROUTES = {
     }
 
     const body = await readJsonBody(req, true);
-    const tekst = [body.text, body.title, body.note, ctx.query.get('text')]
+    const raaTekst = [body.text, body.title, body.note, ctx.query.get('text')]
       .find((x) => typeof x === 'string' && x.trim()) || '';
+    // En fanget ADRESSE renses for sporing, naar qlk er forbundet (v98).
+    const tekst = await rensFangetAdresse(u.id, raaTekst, body.source || ctx.query.get('source'));
     const svar = fangst(u.id, tekst, Object.assign({
       dato: body.date || ctx.query.get('date'),
       notesbog: findNotesbog(u.id, body.notebook || ctx.query.get('notebook')),
@@ -4780,6 +4829,171 @@ const ROUTES = {
     setSetting(user.id, 'doda_key', '');
     audit('doda-frakoblet', user.id, null, '');
     sendJson(res, 200, { connected: false });
+  },
+
+  /* --- qlk (v98) ------------------------------------------------------ */
+
+  /*
+   * Forbindelsen til kortlink-appen. Samme form som doda-broen: noeglen
+   * forlader ALDRIG serveren, og at saette den kraever en session.
+   */
+  'GET /api/v1/qlk': (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const o = qlk.opsaetning(auth.user.id);
+    sendJson(res, 200, {
+      url: o.url,
+      connected: o.connected,
+      shortBase: o.short,
+      links: db.prepare('SELECT COUNT(*) AS n FROM qlk_links WHERE user_id = ?').get(auth.user.id).n,
+    });
+  },
+
+  /* Gem -> proev -> rul tilbage. En gemt, ubrugelig forbindelse er vaerre end ingen. */
+  'POST /api/v1/qlk': async (req, res) => {
+    const user = requireUser(req, res);          // en noegle maa ikke saette en noegle
+    if (!user) return;
+    const body = await readJsonBody(req);
+    const url = rensOffentligUrl(body.url);
+    if (!url) {
+      apiFejl(res, 400, 'bad_url',
+        'The qlk address must be a plain web address like https://qlk.example.com.');
+      return;
+    }
+    const noegle = typeof body.key === 'string' ? body.key.trim() : '';
+    const gammel = {
+      url: getSetting(user.id, 'qlk_url', ''),
+      key: getSetting(user.id, 'qlk_key', ''),
+      short: getSetting(user.id, 'qlk_short', ''),
+    };
+    if (!noegle && !gammel.key) {
+      apiFejl(res, 400, 'no_key', 'Paste a qlk API key the first time you connect.');
+      return;
+    }
+    setSetting(user.id, 'qlk_url', url);
+    if (noegle) setSetting(user.id, 'qlk_key', noegle);
+
+    const proevet = await qlk.proev(user.id);
+    if (!proevet.ok) {
+      setSetting(user.id, 'qlk_url', gammel.url);
+      setSetting(user.id, 'qlk_key', gammel.key);
+      setSetting(user.id, 'qlk_short', gammel.short);
+      apiFejl(res, 400, proevet.kode || 'qlk_error', proevet.besked);
+      return;
+    }
+    /*
+     * Kortlinkenes vaert. Uden den kan noten ikke finde sine kortlinks i
+     * teksten; svarer qlk ikke med den, er app-adressen det bedste gaet.
+     */
+    const kort = proevet.shortBase || url;
+    setSetting(user.id, 'qlk_short', kort);
+    glemQlkTal(user.id);
+    audit('qlk-forbundet', user.id, url, proevet.navn);
+    sendJson(res, 200, { connected: true, url, shortBase: kort, message: proevet.besked });
+  },
+
+  'DELETE /api/v1/qlk': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    // Kortlinkene bliver staaende - i qlk og i Sagus raekker. En trykt
+    // QR-kode maa ikke doe, fordi man skiftede en indstilling.
+    setSetting(user.id, 'qlk_url', '');
+    setSetting(user.id, 'qlk_key', '');
+    setSetting(user.id, 'qlk_short', '');
+    glemQlkTal(user.id);
+    audit('qlk-frakoblet', user.id, null, '');
+    sendJson(res, 200, { connected: false });
+  },
+
+  /*
+   * Kortlinket til en note eller en notesbog - lav det, eller find det, der er.
+   *
+   * KUN ejeren: et kortlink bestemmer, hvor en trykt kode foerer hen, og det
+   * er samme slags beslutning som at udgive (EJET). Andre faar 404.
+   */
+  'POST /api/v1/qlk/link': async (req, res) => {
+    const auth = godkend(req, res, 'write');
+    if (!auth) return;
+    const u = auth.user;
+    const body = await readJsonBody(req, auth.viaToken);
+    const kind = body.kind === 'notebook' ? 'notebook' : (body.kind === 'note' ? 'note' : '');
+    const id = str(body.id, 32);
+    const titel = kind ? qlkRefTitel(u.id, kind, id) : null;
+    if (!titel) { apiFejl(res, 404, 'not_found', 'No such note or notebook.'); return; }
+    const kode = body.code === undefined || body.code === null || body.code === '' ? '' : String(body.code).trim();
+    if (kode && !qlkModul.KODE_RE.test(kode)) {
+      apiFejl(res, 400, 'bad_code', 'A short code may hold letters, digits, - and _ (up to 64).');
+      return;
+    }
+    if (!qlk.opsaetning(u.id).connected) {
+      apiFejl(res, 409, 'not_connected', 'Connect qlk first, under Settings → Connections.');
+      return;
+    }
+    const gammel = qlkRaekke(u.id, kind, id);
+    // Den GEMTE base vinder: et link lavet paa én vaert skal ikke skifte
+    // adresse, fordi ejeren i dag staar paa en anden.
+    const base = gammel ? gammel.base : udenSkraastreg(offentligVaert(req));
+    const oensket = qlkOensketAdresse(u.id, kind, id, base);
+    const svar = await qlk.sikrLink(u.id, {
+      kind, id, base, url: oensket.url, title: titel, code: kode || undefined, create: true,
+    });
+    if (!svar.ok) {
+      const status = svar.kode === 'code_taken' ? 409 : (svar.kode === 'not_connected' ? 409 : 502);
+      apiFejl(res, status, svar.kode || 'qlk_error', svar.besked || 'qlk did not make the link.');
+      return;
+    }
+    gemQlkRaekke(u.id, kind, id, svar.link, base);
+    glemQlkTal(u.id);
+    audit('qlk-link', u.id, id, svar.link.code);
+    const l = svar.link;
+    sendJson(res, svar.created ? 201 : 200, Object.assign(formQlkLink(u.id, qlkRaekke(u.id, kind, id), {
+      clicks: Number(l.clicks), scans: Number(l.scans),
+    }), { created: !!svar.created }));
+  },
+
+  /* Raekken og friske tal (ét kald til qlk) - eller `link: null`. */
+  'GET /api/v1/qlk/link': async (req, res, ctx) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const u = auth.user;
+    const kind = ctx.query.get('kind') === 'notebook' ? 'notebook' : 'note';
+    const id = String(ctx.query.get('id') || '');
+    if (!qlkRefTitel(u.id, kind, id)) { apiFejl(res, 404, 'not_found', 'No such note or notebook.'); return; }
+    const o = qlk.opsaetning(u.id);
+    const r = qlkRaekke(u.id, kind, id);
+    if (!r) { sendJson(res, 200, { link: null, connected: o.connected }); return; }
+    let tal = null;
+    let gammel = null;
+    if (o.connected) {
+      const s = await qlkTal(u.id, [r.code]);
+      if (s.ok) tal = s.links.find((x) => x.code === r.code) || null;
+      else gammel = s.besked;
+    }
+    sendJson(res, 200, { link: formQlkLink(u.id, r, tal), connected: o.connected, staleReason: gammel });
+  },
+
+  /*
+   * Alle brugerens kortlinks med tal - til udgivelseslisten i Settings.
+   * ÉT kald til qlk for op til 100 koder, ikke ét pr. raekke.
+   */
+  'GET /api/v1/qlk/links': async (req, res) => {
+    const auth = godkend(req, res, 'read');
+    if (!auth) return;
+    const u = auth.user;
+    const o = qlk.opsaetning(u.id);
+    const raekker = db.prepare('SELECT * FROM qlk_links WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100')
+      .all(u.id);
+    let tal = [];
+    let gammel = null;
+    if (o.connected && raekker.length) {
+      const s = await qlkTal(u.id, raekker.map((r) => r.code));
+      if (s.ok) tal = s.links; else gammel = s.besked;
+    }
+    sendJson(res, 200, {
+      connected: o.connected,
+      links: raekker.map((r) => formQlkLink(u.id, r, tal.find((x) => x.code === r.code))),
+      staleReason: gammel,
+    });
   },
 
   /* --- adgangsnoegler ------------------------------------------------ */
@@ -5424,6 +5638,100 @@ const MOENSTRE = [
     },
   },
 
+  /* ------------------------------------------------------ qlk (v98) */
+  {
+    /*
+     * QR-koden, hentet gennem Sagu.
+     *
+     * Proxyen findes, saa Sagus CSP ikke skal aabnes for qlk's vaert, og saa
+     * PNG'en kan tegnes i browseren af et billede fra SAMME oprindelse (et
+     * fremmed billede goer et canvas »tainted«).
+     *
+     * **Kun koder i brugerens EGNE raekker.** Ellers var ruten en aaben proxy
+     * mod qlk - og alt, der staar paa den anden side af den.
+     */
+    metode: 'GET', re: /^\/api\/v1\/qlk\/qr\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.svg$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const kode = ctx.params[0];
+      const r = db.prepare('SELECT code FROM qlk_links WHERE user_id = ? AND code = ? LIMIT 1')
+        .get(auth.user.id, kode);
+      if (!r) { apiFejl(res, 404, 'not_found', 'No such short link.'); return; }
+      const c = qlkQrCache.get(kode);
+      let svg = c && Date.now() - c.t < QLK_QR_LEVETID ? c.svg : null;
+      if (!svg) {
+        const s = await qlk.qrSvg(auth.user.id, kode);
+        if (!s.ok) {
+          apiFejl(res, s.kode === 'not_found' ? 404 : 502, s.kode || 'qlk_error', s.besked || 'qlk did not answer.');
+          return;
+        }
+        /*
+         * Billedet serveres fra SAGUS oprindelse, saa det maa ikke kunne baere
+         * kode. Indlejret i et `<img>` koerer intet; aabnet direkte som
+         * dokument goer CSP'en herunder det samme. Begge dele, ikke én.
+         */
+        if (!/^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(s.svg)
+          || /<script|<foreignObject|\son[a-z]+\s*=|javascript:/i.test(s.svg)) {
+          apiFejl(res, 502, 'qlk_error', 'qlk answered with something that is not a plain QR image.');
+          return;
+        }
+        svg = s.svg;
+        if (qlkQrCache.size > 300) qlkQrCache.clear();
+        qlkQrCache.set(kode, { t: Date.now(), svg });
+      }
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox");
+      res.writeHead(200, {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'private, max-age=300',
+        'Content-Length': Buffer.byteLength(svg),
+        'Content-Disposition': `inline; filename="${kode}.svg"`,
+      });
+      res.end(req.method === 'HEAD' ? undefined : svg);
+    },
+  },
+  {
+    /*
+     * »Short links in this note«: klik og scanninger for de kortlinks, der
+     * STAAR i notens tekst. Hentes, naar noten aabnes - aldrig pr. optegning -
+     * og tallene caches et minut.
+     *
+     * Notens egen adgangsregel (SYNLIG) afgoer, om man maa se teksten; qlk
+     * svarer kun med BRUGERENS egne links, saa en delt note viser kun mine.
+     */
+    metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/qlk$/,
+    kald: async (req, res, ctx) => {
+      const auth = godkend(req, res, 'read');
+      if (!auth) return;
+      const note = hentNote(auth.user.id, ctx.params[0]);
+      if (!note) { apiFejl(res, 404, 'not_found', 'No such note.'); return; }
+      const o = qlk.opsaetning(auth.user.id);
+      const koder = o.connected ? qlkKoderITekst(note.body, o.short) : [];
+      if (!koder.length) { sendJson(res, 200, { links: [], connected: o.connected }); return; }
+      const s = await qlkTal(auth.user.id, koder);
+      if (!s.ok) {
+        sendJson(res, 200, { links: [], connected: true, staleReason: s.besked });
+        return;
+      }
+      // I tekstens raekkefoelge - det er den, man laeser noten i.
+      const efterKode = new Map(s.links.map((l) => [l.code, l]));
+      sendJson(res, 200, {
+        connected: true,
+        links: koder.filter((k) => efterKode.has(k)).map((k) => {
+          const l = efterKode.get(k);
+          return {
+            code: k,
+            shortUrl: l.shortUrl || `${o.short}/${k}`,
+            url: l.url || '',
+            title: l.title || '',
+            clicks: Number(l.clicks) || 0,
+            scans: Number(l.scans) || 0,
+          };
+        }),
+      });
+    },
+  },
+
   /* ------------------------------------------------ kommentarer (F7) */
   {
     metode: 'GET', re: /^\/api\/v1\/notes\/([a-f0-9]{32})\/comments$/,
@@ -6019,6 +6327,10 @@ const MOENSTRE = [
       db.prepare(`UPDATE shares SET ${saet.join(', ')} WHERE id = ? AND user_id = ?`)
         .run(...arg, share.id, auth.user.id);
       audit('udgivelse-aendret', auth.user.id, share.note_id, saet.join(' '));
+      // En ny sti (slug) eller en udloebsdato flytter den adresse, et kortlink
+      // skal pege paa. Synken sender kun noget, naar adressen er anderledes.
+      qlkSynkSenere(auth.user.id, share.notebook_id ? 'notebook' : 'note',
+        share.notebook_id || share.note_id);
       sendJson(res, 200, { share: formUdgivelse(hentUdgivelseRaekke(auth.user.id, share.id)) });
     },
   },
@@ -6046,10 +6358,18 @@ const MOENSTRE = [
       // Tilbagekaldelsen virker ved NAESTE kald: opslaget filtrerer paa
       // revoked_at, og der er ingen cache at rydde. En udgivelse, der doer
       // "om lidt", er ikke tilbagekaldt.
+      const hvad = db.prepare('SELECT note_id, notebook_id FROM shares WHERE id = ? AND user_id = ?')
+        .get(ctx.params[0], auth.user.id);
       const r = db.prepare('UPDATE shares SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL')
         .run(now(), ctx.params[0], auth.user.id);
       if (!r.changes) { apiFejl(res, 404, 'not_found', 'No such publication.'); return; }
       audit('udgivelse-tilbagekaldt', auth.user.id, ctx.params[0], null);
+      // Beslutning 3: kortlinket doer IKKE med udgivelsen - det peger paa den
+      // interne adresse, saa en trykt QR-kode stadig foerer et sted hen.
+      if (hvad) {
+        qlkSynkSenere(auth.user.id, hvad.notebook_id ? 'notebook' : 'note',
+          hvad.notebook_id || hvad.note_id);
+      }
       sendJson(res, 200, { ok: true });
     },
   },
@@ -6997,6 +7317,10 @@ function opretUdgivelse(userId, o) {
       o.allowIndex ? 1 : 0,
       tidsstempel(o.expiresAt), now());
   audit('udgivet', userId, noteId || bogId, bogId ? 'notebook' : mode);
+  // Et kortlink, der pegede paa den interne adresse, skal nu pege paa den
+  // offentlige. Uden at vente paa qlk: udgivelsen maa aldrig fejle, fordi
+  // qlk er langsom eller nede (v98).
+  qlkSynkSenere(userId, bogId ? 'notebook' : 'note', noteId || bogId);
   return { share: formUdgivelse(hentUdgivelseRaekke(userId, id)) };
 }
 
@@ -7147,6 +7471,252 @@ const doda = dodaModul.opret({
   hentIndstilling: getSetting,
   logError,
 });
+
+/* ====================================================== qlk (v98) ======= */
+
+/*
+ * En qlk, der ikke svarer, er IKKE en fejl i Sagu - og `[fejl]` faar panelet
+ * til at ringe til Andreas (docs/regler/faldgruber.md). Samme form som
+ * `kilde.js`' advarsler.
+ */
+const logQlk = (msg) => console.warn(`[qlk] advarsel: ${msg}`);
+
+const qlk = qlkModul.opret({
+  hentIndstilling: getSetting,
+  logAdvarsel: logQlk,
+});
+
+/** Saetter `/` af enden - base gemmes og sammenlignes altid uden. */
+const udenSkraastreg = (s) => String(s || '').replace(/\/+$/, '');
+
+/** Den interne adresse, regnet af den GEMTE base (kontrakten qlk-sagu). */
+function qlkInternAdresse(base, kind, id) {
+  return `${udenSkraastreg(base)}/#${kind === 'notebook' ? 'notebook' : 'note'}-${id}`;
+}
+
+/**
+ * Den AKTIVE udgivelse af en ref - eller null.
+ *
+ * Udloebet og tilbagekaldt taeller ikke: de svarer 404 paa wikien, og et
+ * kortlink dertil ville foere ingen steder hen.
+ */
+function qlkAktivUdgivelse(userId, kind, id) {
+  const felt = kind === 'notebook' ? 'notebook_id' : 'note_id';
+  return db.prepare(`SELECT slug, token FROM shares
+                      WHERE ${felt} = ? AND user_id = ? AND revoked_at IS NULL
+                        AND (expires_at IS NULL OR expires_at > ?)
+                      ORDER BY created_at DESC LIMIT 1`).get(id, userId, now()) || null;
+}
+
+/**
+ * Adressen, kortlinket SKAL pege paa: udgivet -> offentlig, ellers intern.
+ *
+ * Den offentlige er `(public_url || base) + sti` - samme regel som
+ * udgivelsesruden, saa et kortlink og et kopieret link er den samme adresse.
+ */
+function qlkOensketAdresse(userId, kind, id, base) {
+  const s = qlkAktivUdgivelse(userId, kind, id);
+  if (s) {
+    const sti = s.slug ? `/w/${s.slug}` : `/s/${s.token}`;
+    return { url: `${offentligUrl() || udenSkraastreg(base)}${sti}`, offentlig: true };
+  }
+  return { url: qlkInternAdresse(base, kind, id), offentlig: false };
+}
+
+/**
+ * Ejer brugeren ref'en? EJET for en note, `user_id` for en bog.
+ *
+ * At lave et kortlink til en side er at bestemme over den - samme vagt som
+ * at udgive (docs/regler/adgang.md). En anden bruger faar 404, aldrig 403.
+ */
+function qlkRefTitel(userId, kind, id) {
+  if (!/^[a-f0-9]{32}$/.test(String(id || ''))) return null;
+  if (kind === 'notebook') {
+    const b = db.prepare(`SELECT name FROM notebooks WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
+      .get(id, userId);
+    return b ? (b.name || 'Untitled') : null;
+  }
+  if (kind !== 'note') return null;
+  const n = db.prepare(`SELECT n.title FROM notes n WHERE n.id = ? AND n.deleted_at IS NULL AND ${EJET}`)
+    .get(id, userId);
+  return n ? (n.title || 'Untitled') : null;
+}
+
+function qlkRaekke(userId, kind, id) {
+  return db.prepare('SELECT * FROM qlk_links WHERE user_id = ? AND ref_kind = ? AND ref_id = ?')
+    .get(userId, kind, id) || null;
+}
+
+function gemQlkRaekke(userId, kind, id, link, base) {
+  const t = now();
+  const kort = link.shortUrl || (qlk.opsaetning(userId).short
+    ? `${qlk.opsaetning(userId).short}/${link.code}` : '');
+  db.prepare(`INSERT INTO qlk_links (user_id, ref_kind, ref_id, link_id, code, short_url, base, last_url,
+                                     created_at, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)
+              ON CONFLICT(user_id, ref_kind, ref_id) DO UPDATE SET
+                link_id = excluded.link_id, code = excluded.code, short_url = excluded.short_url,
+                base = excluded.base, last_url = excluded.last_url, updated_at = excluded.updated_at`)
+    .run(userId, kind, id, String(link.id === undefined ? '' : link.id), String(link.code),
+      String(kort), udenSkraastreg(base), String(link.url || ''), t, t);
+}
+
+/** Raekken, som fladen ser den. `public` er regnet NU, ikke det qlk sidst fik. */
+function formQlkLink(userId, r, tal) {
+  const o = qlk.opsaetning(userId);
+  const oensket = qlkOensketAdresse(userId, r.ref_kind, r.ref_id, r.base);
+  return {
+    kind: r.ref_kind,
+    id: r.ref_id,
+    code: r.code,
+    shortUrl: r.short_url || (o.short ? `${o.short}/${r.code}` : ''),
+    url: r.last_url,
+    linkId: r.link_id,
+    public: oensket.offentlig,
+    // Synken er undervejs (eller qlk var nede): qlk peger endnu det gamle sted hen.
+    pending: oensket.url !== r.last_url,
+    qrUrl: `/api/v1/qlk/qr/${encodeURIComponent(r.code)}.svg`,
+    editUrl: o.url ? `${o.url}/admin/links/${encodeURIComponent(r.code)}` : null,
+    clicks: tal && Number.isFinite(tal.clicks) ? tal.clicks : null,
+    scans: tal && Number.isFinite(tal.scans) ? tal.scans : null,
+  };
+}
+
+/**
+ * Ret kortlinket, hvis adressen er flyttet. Kaster aldrig.
+ *
+ * `create: false`: synken laver ALDRIG et nyt link - findes det ikke laengere
+ * i qlk (404), ryddes Sagus raekke, for den peger paa noget, der er vaek.
+ */
+async function qlkSynk(userId, kind, id) {
+  try {
+    const r = qlkRaekke(userId, kind, id);
+    if (!r) return { synket: false };
+    const oensket = qlkOensketAdresse(userId, kind, id, r.base);
+    if (oensket.url === r.last_url) return { synket: false };
+    if (!qlk.opsaetning(userId).connected) return { synket: false };
+    const svar = await qlk.sikrLink(userId, { kind, id, base: r.base, url: oensket.url, create: false });
+    if (svar.ok) {
+      gemQlkRaekke(userId, kind, id, svar.link, r.base);
+      return { synket: true };
+    }
+    if (svar.kode === 'not_found') {
+      db.prepare('DELETE FROM qlk_links WHERE user_id = ? AND ref_kind = ? AND ref_id = ?')
+        .run(userId, kind, id);
+      logQlk(`kortlinket ${r.code} findes ikke i qlk - raekken er ryddet`);
+      return { synket: false, ryddet: true };
+    }
+    logQlk(`synk af ${kind} ${id}: ${svar.besked}`);
+    return { synket: false, fejl: svar.besked };
+  } catch (err) {
+    logQlk(`synk af ${kind} ${id}: ${err && err.message}`);
+    return { synket: false, fejl: String(err && err.message) };
+  }
+}
+
+/**
+ * Fjerner sporing (`utm_…`, `fbclid` …) fra en FANGET adresse med qlk's regler.
+ *
+ * Adressen er `source` (bogmaerket sender sidens adresse for sig) - eller hele
+ * teksten, naar den er én bar adresse (en delt adresse fra telefonen). Kun
+ * den adresse roeres, og kun dér, hvor den staar ORDRET i teksten; andre
+ * links i en klippet side er sidens indhold, ikke fangstens.
+ *
+ * Kort timeout, og en fejl er ikke en fejl: svarer qlk ikke, gemmes teksten
+ * uaendret. En fangst maa aldrig fejle, fordi qlk er nede.
+ */
+async function rensFangetAdresse(userId, tekst, kilde) {
+  try {
+    if (!tekst || !qlk.opsaetning(userId).connected) return tekst;
+    const bar = (v) => (typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) ? v.trim() : '');
+    const adresse = bar(kilde) || bar(tekst);
+    if (!adresse || adresse.length > 4000 || !tekst.includes(adresse)) return tekst;
+    const r = await qlk.rens(userId, adresse);
+    if (!r.ok || r.url === adresse) return tekst;
+    return tekst.split(adresse).join(r.url);
+  } catch (err) {
+    logQlk(`rensning af en fanget adresse: ${err && err.message}`);
+    return tekst;
+  }
+}
+
+/** Uden at vente: kaldstedet (en udgivelse) maa aldrig fejle paa qlk's vegne. */
+function qlkSynkSenere(userId, kind, id) {
+  if (!db.prepare('SELECT 1 FROM qlk_links WHERE user_id = ? AND ref_kind = ? AND ref_id = ?')
+    .get(userId, kind, id)) return;
+  setImmediate(() => { qlkSynk(userId, kind, id).catch(() => {}); });
+}
+
+/**
+ * Timejobbet: udloebne udgivelser flytter ogsaa adressen, og dem opdager
+ * ingen handling. Kun raekker, hvis oenskede adresse er anderledes, koster
+ * et kald - et roligt arkiv koster ingenting.
+ */
+let qlkJobKoerer = false;
+async function qlkSynkAlle() {
+  if (qlkJobKoerer) return;
+  qlkJobKoerer = true;
+  try {
+    const raekker = db.prepare('SELECT user_id, ref_kind, ref_id, base, last_url FROM qlk_links').all();
+    for (const r of raekker) {
+      if (qlkOensketAdresse(r.user_id, r.ref_kind, r.ref_id, r.base).url === r.last_url) continue;
+      await qlkSynk(r.user_id, r.ref_kind, r.ref_id);
+    }
+  } catch (err) {
+    logQlk(`timejobbet: ${err && err.message}`);
+  } finally {
+    qlkJobKoerer = false;
+  }
+}
+
+/*
+ * QR-billederne, hentet gennem Sagu. Pr. KODE, ikke pr. bruger: billedet er
+ * det samme, og adgangen afgoeres foer cachen spoerges (egne raekker).
+ */
+const qlkQrCache = new Map();
+const QLK_QR_LEVETID = 3600 * 1000;
+
+/** Klik og scanninger pr. (bruger, noegle) i et minut - aldrig pr. optegning. */
+const qlkTalCache = new Map();
+const QLK_TAL_LEVETID = 60 * 1000;
+
+async function qlkTal(userId, koder) {
+  const liste = [...new Set(koder)].filter((k) => qlkModul.KODE_RE.test(k)).slice(0, 100).sort();
+  if (!liste.length) return { ok: true, links: [] };
+  const noegle = `${userId}|${liste.join(',')}`;
+  const c = qlkTalCache.get(noegle);
+  if (c && Date.now() - c.t < QLK_TAL_LEVETID) return c.svar;
+  const svar = await qlk.stats(userId, liste);
+  if (svar.ok) {
+    if (qlkTalCache.size > 500) qlkTalCache.clear();
+    qlkTalCache.set(noegle, { t: Date.now(), svar });
+  }
+  return svar;
+}
+
+/** Glemmer brugerens tal - efter et nyt link skal de ikke vente et minut. */
+function glemQlkTal(userId) {
+  for (const k of qlkTalCache.keys()) if (k.startsWith(`${userId}|`)) qlkTalCache.delete(k);
+}
+
+/**
+ * Koderne i en notes tekst, der peger paa brugerens qlk-vaert.
+ *
+ * Kun `<shortBase>/<kode>` - ikke alle adresser i noten. Et link til en
+ * fremmed side er ikke qlk's at taelle.
+ */
+function qlkKoderITekst(tekst, short) {
+  const base = udenSkraastreg(short);
+  if (!base) return [];
+  const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`${esc}/([A-Za-z0-9][A-Za-z0-9_-]{0,63})(?![A-Za-z0-9_/-])`, 'g');
+  const ud = [];
+  for (const m of String(tekst || '').matchAll(re)) {
+    if (!ud.includes(m[1])) ud.push(m[1]);
+    if (ud.length >= 100) break;
+  }
+  return ud;
+}
 
 /* ================================================== github (F12) ======= */
 
@@ -8295,6 +8865,14 @@ serverSecret();
 const HAR_FTS5 = tjekFts5();
 sweep();
 setInterval(sweep, 6 * 3600 * 1000).unref();
+/*
+ * qlk-synken (v98): en udgivelse, der UDLOEBER, flytter kortlinkets adresse,
+ * uden at nogen trykker paa noget. Én gang i timen er nok - wikien svarer
+ * allerede 404 i mellemtiden, og et kortlink, der en time for sent peger paa
+ * den interne adresse, er en bagatel. Intervallet kan saettes ned i testene.
+ */
+setInterval(() => { qlkSynkAlle(); },
+  Math.max(200, Number(process.env.SAGU_QLK_SYNK_MS) || 3600 * 1000)).unref();
 
 server.listen(BIND_PORT, () => {
   // Den port, der FAKTISK blev bundet - ikke variablen. At skrive sit eget

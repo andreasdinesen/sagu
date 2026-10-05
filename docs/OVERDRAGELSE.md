@@ -88,6 +88,19 @@ Rækkefølgen, når du begynder:
 
 ## 3 · Det, der venter på Andreas
 
+> **Tilføjet 2026-10-05 (v98 · qlk-broen).** Sagus halvdel af integrationen med qlk
+> (kortlinks + QR) er bygget efter kontrakten qlk-sagu — `DESIGN.md` §57. Ucommitteret;
+> `APP_VERSION` står stadig på 97 og skal bumpes til 98 ved udgivelsen. Migration **m19**
+> (`qlk_links`). Nyt modul `app/qlk.js` (kun markeret med `git add -N`, så build'ets
+> git-tjek kan se det). Venter på:
+>
+> - **Browser-test** af qlk-kortet på Connections, »Short link & QR code« i
+>   udgivelsesruden (PNG-download), »Short links in this note« og `#notebook-<id>`.
+> - **qlk v8 skal være udgivet først** — Sagu kalder `/api/v1/me` (med `shortBase`),
+>   `/api/v1/links/sagu`, `/api/v1/links/stats` og `/api/v1/clean/check` med en `link`-nøgle.
+> - **Bogmærket »Save to Sagu« skal laves igen** for at få rensningen af adressen med; et
+>   gammelt sender ren tekst og virker uændret.
+
 > **Tilføjet 2026-09-03 (F28).** Punkterne 1–4 nedenfor er fra 2026-08-21 og for
 > længst overhalet — Sagu står på `APP_VERSION 46`, og alt til og med v46 er
 > udgivet og tagget. Det, der venter lige nu, er dette:

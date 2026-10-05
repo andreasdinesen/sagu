@@ -4418,3 +4418,64 @@ upload-linket** — ikke »hent fra en webadresse« og ikke base64 i kaldet.
 - **Cloudflare:** `/api/v1/upload/` skal ikke undtages fra WAF-reglen — curl kører på
   brugerens egen maskine, ikke i et datacenter.
 
+
+## 57 · qlk — kortlinks og QR-koder (v98, 2026-10-05)
+
+Integration med søsterappen qlk (kortlinks + QR) efter kontrakten qlk-sagu (bygget samtidig med
+qlk v8). Andreas' tre beslutninger: **(1)** qlk må lave *interne* links til ikke-udgivne noter;
+**(2)** qlk må udgive noter i Sagu (med en `full`-nøgle — det er qlk's halvdel); **(3) stoppes en
+deling, peger kortlinket på den INTERNE adresse** — det slås ikke fra og slettes ikke, og udgives
+siden igen, peger den samme kode på den offentlige igen. En trykt QR-kode virker altid.
+
+- **Forbindelsen er pr. BRUGER, som doda:** `qlk_url`, `qlk_key` (i `HEMMELIGE_SETTINGS`) og
+  `qlk_short` (kortlinkenes vært fra `GET /api/v1/me`'s `shortBase`). Gem → prøv → rul tilbage
+  — også `qlk_short`. `POST`/`DELETE /api/v1/qlk` kræver en session; en Sagu-nøgle sætter aldrig
+  en nøgle. Sagu skal bruge en qlk-nøgle med scopet `link` (opret + læs), aldrig `write`.
+- **`qlk_links` (m19)** har én række pr. (bruger, ref) — ref = `note`/`notebook` + id — med
+  koden, kortlinket, den **base** linket blev lavet med og `last_url` (det, qlk sidst fik at
+  vide). Ingen fremmednøgle til noten: en ref kan være en bog, og rækken ryddes ved en 404 fra
+  qlk, ikke ved en kaskade.
+- **Adressen** regnes ét sted (`qlkOensketAdresse`): aktiv udgivelse (ikke tilbagekaldt, ikke
+  udløbet) → `(public_url || base) + /w/<slug>` eller `/s/<token>`; ellers `<base>/#note-<id>` /
+  `<base>/#notebook-<id>`. **Basen er den GEMTE** — begge apps regner den interne adresse ud fra
+  rækkens base, så to apps på hver sin vært ikke skiftevis skriver to adresser. Et nyt link får
+  `offentligVaert(req)` som base (samme regel som dodas link tilbage til noten).
+- **Kun ejeren** (`EJET` for en note, `user_id` for en bog) kan lave eller se en refs kortlink;
+  alle andre får 404 — også den, siden er delt med til skrivning. Et kortlink bestemmer, hvor en
+  trykt kode fører hen, og det er samme slags beslutning som at udgive.
+- **Synken** (`qlkSynk`) sender `create: false` og kun, når den ønskede adresse afviger fra
+  `last_url`. Den kaldes **uden at vente** (`setImmediate`) efter `opretUdgivelse` (så også
+  MCP'ens `publish_note`), efter `PATCH` på en udgivelse og efter tilbagekald — og et timejob
+  tager udløbne udgivelser, som ingen handling opdager. **Synken laver aldrig et nyt link**; en
+  404 fra qlk rydder rækken. En udgivelse kan aldrig fejle på qlk's vegne.
+- **Fejl mod qlk logges som `[qlk] advarsel: …`** — aldrig `[fejl]`, som får panelet til at ringe
+  (faldgruber.md). En qlk, der er nede, er ikke en fejl i Sagu.
+- **QR-billedet hentes gennem Sagu** (`GET /api/v1/qlk/qr/<kode>.svg`), så CSP'en ikke skal åbnes
+  for qlk's vært, og så PNG'en kan tegnes i browseren af et billede fra SAMME oprindelse (et
+  fremmed billede gør et canvas ulæseligt). **Kun koder i brugerens egne rækker** — ellers var
+  ruten en åben proxy. Svaret får sin egen CSP (`sandbox`), og et SVG med `<script>`,
+  `<foreignObject>`, `on…=` eller `javascript:` afvises: det serveres fra Sagus oprindelse.
+  Cache pr. kode i en time (adgangen afgøres før cachen spørges).
+- **Tal (klik/scanninger) aldrig pr. optegning:** `GET /api/v1/qlk/link` henter rækkens tal med
+  ét kald; udgivelseslisten i Settings ét kald for alle (`GET /api/v1/qlk/links`); noten ét kald
+  for de kortlinks, der STÅR i teksten (`GET /api/v1/notes/<id>/qlk`, kun når teksten nævner
+  `qlk_short` — det afgør browseren selv ud fra `state.qlk`). Tallene caches et minut pr.
+  bruger og kodeliste. qlk svarer kun med brugerens egne links, så en delt note viser kun mine.
+- **Fladen:** qlk-kortet på Connections (som doda-kortet); »Short link & QR code« i
+  udgivelsesruden — også for en side, der *ikke* er udgivet (internt link), fordi ruden er dér,
+  man bestemmer, hvem der kan nå siden; kopiér, QR, Download SVG/PNG (PNG tegnes i browseren, 1024
+  px på hvidt), »Customize in qlk« (`<qlk_url>/admin/links/<kode>`). Afsnittet »Short links in
+  this note« under doda-opgaverne. `#notebook-<id>` i adressen folder bogen ud i sidebaren
+  (`visBogITraeet`) og rydder adressen bagefter.
+- **Fangst:** er qlk forbundet, renses den fangede adresse via `/api/v1/clean/check` med 2,5 s
+  timeout — `source` i kroppen (bogmærket sender nu JSON med sidens adresse for sig), eller hele
+  teksten, når den er én bar adresse. Kun den adresse, og kun hvor den står ordret. Fejler qlk,
+  gemmes teksten uændret. **Gamle bogmærker sender stadig ren tekst** og renses ikke, før de laves
+  igen i Settings.
+- **Eksporten bærer IKKE `qlk_links`** — samme præcedens som `doda_tasks` (og `shares`): rækken er
+  en spejling af noget, der bor i den anden app, og qlk er sandheden. Efter en gendannelse finder
+  »Make a short link« det link, qlk allerede har til ref'en (qlk's upsert pr. ref), og rækken er
+  tilbage. `qlk_url`/`qlk_short` følger med som andre indstillinger; nøglen gør ikke.
+- **Afvigelse fra kontraktens rute-liste (kun tilføjelser i Sagu):** `GET /api/v1/qlk/links`
+  (udgivelseslisten) og `GET /api/v1/notes/<id>/qlk` (notens panel) er nye; kontrakten beskrev
+  funktionen, ikke ruten. `state` har fået `qlk: {connected, shortBase}`.

@@ -1303,6 +1303,8 @@ async function aabnNote(id, tving) {
     // Opgaverne hentes SAMMEN med noten - ét kald, ikke ét pr. optegning.
     // En fejl her maa ikke tage noten med sig.
     try { await hentDodaOpgaver(id); } catch { dodaState.opgaver = []; dodaState.noteId = id; }
+    // Kortlinkene i teksten (qlk, v98) - kun naar teksten naevner dem.
+    try { await hentKortlinksINoten(d.note); } catch { qlkNote.links = []; qlkNote.noteId = id; }
     if (editor.note && editor.note.id !== id) return;
     opdaterNav();
     tegnTrae();
@@ -1690,6 +1692,7 @@ function sideNote() {
           ${esc(b.title || 'Untitled')}</button>`).join('')}
       </div>` : ''}
     ${dodaState.noteId === n.id ? dodaOpgaverHtml() : ''}
+    ${qlkNote.noteId === n.id ? kortlinksINotenHtml() : ''}
     ${kom.noteId === n.id ? kommentarerHtml() : ''}`;
 }
 
@@ -3740,6 +3743,7 @@ function bindNoteSide() {
   if (!n) return;
   bindKommentarer();
   bindDodaOpgaver();
+  bindKortlinksINoten();
 
   const titel = document.getElementById('noteTitle');
   if (titel) {

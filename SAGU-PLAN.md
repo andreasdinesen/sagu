@@ -715,6 +715,22 @@ En GitHub-fil-URL på sin egen linje bliver til koden; issue- og PR-links bliver
 **10 tests**, 8 sabotager — hvoraf tre først gav nul røde og afslørede tre for svage
 tests. Detaljerne i `DESIGN.md` §21.
 
+### v98 · qlk-broen (kortlinks og QR-koder) — **SAGUS HALVDEL BYGGET 2026-10-05**
+
+| Punkt | Resultat |
+|---|---|
+| Forbindelse pr. bruger (gem → prøv → rul tilbage), nøglen aldrig i et svar | ✓ |
+| Kortlink til note og notesbog — offentlig når udgivet, ellers intern | ✓ |
+| Tilbagekald → intern, genudgivelse → offentlig, samme kode (beslutning 3) | ✓ |
+| Synk uden at vente + timejob for udløbne udgivelser; 404 rydder rækken | ✓ |
+| QR-proxy (kun egne koder), SVG/PNG-download, »Customize in qlk« | ✓ |
+| Klik/scanninger i udgivelseslisten og »Short links in this note« | ✓ |
+| `#notebook-<id>` åbner bogen | ✓ |
+| Rensning af en fanget adresse via qlk | ✓ — kun nye bogmærker sender `source` |
+
+**26 tests** mod en falsk qlk; isolation og proxy-vagten set fejle. Migration m19.
+Detaljerne i `DESIGN.md` §57. Venter på browser-test, qlk v8 og et ja.
+
 ---
 
 ## 5 · Wiki'en skal være bedre end Notions

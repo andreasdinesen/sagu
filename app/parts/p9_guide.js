@@ -252,6 +252,12 @@ function sideApi() {
     as it does in the title field — and a web address with a <code>#fragment</code> does not.
     Add <code>?notebook=Drift</code> to file it somewhere; the name works, so a shortcut does
     not have to look up an id.</p>
+    <p class="meta saetning"><strong>A web address</strong> is cleaned of tracking
+    (<code>utm_…</code>, <code>fbclid</code> and friends) when qlk is connected under
+    Settings → Connections: either the whole text is one address, or you send the page's
+    address on its own as <code>source</code> — <code>{"text": "…", "source": "https://…"}</code>
+    — and only that address is cleaned, wherever it stands in the text. If qlk does not
+    answer within a few seconds, it is saved as it was.</p>
   </div>
 
   <h2>Recipes</h2>

@@ -41,7 +41,7 @@ const FORVENTET = {
   konto: ['Appearance', 'Account', 'Passkeys', 'Two-step verification', 'About'],
   skrivning: ['Editing', 'Version history'],
   filer: ['Files', 'Published pages'],
-  broer: ['doda', 'GitHub', 'Save to Sagu'],
+  broer: ['doda', 'qlk', 'GitHub', 'Save to Sagu'],
   noegler: ['Access keys', 'Connected apps'],
   server: ['Public address', 'Server'],
 };
@@ -58,6 +58,7 @@ const SVAR = {
       { id: 'u2', username: 'bruger', isAdmin: false, createdAt: 2 }],
   },
   '/api/v1/doda': { connected: true, url: 'https://doda.eksempel.invalid', tasks: 2 },
+  '/api/v1/qlk': { connected: true, url: 'https://qlk.eksempel.invalid', shortBase: 'https://q.eksempel.invalid', links: 2 },
   '/api/v1/github/status': { connected: true, login: 'eksempel' },
 };
 
@@ -109,11 +110,11 @@ function delOp(html) {
 
 const overskrifter = (html) => [...html.matchAll(/<h2>([^<]*)<\/h2>/g)].map((m) => m[1]);
 
-test('hver fane har sine afsnit - alle seksten, med navn', async () => {
+test('hver fane har sine afsnit - alle sytten, med navn', async () => {
   const { faner, udenfor } = delOp(await tegnSiden());
   const faktisk = Object.fromEntries(faner.map((f) => [f.fane, overskrifter(f.krop)]));
   assert.deepEqual(faktisk, FORVENTET);
-  assert.equal(Object.values(faktisk).flat().length, 16);
+  assert.equal(Object.values(faktisk).flat().length, 17);
   assert.deepEqual(overskrifter(udenfor), [], 'et afsnit uden for enhver fane staar fremme paa dem alle');
 });
 

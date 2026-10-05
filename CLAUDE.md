@@ -77,7 +77,7 @@ hver fase** — se `docs/regler/test.md`.
 | `docs/regler/adgang.md` | Du rører adgang, deling, ejerskab, udgivelse, wiki-ruter, nøgler eller OAuth. |
 | `docs/regler/flade.md` | Du rører editoren, navigationen, markeringer, genveje eller en knap. |
 | `docs/regler/offline.md` | Du rører service workeren, cachen eller offline-køen. |
-| `docs/regler/indhold.md` | Du rører markdown, kommentarer, doda-broen, capture-API'et eller guiden. |
+| `docs/regler/indhold.md` | Du rører markdown, kommentarer, doda- eller qlk-broen, capture-API'et eller guiden. |
 | `docs/regler/github-og-import.md` | Du rører GitHub-integrationen, wiki-cachen, søgningen eller Notion-importen. |
 | `docs/regler/faldgruber.md` | Før en større ændring — fælder, der allerede har kostet tid i de andre runer. |
 | `docs/regler/test.md` | Du skriver eller kører tests. |
