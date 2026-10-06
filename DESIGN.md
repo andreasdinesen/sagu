@@ -4479,3 +4479,21 @@ siden igen, peger den samme kode på den offentlige igen. En trykt QR-kode virke
 - **Afvigelse fra kontraktens rute-liste (kun tilføjelser i Sagu):** `GET /api/v1/qlk/links`
   (udgivelseslisten) og `GET /api/v1/notes/<id>/qlk` (notens panel) er nye; kontrakten beskrev
   funktionen, ikke ruten. `state` har fået `qlk: {connected, shortBase}`.
+
+## 58 · Genvejene kan findes (2026-10-06)
+
+»Hvordan er det nu, jeg åbner en hurtig note?« — og bagefter: »jeg kan ikke finde den«
+og »det ? kan jeg ikke se«. Genvejslisten åbnede kun med TASTEN `?` og fra brugermenuen
+nederst, og `?`-KNAPPEN ved teksten åbner noget andet (»How to write«). To vinduer bag
+samme tegn, og ingen knap, man kan se.
+
+- **En tastatur-knap i topbjælken** ved siden af temaskiftet åbner genvejslisten. En rute
+  uden en knap er ikke en funktion.
+- **»How to write« viser også genvejene**: øverst en linje med dem, der virker midt i en
+  sætning (⌘K, ⌘⌥N), og nederst hele listen. Begge tegnes af `GENVEJE` — ét bord. Linket
+  »All keyboard shortcuts« ruller i ruden; et `#`-link ville ændre adressen, som appen
+  bruger til at vide, hvilken note der er åben.
+- **Quicknotens beskrivelse siger, hvad der sker**: dato og klokkeslæt som titel,
+  notesbogen Quicknotes (laves, hvis den mangler), markøren klar i teksten.
+- Genvejslisterne må bryde om (`.genvejtabel`): `.tablewrap` giver tabeller
+  `min-width: max-content`, rigtigt for data og forkert for en liste med sætninger.

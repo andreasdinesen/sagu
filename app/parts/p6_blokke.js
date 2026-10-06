@@ -1943,6 +1943,28 @@ async function sendValgteBlokkeTilDoda() {
  * der sker. To spalter — det man skriver, og det man får — er hele
  * forklaringen uden en eneste sætning.
  */
+/*
+ * Genvejene i »How to write« (v100).
+ *
+ * »Jeg kan ikke finde den« (Andreas, 2026-10-06, om quicknoten): genvejene
+ * stod kun i oversigten bag TASTEN `?` - men `?`-KNAPPEN ved teksten aabner
+ * denne rude. To vinduer bag samme tegn, og man finder det, man ikke ledte i.
+ * Nu staar de begge steder, og begge tegnes af `GENVEJE` (p12) - ét bord, saa
+ * de to lister ikke kan blive uenige.
+ *
+ * Oeverst kun de genveje, der virker MIDT i en saetning (med modifikator):
+ * det er dem, man har brug for, mens hjaelpen staar aaben over en note.
+ */
+function genvejeOeverstHtml() {
+  if (typeof GENVEJE === 'undefined') return '';
+  const med = GENVEJE.filter((g) => g.modifikator && !g.kunVist);
+  if (!med.length) return '';
+  const kort = (g) => String(g.hvad).split(' — ')[0];
+  return `<p class="syntaks-taster saetning">${med.map((g) =>
+    `<kbd>${esc(g.vis)}</kbd> ${esc(kort(g))}`).join(' · ')}
+    · <a href="#syntaksTaster" class="syntaks-alle">All keyboard shortcuts</a></p>`;
+}
+
 function visSyntaksPanel() {
   const gammel = document.getElementById('syntaksPanel');
   if (gammel) { gammel.remove(); return; }
@@ -1978,6 +2000,7 @@ function visSyntaksPanel() {
         <p class="meta saetning">Sagu keeps your notes as plain markdown — what you type
         <em>is</em> the note. Nothing here is required; a note written as ordinary prose
         stays ordinary prose.</p>
+        ${genvejeOeverstHtml()}
 
         <div class="tablewrap"><table class="data syntaks">
           <thead><tr><th>What</th><th>You write</th><th>You get</th></tr></thead>
@@ -2011,9 +2034,29 @@ function visSyntaksPanel() {
             <td><code class="syntaks-kode">${esc(a.kode)}</code></td>
           </tr>`).join('')}</tbody>
         </table></div>
+
+        <h3 style="margin-top:22px" id="syntaksTaster">Keyboard shortcuts</h3>
+        <p class="meta saetning">The same list opens with <kbd>?</kbd> anywhere in Sagu, as long
+        as you are not typing in a field.</p>
+        <div class="tablewrap"><table class="data genvejtabel">
+          <tbody>${GENVEJE.map((g) => `<tr>
+            <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
+            <td>${esc(g.tast === '?' ? 'Show the keyboard shortcuts' : g.hvad)}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
       </div>
     </div>`;
   document.body.appendChild(host);
+  // »All keyboard shortcuts« ruller i ruden - et `#`-link ville aendre
+  // adressen, og den bruger appen selv til at vide, hvilken note der er aaben.
+  const alle = host.querySelector('.syntaks-alle');
+  if (alle) {
+    alle.addEventListener('click', (e) => {
+      e.preventDefault();
+      const maal = host.querySelector('#syntaksTaster');
+      if (maal) maal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
   const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); luk(); } };

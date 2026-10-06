@@ -1847,6 +1847,20 @@ body.fokus .topbar { display: none; }
 
 /* Et billede i wikien kan aabnes stort. */
 .wnote img.wbillede { cursor: zoom-in; }
+/* De genveje, der virker midt i en saetning - oeverst i »How to write«. */
+.syntaks-taster {
+  margin: 10px 0 0; padding: 8px 12px; border-radius: var(--r-sm);
+  background: var(--accent-soft); color: var(--accent-text); font-size: 14px;
+}
+.syntaks-taster kbd { margin-right: 2px; }
+.syntaks-alle { color: inherit; font-weight: 600; }
+/* Genvejslisterne: beskrivelsen maa bryde om - quicknotens er en hel saetning
+   og blev skaaret af ved kanten. Tasten bliver paa én linje. */
+/* `.tablewrap` giver tabeller `min-width: max-content` og cellerne et loft paa
+   22rem - rigtigt for data, forkert for en liste med saetninger. */
+.tablewrap table.data.genvejtabel { min-width: 0; }
+.tablewrap table.data.genvejtabel td { white-space: normal; max-width: none; }
+.tablewrap table.data.genvejtabel td:first-child { white-space: nowrap; vertical-align: top; }
 .lightbox img { max-width: 100%; max-height: 82vh; object-fit: contain; border-radius: var(--r-sm); }
 .lightbox-tekst { color: #ddd; max-width: 60ch; text-align: center; }
 

@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 99;
+const APP_VERSION = 100;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -570,6 +570,7 @@ function shellHtml() {
           <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
             aria-label="Fetch new notes now">${icon('opfrisk', 14)}<span id="synkLabel">just now</span></button>
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
+          ${genvejKnapHtml()}
           ${temaKnapHtml()}
         </div>
         <!-- Fyldes af tegnNoteFaner() (F35). Staar under taellerne, saa den
@@ -633,6 +634,19 @@ function versionHtml() {
 
 /* Ét klik mellem lyst og moerkt. Knappen viser det tema, man skifter TIL -
    ikke det, man er i. Alle tre valg bliver staaende under Settings. */
+/*
+ * Genvejslisten som en KNAP i topbjaelken (v100).
+ *
+ * »Det ? kan jeg ikke se« (Andreas, 2026-10-06). Listen aabnede med tasten
+ * `?` og fra brugermenuen nederst - ingen af delene er noget, man ser. En
+ * rute uden en knap er ikke en funktion (flade.md). Samme form som
+ * temaknappen ved siden af, saa den ikke fylder mere end den skal.
+ */
+function genvejKnapHtml() {
+  return `<button class="temabtn" id="genvejBtn" type="button"
+    aria-label="Keyboard shortcuts (?)" title="Keyboard shortcuts (?)">${icon('tastatur', 16)}</button>`;
+}
+
 function temaKnapHtml() {
   const naeste = visuelTema() === 'dark' ? 'light' : 'dark';
   return `<button class="temabtn" id="temaBtn" data-naeste="${naeste}"
@@ -668,6 +682,8 @@ function bindNav() {
 
 function bindShell() {
   bindNav();
+  const genvejKnap = document.getElementById('genvejBtn');
+  if (genvejKnap) genvejKnap.addEventListener('click', () => visGenvejsPanel());
   registrerRullevagt();
   const rulleKnap = document.getElementById('rulleKnap');
   if (rulleKnap) rulleKnap.addEventListener('click', rulMedKnap);

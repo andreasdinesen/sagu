@@ -3084,7 +3084,7 @@ function visGenvejsPanel() {
         <button class="iconbtn" id="genvejLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
       <div class="modal-krop">
-        <div class="tablewrap"><table class="data"><tbody>
+        <div class="tablewrap"><table class="data genvejtabel"><tbody>
           ${GENVEJE.map((g) => `<tr class="${g.kunVist || genvejGaelder(g) ? '' : 'genvej-doed'}">
             <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
             <td>${esc(g.hvad)}</td>
@@ -6107,7 +6107,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 99;
+const APP_VERSION = 100;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -6672,6 +6672,7 @@ function shellHtml() {
           <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
             aria-label="Fetch new notes now">${icon('opfrisk', 14)}<span id="synkLabel">just now</span></button>
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
+          ${genvejKnapHtml()}
           ${temaKnapHtml()}
         </div>
         <!-- Fyldes af tegnNoteFaner() (F35). Staar under taellerne, saa den
@@ -6735,6 +6736,19 @@ function versionHtml() {
 
 /* Ét klik mellem lyst og moerkt. Knappen viser det tema, man skifter TIL -
    ikke det, man er i. Alle tre valg bliver staaende under Settings. */
+/*
+ * Genvejslisten som en KNAP i topbjaelken (v100).
+ *
+ * »Det ? kan jeg ikke se« (Andreas, 2026-10-06). Listen aabnede med tasten
+ * `?` og fra brugermenuen nederst - ingen af delene er noget, man ser. En
+ * rute uden en knap er ikke en funktion (flade.md). Samme form som
+ * temaknappen ved siden af, saa den ikke fylder mere end den skal.
+ */
+function genvejKnapHtml() {
+  return `<button class="temabtn" id="genvejBtn" type="button"
+    aria-label="Keyboard shortcuts (?)" title="Keyboard shortcuts (?)">${icon('tastatur', 16)}</button>`;
+}
+
 function temaKnapHtml() {
   const naeste = visuelTema() === 'dark' ? 'light' : 'dark';
   return `<button class="temabtn" id="temaBtn" data-naeste="${naeste}"
@@ -6770,6 +6784,8 @@ function bindNav() {
 
 function bindShell() {
   bindNav();
+  const genvejKnap = document.getElementById('genvejBtn');
+  if (genvejKnap) genvejKnap.addEventListener('click', () => visGenvejsPanel());
   registrerRullevagt();
   const rulleKnap = document.getElementById('rulleKnap');
   if (rulleKnap) rulleKnap.addEventListener('click', rulMedKnap);
@@ -17445,6 +17461,28 @@ async function sendValgteBlokkeTilDoda() {
  * der sker. To spalter — det man skriver, og det man får — er hele
  * forklaringen uden en eneste sætning.
  */
+/*
+ * Genvejene i »How to write« (v100).
+ *
+ * »Jeg kan ikke finde den« (Andreas, 2026-10-06, om quicknoten): genvejene
+ * stod kun i oversigten bag TASTEN `?` - men `?`-KNAPPEN ved teksten aabner
+ * denne rude. To vinduer bag samme tegn, og man finder det, man ikke ledte i.
+ * Nu staar de begge steder, og begge tegnes af `GENVEJE` (p12) - ét bord, saa
+ * de to lister ikke kan blive uenige.
+ *
+ * Oeverst kun de genveje, der virker MIDT i en saetning (med modifikator):
+ * det er dem, man har brug for, mens hjaelpen staar aaben over en note.
+ */
+function genvejeOeverstHtml() {
+  if (typeof GENVEJE === 'undefined') return '';
+  const med = GENVEJE.filter((g) => g.modifikator && !g.kunVist);
+  if (!med.length) return '';
+  const kort = (g) => String(g.hvad).split(' — ')[0];
+  return `<p class="syntaks-taster saetning">${med.map((g) =>
+    `<kbd>${esc(g.vis)}</kbd> ${esc(kort(g))}`).join(' · ')}
+    · <a href="#syntaksTaster" class="syntaks-alle">All keyboard shortcuts</a></p>`;
+}
+
 function visSyntaksPanel() {
   const gammel = document.getElementById('syntaksPanel');
   if (gammel) { gammel.remove(); return; }
@@ -17480,6 +17518,7 @@ function visSyntaksPanel() {
         <p class="meta saetning">Sagu keeps your notes as plain markdown — what you type
         <em>is</em> the note. Nothing here is required; a note written as ordinary prose
         stays ordinary prose.</p>
+        ${genvejeOeverstHtml()}
 
         <div class="tablewrap"><table class="data syntaks">
           <thead><tr><th>What</th><th>You write</th><th>You get</th></tr></thead>
@@ -17513,9 +17552,29 @@ function visSyntaksPanel() {
             <td><code class="syntaks-kode">${esc(a.kode)}</code></td>
           </tr>`).join('')}</tbody>
         </table></div>
+
+        <h3 style="margin-top:22px" id="syntaksTaster">Keyboard shortcuts</h3>
+        <p class="meta saetning">The same list opens with <kbd>?</kbd> anywhere in Sagu, as long
+        as you are not typing in a field.</p>
+        <div class="tablewrap"><table class="data genvejtabel">
+          <tbody>${GENVEJE.map((g) => `<tr>
+            <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
+            <td>${esc(g.tast === '?' ? 'Show the keyboard shortcuts' : g.hvad)}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
       </div>
     </div>`;
   document.body.appendChild(host);
+  // »All keyboard shortcuts« ruller i ruden - et `#`-link ville aendre
+  // adressen, og den bruger appen selv til at vide, hvilken note der er aaben.
+  const alle = host.querySelector('.syntaks-alle');
+  if (alle) {
+    alle.addEventListener('click', (e) => {
+      e.preventDefault();
+      const maal = host.querySelector('#syntaksTaster');
+      if (maal) maal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   const luk = () => { host.remove(); document.removeEventListener('keydown', paaTast); };
   const paaTast = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); luk(); } };

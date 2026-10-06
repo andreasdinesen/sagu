@@ -306,7 +306,7 @@ function visGenvejsPanel() {
         <button class="iconbtn" id="genvejLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
       <div class="modal-krop">
-        <div class="tablewrap"><table class="data"><tbody>
+        <div class="tablewrap"><table class="data genvejtabel"><tbody>
           ${GENVEJE.map((g) => `<tr class="${g.kunVist || genvejGaelder(g) ? '' : 'genvej-doed'}">
             <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
             <td>${esc(g.hvad)}</td>
