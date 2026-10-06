@@ -2957,6 +2957,12 @@ const GENVEJE = [
     kunVist: true,
   },
   {
+    tast: '', vis: 'Right-click',
+    hvad: 'On a tab in the bar above the search field: open the note in its own window, '
+      + 'close the tab or close the other tabs',
+    kunVist: true,
+  },
+  {
     tast: 'Escape', vis: 'Esc', hvad: 'Close what is open',
     // Escape håndteres af den enkelte rude, som skal lukkes — hver rude
     // kender sin egen lukning. Den står her, fordi den skal STÅ i
@@ -4508,6 +4514,10 @@ function tegnNoteFaner(visesId) {
       e.preventDefault();
       lukNoteFane(el.dataset.fane);
     });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      visNoteFaneMenu(el.dataset.fane, e.clientX, e.clientY);
+    });
   });
 
   // Den fane, man står i, skal kunne ses, også når bjælken er rullet.
@@ -4518,6 +4528,95 @@ function tegnNoteFaner(visesId) {
     if (venstre < host.scrollLeft) host.scrollLeft = venstre;
     else if (hoejre > host.scrollLeft + host.clientWidth) host.scrollLeft = hoejre - host.clientWidth;
   }
+}
+
+/* ----------------------------------------------- højreklik på en fane */
+
+/*
+ * »kan du gøre så man kan højre klikke på en note i top notemenuen og poppe
+ * den ud i nyt vindue?« (Andreas, 2026-10-06).
+ *
+ * Menuen hænger i <body> med `position: fixed` ved musen - en fane sidder i
+ * en bjælke med `overflow-x: auto`, og en menu INDE i den ville blive skåret
+ * af. Koordinaterne er klikkets egne, ikke et getBoundingClientRect() på en
+ * flade, der glider (Beanledger v29); bagefter klemmes den ind i vinduet.
+ *
+ * »Open in its own window« er `popUdNote` - den samme som knappen i notens
+ * hoved, med vinduesnavnet pr. note, så en note kun findes i ét sidevindue.
+ * Fanen bliver stående: den er et bogmærke, ikke en editor, og to vinduer på
+ * én note er allerede aftalen med knappen.
+ */
+function visNoteFaneMenu(id, x, y) {
+  lukNoteFaneMenu();
+  const t = noteFaner.liste.find((f) => f.id === id);
+  if (!t) return;
+  const andre = noteFaner.liste.length > 1;
+  const host = document.createElement('div');
+  host.className = 'usermenu fanemenu';
+  host.id = 'noteFaneMenu';
+  host.setAttribute('role', 'menu');
+  host.innerHTML = `
+    <button class="usermenu-item" data-fanegoer="vindue" role="menuitem">${icon('vindue', 16)}<span>Open in its own window</span></button>
+    <button class="usermenu-item" data-fanegoer="luk" role="menuitem">${icon('luk', 16)}<span>Close tab</span></button>
+    ${andre ? `<button class="usermenu-item" data-fanegoer="andre" role="menuitem">${icon('luk', 16)}<span>Close other tabs</span></button>` : ''}`;
+  document.body.appendChild(host);
+
+  // Klemmes ind i vinduet: højreklikker man på fanen yderst til højre, ville
+  // menuen ellers stikke ud over kanten.
+  const r = host.getBoundingClientRect();
+  host.style.left = `${Math.max(8, Math.min(x, window.innerWidth - r.width - 8))}px`;
+  host.style.top = `${Math.max(8, Math.min(y, window.innerHeight - r.height - 8))}px`;
+
+  host.querySelectorAll('[data-fanegoer]').forEach((el) => {
+    // SYNKRON: `window.open` skal køre i samme hop som klikket (se popUdNote).
+    el.addEventListener('click', () => {
+      const hvad = el.dataset.fanegoer;
+      lukNoteFaneMenu();
+      if (hvad === 'vindue') popUdNote({ id });
+      else if (hvad === 'luk') lukNoteFane(id);
+      else if (hvad === 'andre') lukAndreNoteFaner(id);
+    });
+  });
+  const f = host.querySelector('button');
+  if (f) f.focus({ preventScroll: true });
+
+  const udenfor = (e) => { if (!host.contains(e.target)) lukNoteFaneMenu(); };
+  const tast = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); lukNoteFaneMenu(); } };
+  const vaek = () => lukNoteFaneMenu();
+  // setTimeout, så det højreklik, der ÅBNEDE menuen, ikke lukker den igen.
+  setTimeout(() => {
+    if (!host.isConnected) return;
+    document.addEventListener('mousedown', udenfor, true);
+    document.addEventListener('contextmenu', udenfor, true);
+  }, 0);
+  document.addEventListener('keydown', tast, true);
+  window.addEventListener('blur', vaek);
+  window.addEventListener('resize', vaek);
+  window.addEventListener('scroll', vaek, true);
+  host._ryd = () => {
+    document.removeEventListener('mousedown', udenfor, true);
+    document.removeEventListener('contextmenu', udenfor, true);
+    document.removeEventListener('keydown', tast, true);
+    window.removeEventListener('blur', vaek);
+    window.removeEventListener('resize', vaek);
+    window.removeEventListener('scroll', vaek, true);
+  };
+}
+
+function lukNoteFaneMenu() {
+  const m = document.getElementById('noteFaneMenu');
+  if (!m) return;
+  if (m._ryd) m._ryd();
+  m.remove();
+}
+
+/** Luk alle faner undtagen `id` - og gå til den, hvis man stod i en anden. */
+function lukAndreNoteFaner(id) {
+  noteFaner.liste = noteFaner.liste.filter((t) => t.id === id);
+  if (noteFaner.aktiv !== id) noteFaner.aktiv = noteFaner.aktiv ? id : null;
+  gemNoteFaner();
+  if (state.view === 'note' && state.openNote !== id) aabnNote(id);
+  else tegnNoteFaner();
 }
 
 /* ------------------------------------------- ⌘-klik og midterklik overalt */
@@ -6130,7 +6229,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 102;
+const APP_VERSION = 103;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er

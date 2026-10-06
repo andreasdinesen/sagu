@@ -179,6 +179,12 @@ const GENVEJE = [
     kunVist: true,
   },
   {
+    tast: '', vis: 'Right-click',
+    hvad: 'On a tab in the bar above the search field: open the note in its own window, '
+      + 'close the tab or close the other tabs',
+    kunVist: true,
+  },
+  {
     tast: 'Escape', vis: 'Esc', hvad: 'Close what is open',
     // Escape håndteres af den enkelte rude, som skal lukkes — hver rude
     // kender sin egen lukning. Den står her, fordi den skal STÅ i

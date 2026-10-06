@@ -3699,6 +3699,8 @@ body.fokus .topbar { position: static; }
   transition: background .12s, color .12s, border-color .12s;
 }
 .notefane:hover { background: var(--card-hover); color: var(--text); }
+/* Højrekliksmenuen på en fane: ved musen, i <body> (se visNoteFaneMenu). */
+.usermenu.fanemenu { position: fixed; bottom: auto; right: auto; min-width: 220px; }
 /* Den, man står i: et kort, som søgefeltet under den. */
 .notefane.vises {
   background: var(--card);

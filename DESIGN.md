@@ -4517,3 +4517,14 @@ den: omdøbes den, er den en almindelig bog, og næste quicknote laver en ny Qui
   midterklik på et link til en note. Før stod det i én linje — »⌘-click, men i træet
   ⌥-click« — og svaret var ikke til at finde. Listen tegnes af `GENVEJE`, så »How to
   write« viser det samme.
+
+## 61 · Højreklik på en fane (2026-10-06)
+
+»kan du gøre så man kan højre klikke på en note i top notemenuen og poppe den ud i nyt
+vindue?« Et højreklik på en fane åbner `visNoteFaneMenu` (p15_faner.js): »Open in its own
+window« (`popUdNote` — samme vinduesnavn pr. note, så den samme note kun får ét
+sidevindue), »Close tab« og »Close other tabs«. Menuen hænger i `<body>` med
+`position: fixed` ved musen og klemmes ind i vinduet, fordi bjælken har `overflow-x: auto`
+og ville skære en menu inde i sig. Den lukker ved klik udenfor, Escape, rul, ny størrelse
+og når vinduet mister fokus. Fanen bliver stående efter pop-ud: en fane er et bogmærke,
+ikke en editor. Klikhandleren er synkron, så `window.open` ikke bliver blokeret.
