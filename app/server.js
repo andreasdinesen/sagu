@@ -2925,13 +2925,18 @@ function hentNotesboeger(userId) {
    * De stjernede foerst - i den raekkefoelge, de i forvejen havde. Sorteringen
    * ligger HER og ikke i sidebaren, saa flyt-ruden, soegefeltet og MCP'en
    * ser den samme liste som traeet.
+   *
+   * Og allerfoerst »Quicknotes« (Andreas, 2026-10-06): bogen, quicknoterne
+   * (⌘⌥N) lander i, skal altid staa oeverst - ogsaa over de stjernede. Den
+   * findes paa NAVNET, som quicknoten selv finder den (`QUICKNOTE_BOG` i
+   * p12) - et skjult id kunne pege paa en bog, der hedder noget andet nu.
    */
   return db.prepare(`
     SELECT b.id, b.name, b.icon, b.seq, b.archived_at, b.starred_at, b.created_at, b.updated_at,
            EXISTS (SELECT 1 FROM shares s
                     WHERE s.notebook_id = b.id AND s.revoked_at IS NULL) AS udgivet
       FROM notebooks b WHERE b.user_id = ? AND b.deleted_at IS NULL
-     ORDER BY (b.starred_at IS NULL), b.seq, b.name`).all(userId)
+     ORDER BY (lower(trim(b.name)) <> 'quicknotes'), (b.starred_at IS NULL), b.seq, b.name`).all(userId)
     .map((b) => Object.assign({}, b,
       { published: !!b.udgivet, starred: !!b.starred_at, udgivet: undefined }));
 }

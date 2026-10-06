@@ -4497,3 +4497,11 @@ samme tegn, og ingen knap, man kan se.
   notesbogen Quicknotes (laves, hvis den mangler), markøren klar i teksten.
 - Genvejslisterne må bryde om (`.genvejtabel`): `.tablewrap` giver tabeller
   `min-width: max-content`, rigtigt for data og forkert for en liste med sætninger.
+
+## 59 · Quicknotes står altid øverst (2026-10-06)
+
+Notesbogen »Quicknotes«, som ⌘⌥N lægger quicknoterne i, står nu øverst i alle lister
+over notesbøger — også over de stjernede. Sorteringen ligger i `hentNotesboeger()` på
+serveren, så sidebaren, flyt-ruden, søgefeltet og MCP'en ser den samme rækkefølge. Bogen
+findes på NAVNET (store/små bogstaver er ligegyldige), præcis som quicknoten selv finder
+den: omdøbes den, er den en almindelig bog, og næste quicknote laver en ny Quicknotes.
