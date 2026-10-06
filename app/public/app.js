@@ -2879,8 +2879,15 @@ const GENVEJE = [
     gør: () => opretOgAaben({}),
   },
   {
-    tast: 't', vis: 'T', hvad: 'Today’s note',
-    gør: () => aabnDagensNote(),
+    /*
+     * T er en quicknote nu - ikke dagens note (Andreas, 2026-10-06: »kan du
+     * goere saa quicknote overtager, naar der trykkes t eller man trykker paa
+     * Today's note i menuen?«). Samme handling som ⌘⌥N; T er bare den, man
+     * naar, naar man ikke staar i et skrivefelt.
+     */
+    tast: 't', vis: 'T',
+    hvad: `Quick note — the same as ${modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N'}, when you are not typing`,
+    gør: () => opretQuicknote(),
   },
   {
     tast: 'e', vis: 'E', hvad: 'Edit the last paragraph',
@@ -2924,13 +2931,29 @@ const GENVEJE = [
     naar: () => noteFanerAktive() && noteFaner.liste.length > 0,
     gør: () => skiftNoteFane(1),
   },
+  /*
+   * Klik, ikke taster - men de skal STAA paa listen, ellers findes fanerne
+   * kun for den, der har laest koden. »Hvordan aabner jeg flere noter oppe i
+   * notebaren?« (Andreas, 2026-10-06): én linje, der sagde »⌘-click, men i
+   * traeet ⌥-click«, var for tæt at finde svaret i. Nu én linje pr. sted.
+   * Det hele haandteres af ÉN lytter i p15 (`noteMaalFraKlik`).
+   */
   {
-    // Et klik, ikke en tast - men den skal STAA paa listen, ellers findes
-    // fanerne kun for den, der har laest koden.
+    tast: '', vis: `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click`,
+    hvad: 'In the sidebar: open the note in a new tab (middle-click does the same). '
+      + `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click there selects several notes instead`,
+    kunVist: true,
+  },
+  {
+    tast: '', vis: modTast() === '\u2318' ? '\u2318\u21b5' : 'Ctrl+Enter',
+    hvad: 'In the search field: open the highlighted result in a new tab — '
+      + `or ${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click the result`,
+    kunVist: true,
+  },
+  {
     tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`,
-    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree, and on the '
-      + 'blocks of a note, it selects instead — use '
-      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click in the tree to open a tab`,
+    hvad: 'On a link to another note, a favourite or a recent note: open it in a new tab '
+      + '(middle-click does the same). A plain click opens it in the tab you are in',
     kunVist: true,
   },
   {
@@ -6107,7 +6130,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 101;
+const APP_VERSION = 102;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -10397,7 +10420,7 @@ function traeHtml() {
   })()}
       <div class="tree-actions">
         <button class="btn ghost" id="nyNoteTop">${icon('plus', 14)} New note</button>
-        <button class="btn ghost" id="dagensNote">${icon('kalender', 14)} Today's note</button>
+        <button class="btn ghost" id="dagensNote" title="A new quick note in Quicknotes (T)">${icon('kalender', 14)} Quick note</button>
         <button class="btn ghost" id="fraSkabelon">${icon('skabelon', 14)} From template</button>
         <button class="btn ghost" id="nyBogTop">${icon('book', 14)} New notebook</button>
       </div>
@@ -10833,7 +10856,8 @@ function bindTrae() {
   const nyN = document.getElementById('nyNoteTop');
   if (nyN) nyN.addEventListener('click', () => opretOgAaben({}));
   const dagens = document.getElementById('dagensNote');
-  if (dagens) dagens.addEventListener('click', aabnDagensNote);
+  // »Today's note« er blevet til en quicknote (v102) - samme som T og ⌘⌥N.
+  if (dagens) dagens.addEventListener('click', () => opretQuicknote());
 
   const skab = document.getElementById('fraSkabelon');
   if (skab) {
@@ -16306,23 +16330,6 @@ const SKABELONER = [
       '## Tasks', '', '- [ ] ', ''].join('\n'),
   },
 ];
-
-/**
- * Dagens note.
- *
- * Én tast aabner dagens note - »den vane, der faar en second brain til at
- * blive brugt frem for at blive sat op« (SAGU-PLAN §8). Findes den, aabnes
- * den; ellers oprettes den. Titlen er datoen, saa den kan findes igen.
- */
-async function aabnDagensNote() {
-  const i_dag = new Date();
-  const iso = `${i_dag.getFullYear()}-${String(i_dag.getMonth() + 1).padStart(2, '0')}-${String(i_dag.getDate()).padStart(2, '0')}`;
-  const titel = iso;
-  const fundet = (state.tree || []).find((n) => n.title === titel);
-  if (fundet) { await aabnNote(fundet.id); return; }
-  const dag = i_dag.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  await opretOgAaben({ title: titel, body: `# ${dag}\n\n` });
-}
 
 async function opretFraSkabelon(id) {
   const s = SKABELONER.find((x) => x.id === id);

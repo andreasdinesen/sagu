@@ -401,7 +401,7 @@ function traeHtml() {
   })()}
       <div class="tree-actions">
         <button class="btn ghost" id="nyNoteTop">${icon('plus', 14)} New note</button>
-        <button class="btn ghost" id="dagensNote">${icon('kalender', 14)} Today's note</button>
+        <button class="btn ghost" id="dagensNote" title="A new quick note in Quicknotes (T)">${icon('kalender', 14)} Quick note</button>
         <button class="btn ghost" id="fraSkabelon">${icon('skabelon', 14)} From template</button>
         <button class="btn ghost" id="nyBogTop">${icon('book', 14)} New notebook</button>
       </div>
@@ -837,7 +837,8 @@ function bindTrae() {
   const nyN = document.getElementById('nyNoteTop');
   if (nyN) nyN.addEventListener('click', () => opretOgAaben({}));
   const dagens = document.getElementById('dagensNote');
-  if (dagens) dagens.addEventListener('click', aabnDagensNote);
+  // »Today's note« er blevet til en quicknote (v102) - samme som T og ⌘⌥N.
+  if (dagens) dagens.addEventListener('click', () => opretQuicknote());
 
   const skab = document.getElementById('fraSkabelon');
   if (skab) {

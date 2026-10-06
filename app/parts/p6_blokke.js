@@ -789,23 +789,6 @@ const SKABELONER = [
   },
 ];
 
-/**
- * Dagens note.
- *
- * Én tast aabner dagens note - »den vane, der faar en second brain til at
- * blive brugt frem for at blive sat op« (SAGU-PLAN §8). Findes den, aabnes
- * den; ellers oprettes den. Titlen er datoen, saa den kan findes igen.
- */
-async function aabnDagensNote() {
-  const i_dag = new Date();
-  const iso = `${i_dag.getFullYear()}-${String(i_dag.getMonth() + 1).padStart(2, '0')}-${String(i_dag.getDate()).padStart(2, '0')}`;
-  const titel = iso;
-  const fundet = (state.tree || []).find((n) => n.title === titel);
-  if (fundet) { await aabnNote(fundet.id); return; }
-  const dag = i_dag.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  await opretOgAaben({ title: titel, body: `# ${dag}\n\n` });
-}
-
 async function opretFraSkabelon(id) {
   const s = SKABELONER.find((x) => x.id === id);
   if (!s) return;

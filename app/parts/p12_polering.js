@@ -101,8 +101,15 @@ const GENVEJE = [
     gør: () => opretOgAaben({}),
   },
   {
-    tast: 't', vis: 'T', hvad: 'Today’s note',
-    gør: () => aabnDagensNote(),
+    /*
+     * T er en quicknote nu - ikke dagens note (Andreas, 2026-10-06: »kan du
+     * goere saa quicknote overtager, naar der trykkes t eller man trykker paa
+     * Today's note i menuen?«). Samme handling som ⌘⌥N; T er bare den, man
+     * naar, naar man ikke staar i et skrivefelt.
+     */
+    tast: 't', vis: 'T',
+    hvad: `Quick note — the same as ${modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N'}, when you are not typing`,
+    gør: () => opretQuicknote(),
   },
   {
     tast: 'e', vis: 'E', hvad: 'Edit the last paragraph',
@@ -146,13 +153,29 @@ const GENVEJE = [
     naar: () => noteFanerAktive() && noteFaner.liste.length > 0,
     gør: () => skiftNoteFane(1),
   },
+  /*
+   * Klik, ikke taster - men de skal STAA paa listen, ellers findes fanerne
+   * kun for den, der har laest koden. »Hvordan aabner jeg flere noter oppe i
+   * notebaren?« (Andreas, 2026-10-06): én linje, der sagde »⌘-click, men i
+   * traeet ⌥-click«, var for tæt at finde svaret i. Nu én linje pr. sted.
+   * Det hele haandteres af ÉN lytter i p15 (`noteMaalFraKlik`).
+   */
   {
-    // Et klik, ikke en tast - men den skal STAA paa listen, ellers findes
-    // fanerne kun for den, der har laest koden.
+    tast: '', vis: `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click`,
+    hvad: 'In the sidebar: open the note in a new tab (middle-click does the same). '
+      + `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click there selects several notes instead`,
+    kunVist: true,
+  },
+  {
+    tast: '', vis: modTast() === '\u2318' ? '\u2318\u21b5' : 'Ctrl+Enter',
+    hvad: 'In the search field: open the highlighted result in a new tab — '
+      + `or ${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click the result`,
+    kunVist: true,
+  },
+  {
     tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`,
-    hvad: 'Open a note in a new tab (middle-click too). In the sidebar tree, and on the '
-      + 'blocks of a note, it selects instead — use '
-      + `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click in the tree to open a tab`,
+    hvad: 'On a link to another note, a favourite or a recent note: open it in a new tab '
+      + '(middle-click does the same). A plain click opens it in the tab you are in',
     kunVist: true,
   },
   {

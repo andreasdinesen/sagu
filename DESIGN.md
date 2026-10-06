@@ -4505,3 +4505,15 @@ over notesbøger — også over de stjernede. Sorteringen ligger i `hentNotesboe
 serveren, så sidebaren, flyt-ruden, søgefeltet og MCP'en ser den samme rækkefølge. Bogen
 findes på NAVNET (store/små bogstaver er ligegyldige), præcis som quicknoten selv finder
 den: omdøbes den, er den en almindelig bog, og næste quicknote laver en ny Quicknotes.
+
+## 60 · Quicknoten overtager T og »Today's note«; fanerne forklaret (2026-10-06)
+
+- **T og knappen i sidebaren laver en quicknote** — samme handling som ⌘⌥N. Knappen hedder
+  nu »Quick note«. Dagens note (`aabnDagensNote`, titlen = datoen) er fjernet fra fladen;
+  quicknoten har dato og klokkeslæt i titlen og sin egen bog, så den dækker samme behov
+  uden at blive én lang note pr. dag. Serverens `dagensNote` til capture-API'et er urørt.
+- **Fanerne har én linje pr. sted i genvejslisten** (»hvordan åbner jeg flere noter oppe i
+  notebaren?«): ⌥-klik/midterklik i sidebaren, ⌘↵ eller ⌘-klik i søgefeltet, ⌘-klik eller
+  midterklik på et link til en note. Før stod det i én linje — »⌘-click, men i træet
+  ⌥-click« — og svaret var ikke til at finde. Listen tegnes af `GENVEJE`, så »How to
+  write« viser det samme.
