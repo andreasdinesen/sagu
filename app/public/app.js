@@ -2863,7 +2863,15 @@ const GENVEJE = [
      */
     tast: 'n', kode: 'KeyN', modifikator: 'alt',
     vis: modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N',
-    hvad: 'Quick note — a new note in Quicknotes, from anywhere, even mid-sentence',
+    /*
+     * Beskrivelsen siger, hvad der SKER - ikke bare hvad den hedder. »Hvordan
+     * er det nu, jeg aabner en hurtig note?« (Andreas, 2026-10-06): en linje,
+     * der kun sagde »Quick note«, svarede ikke paa, hvor den lander, og hvad
+     * den hedder.
+     */
+    hvad: 'Quick note — a new note titled with today’s date and time, in the Quicknotes '
+      + 'notebook (made for you if it is missing), with the cursor ready in the text. '
+      + 'Works from anywhere, even while you are writing in another note.',
     gør: () => opretQuicknote(),
   },
   {
@@ -6099,7 +6107,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 98;
+const APP_VERSION = 99;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
