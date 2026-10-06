@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 103;
+const APP_VERSION = 104;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -348,6 +348,22 @@ function render() {
 
 /* --------------------------------------------------------------- gate */
 
+/* Hvad navnet betyder - samme forklaring som afsnittet Navnet i README'en, kort og
+   paa engelsk, fordi interfacet er engelsk. */
+function navnHtml() {
+  return `
+      <details class="gate-name">
+        <summary>Why “Sagu”?</summary>
+        <p><b>Sagu</b> is where things get written down, so they are not lost.</p>
+        <ul>
+        <li><b>saga</b>: Old Norse for “what is told”, from <i>segja</i>, to say.</li>
+        <li><b>Sága</b>: the Norse goddess who drinks with Odin every day at Sökkvabekkr, often linked with storytelling. Fitting for an app that runs as a rune on Yggdrasil.</li>
+        <li><b>sag</b>: Danish for a matter or a case. Each one gets its note.</li>
+        </ul>
+        <p>Its siblings are doda and tovo: four letters each, easy to type on a phone, no æ, ø or å.</p>
+      </details>`;
+}
+
 function gateHtml() {
   const setup = state.config.needsSetup;
   const opretter = setup || state.gateMode === 'register';
@@ -380,6 +396,7 @@ function gateHtml() {
       ${!setup && state.config.allowRegistration ? `
         <p class="gate-switch">${opretter ? 'Already have an account?' : 'No account yet?'}
           <button type="button" id="gateSwitch">${opretter ? 'Sign in' : 'Create one'}</button></p>` : ''}
+      ${navnHtml()}
     </div>
   </div>`;
 }

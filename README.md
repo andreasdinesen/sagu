@@ -13,6 +13,28 @@ offentlige sider, kollegaerne læser.
 sparsommelighed, men sikkerhedsvalget: uden afhængigheder findes der ingen
 forsyningskæde at holde patchet.
 
+## Navnet
+
+**Sagu** er fortællingens app. Navnet står på tre ben:
+
+- **saga**: oldnordisk for *det, der bliver fortalt*, af *segja*, at sige. En saga
+  er en historie, der er skrevet ned, så den ikke går tabt. Det er præcis, hvad et
+  notearkiv og en wiki gør.
+- **Sága**: i den nordiske mytologi er Sága gudinden, der bor i Søkkvabekk. Her
+  drikker hun og Odin hver dag af gyldne bægre (*Grímnismál*), og hun forbindes
+  ofte med fortællingerne. Det passer til en app, der kører som rune på Yggdrasil.
+- **sag**: på dansk er en sag noget, det handler om. En sag får sin note, og
+  noterne samles i notesbøger.
+
+Navnene doda, tovo og sagu hører sammen. De har fire bogstaver og er bygget som
+konsonant–vokal–konsonant–vokal. De er hurtige at taste
+på en telefon, lyder ens på dansk og engelsk og har ingen æ, ø eller å.
+Det er samme hensyn, der gør dodas interface engelsk. Sagu kom til som den
+tredje, for at erstatte Notion. Som en sjov detalje er *sagu* også det malajiske
+ord for sago, stivelsen fra sagopalmen.
+
+Den samme forklaring står kort på engelsk på login-siden under »Why “Sagu”?«.
+
 ## Hvad den kan
 
 | | |
@@ -179,6 +201,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **104** | **Hvorfor hedder den Sagu?** Under login-knappen står nu et lille link, *Why “Sagu”?*, der folder en kort forklaring på navnet ud. Det er et `<details>` uden JavaScript, så det står ikke i vejen for login. Den samme forklaring står i README'en under »Navnet«. |
 | **102** | **Quicknoten overtager T og »Today's note«; fanerne forklaret.** Tasten T og knappen i sidebaren (nu »Quick note«) laver en quicknote i Quicknotes — samme som ⌘⌥N; dagens note er fjernet fra fladen. Genvejslisten har én linje pr. sted, man åbner en ny fane: ⌥-klik/midterklik i sidebaren, ⌘↵ eller ⌘-klik i søgefeltet, ⌘-klik eller midterklik på et link til en note. |
 | **103** | **Højreklik på en fane i notebaren.** En lille menu ved musen: »Open in its own window« (popper noten ud i sit eget vindue, som knappen i notens hoved), »Close tab« og »Close other tabs«. Står også i genvejslisten. |
 | **101** | **Quicknotes står altid øverst.** Notesbogen, ⌘⌥N lægger quicknoterne i, står nu først i alle lister over notesbøger — også over de stjernede. Sorteringen ligger på serveren, så sidebaren, flyt-ruden, søgefeltet og MCP'en ser den samme rækkefølge; bogen findes på navnet, som quicknoten selv finder den. |
