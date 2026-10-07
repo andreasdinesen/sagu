@@ -314,7 +314,7 @@ test('et lille arkiv: database -> notesbog, raekker -> undersider', async () => 
 
 test('GENIMPORT af samme arkiv laver INGEN dubletter', async () => {
   // »Importen kan koeres igen uden at lave dubletter (matcher paa Notion-ID)«
-  // (SAGU-PLAN F5). Titlen duer ikke som noegle - 12 titler er dubletter i
+  // (F5). Titlen duer ikke som noegle - 12 titler er dubletter i
   // Andreas' rigtige eksport, én af dem seks gange.
   const zipSti = byggArkiv({
     'Eksport/Side aaa00000000000000000000000000001.md': '# En side\n\nCreated: March 1, 2023 9:00 AM\n\nfoerste udgave',

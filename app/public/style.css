@@ -2642,7 +2642,7 @@ body.wiki {
 @media (hover: none) { .tree-del { opacity: 1; } }
 
 
-/* Forsidens store soegefelt. Det er wikiens vigtigste funktion (SAGU-PLAN §5:
+/* Forsidens store soegefelt. Det er wikiens vigtigste funktion (docs/regler/wiki.md:
    »Notions wiki-soegning finder reelt kun overskrifter«), saa det skal fylde
    noget paa den side, folk lander paa. */
 .wsoegstor { display: flex; gap: 10px; margin: 22px 0 14px; }

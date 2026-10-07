@@ -296,7 +296,7 @@ const MIGRATIONS = [
      * saa kan indekset genopbygges uden at roere notes-tabellen.
      *
      * Kolonnerne er de fire, wikiens soegning vaegter i den raekkefoelge
-     * (SAGU-PLAN §5): titel, overskrifter, brødtekst, maerker+egenskaber.
+     * (docs/regler/wiki.md): titel, overskrifter, brødtekst, maerker+egenskaber.
      * user_id staar med som UINDEKSERET kolonne - den skal filtreres paa,
      * ikke soeges i.
      *
@@ -318,7 +318,7 @@ const MIGRATIONS = [
       );
 
       -- Hvad folk soegte efter uden at finde noget. Kun ordet, aldrig hvem
-      -- (SAGU-PLAN §5). Den bedste indholdsplan en wiki kan faa.
+      -- (docs/regler/wiki.md). Den bedste indholdsplan en wiki kan faa.
       CREATE TABLE search_miss (
         term  TEXT NOT NULL,
         scope TEXT NOT NULL DEFAULT '',
@@ -496,7 +496,7 @@ const MIGRATIONS = [
      *    taber det, nogen skrev, er ikke et arkiv.
      *  - **`kind`** skiller en kommentar fra et RETTELSESFORSLAG. Samme
      *    tabel, samme moderationskoe, samme sikkerhedsregler - men de to
-     *    betyder noget forskelligt for den, der laeser dem (SAGU-PLAN §5).
+     *    betyder noget forskelligt for den, der laeser dem (docs/regler/wiki.md).
      *
      * Traaden er ÉT niveau. Notion goer det samme, og en dyb traad i en
      * moderationskoe er ulaeselig. `svar_paa` peger derfor altid paa en
@@ -528,7 +528,7 @@ const MIGRATIONS = [
       CREATE INDEX comments_koe ON comments(status) WHERE deleted_at IS NULL AND status = 'pending';
 
       -- Moderation er TIL som standard: en offentlig kommentarfunktion uden
-      -- koe er en spam-kanal med ejerens navn paa (SAGU-PLAN §6, R6).
+      -- koe er en spam-kanal med ejerens navn paa (risiko R6: offentlig spam).
       ALTER TABLE shares ADD COLUMN moderate_comments INTEGER NOT NULL DEFAULT 1;
     `);
   },
@@ -1412,7 +1412,7 @@ function serveStatic(req, res, urlPath) {
  * skal passe til opgaven, ikke til den naermeste kasse, der er stor nok.
  *
  * `write` er stadig forbeholdt `full`: en soesterapp maa lave en note, ikke
- * lave om paa en (SAGU-PLAN F8's accept).
+ * lave om paa en (F8's accept).
  */
 const SCOPE_TILLADER = {
   capture: new Set(['capture']),
@@ -2978,7 +2978,7 @@ function opretNotesbog(userId, navn, ikon) {
  *
  * Overskrifterne trkkes ud som en egen kolonne, saa de kan vaegtes hoejere
  * end broedteksten - det er halvdelen af svaret paa "Notions wiki-soegning
- * finder reelt kun overskrifter" (SAGU-PLAN §5).
+ * finder reelt kun overskrifter" (docs/regler/wiki.md).
  */
 /**
  * Danske bogstaver, som FTS5 ikke folder selv.
@@ -3049,7 +3049,7 @@ function genopbygIndeks() {
  * kolonnefiltre betyder noget. Brugerens ord er IKKE et program, saa hvert
  * ord pakkes i anfoerselstegn (som gør det til en frase-literal) og faar en
  * praefiks-stjerne udenfor. `drif` finder saa `drift` - en skrivefejl maa
- * ikke vaere en blindgyde (SAGU-PLAN §5).
+ * ikke vaere en blindgyde (docs/regler/wiki.md).
  */
 function ftsUdtryk(raa) {
   const ord = String(raa || '').toLowerCase()
@@ -3087,7 +3087,7 @@ function ftsUdtrykFor(t) {
  * Hvilket AFSNIT staar traefferen i?
  *
  * »Et link, der hopper til afsnittet - ikke til toppen af en lang side. Det
- * alene er forskellen paa Notions« (SAGU-PLAN §5). Vi finder foerste
+ * alene er forskellen paa Notions« (docs/regler/wiki.md). Vi finder foerste
  * forekomst af et af ordene og gaar OP til naermeste overskrift.
  *
  * Kun for de ~30 traeffere, der faktisk vises - ikke for hele datasaettet.
@@ -4506,7 +4506,7 @@ const ROUTES = {
   /*
    * Det, folk soegte efter uden at finde noget.
    *
-   * »Den bedste indholdsplan, en wiki kan faa« (SAGU-PLAN §5). Kun ordet
+   * »Den bedste indholdsplan, en wiki kan faa« (docs/regler/wiki.md). Kun ordet
    * gemmes, aldrig hvem - saa listen kan vises uden at vaere en logbog over
    * kollegaernes soegninger.
    */
@@ -4519,7 +4519,7 @@ const ROUTES = {
      * Uden den blandes ejerens egne soegninger med kollegaernes, og saa er
      * listen ubrugelig som indholdsplan: man kan ikke se, om det var én selv,
      * der ledte forgaeves. Scope er udgivelsens id - stadig kun ORDET, aldrig
-     * hvem der skrev det (SAGU-PLAN §5).
+     * hvem der skrev det (docs/regler/wiki.md).
      */
     const scope = ctx.query.get('scope');
     // Udgivelsen skal vaere ens egen. Ellers kunne man laese, hvad
@@ -5641,8 +5641,8 @@ const MOENSTRE = [
          * En fejlet forbindelse er IKKE en fejlet gemning.
          *
          * Statuskoden skal kunne skelnes af frontenden, saa den kan vise en
-         * chip med en paen besked frem for »kunne ikke gemme« - accepten i
-         * SAGU-PLAN F8 handler om netop det.
+         * chip med en paen besked frem for »kunne ikke gemme« - F8's
+         * accept handlede om netop det.
          */
         apiFejl(res, svar.kode === 'not_connected' ? 409 : 502, svar.kode, svar.besked);
         return;
@@ -6672,7 +6672,7 @@ function brugtPlads(userId) {
  * Enten sin egen - eller en, der haenger paa en note, han maa se. Uden det
  * sidste ville en delt side vise huller, hvor billederne skulle vaere: teksten
  * kom med, filerne gjorde ikke, og intet fejlede hoejt. Det er derfor
- * accepten i SAGU-PLAN naevner vedhaeftningerne ved navn.
+ * F11's accept naevner vedhaeftningerne ved navn.
  *
  * En LOES fil - en uden note - foelger stadig kun sin ejer. Der er ikke noget
  * at arve adgang fra.
@@ -7479,7 +7479,7 @@ const wiki = wikiModul.opret({
     });
   },
 
-  /** Kun tal, aldrig personer (SAGU-PLAN §5). */
+  /** Kun tal, aldrig personer (docs/regler/wiki.md). */
   taelVisning(share, noteId) {
     try {
       db.prepare('UPDATE shares SET views = views + 1 WHERE id = ?').run(share.id);

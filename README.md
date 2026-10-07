@@ -193,9 +193,9 @@ tests/             497 prøver
   tilbagekald kun skal huskes ét sted.
 - **Interfacet er engelsk; koden, kommentarerne og dokumenterne er danske.**
 
-Beslutningerne og deres begrundelser står i [`DESIGN.md`](DESIGN.md), planen i
-[`SAGU-PLAN.md`](SAGU-PLAN.md), kravene i [`docs/HANDOVER.md`](docs/HANDOVER.md)
-og reglerne i [`CLAUDE.md`](CLAUDE.md).
+Beslutningerne og deres begrundelser står i [`DESIGN.md`](DESIGN.md), kravene i
+[`docs/regler/krav-og-scope.md`](docs/regler/krav-og-scope.md) og reglerne i
+[`CLAUDE.md`](CLAUDE.md) og [`docs/regler/`](docs/regler/).
 
 ## Versionshistorik
 

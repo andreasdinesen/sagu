@@ -1,8 +1,8 @@
 # Sagu — trufne beslutninger
 
 > **Alle beslutninger bor her.** Ændres noget, rettes det **i denne fil først**
-> og derefter i koden. Kravkilden er `docs/HANDOVER.md`; faseoversigten er
-> `SAGU-PLAN.md`; de fælles lærepenge er `~/ClaudeMacBook/RUNE-ERFARINGER.md`.
+> og derefter i koden. Kravene og det, Sagu ikke er, står i
+> `docs/regler/krav-og-scope.md`; de fælles lærepenge er `~/ClaudeMacBook/RUNE-ERFARINGER.md`.
 
 Oprettet i F0, 2026-08-20.
 
@@ -257,7 +257,7 @@ søgningen bygges på en egen tokentabel fra dag ét — en helt anden kodevej.
   om `ä`, og tyrkisk har et prikløst `ı`, som naiv småskrivning ødelægger.
   Skal Sagu rumme et andet sprog, er det en ny kortlægning — ikke en udvidelse
   af denne.
-- **Fire kolonner, vægtet i den rækkefølge SAGU-PLAN §5 kræver:**
+- **Fire kolonner, vægtet i den rækkefølge `docs/regler/wiki.md` kræver:**
   `title` 10,0 · `headings` 5,0 · `meta` (mærker + egenskaber) 3,0 · `body` 1,0
   via `bm25()`. At overskrifter har deres egen kolonne er halvdelen af svaret
   på »Notions wiki-søgning finder reelt kun overskrifter«.
@@ -437,7 +437,7 @@ gangen.
 
 - **`body_md` kommer aldrig med i et listesvar.** Lister får titel, mærker og
   tællere. Kokkeris login-svar på 247,9 MB kom af netop den slags.
-  **Søgeuddraget er undtagelsen med vilje:** SAGU-PLAN §5 kræver et uddrag med
+  **Søgeuddraget er undtagelsen med vilje:** docs/regler/wiki.md kræver et uddrag med
   fremhævning, og det citerer nødvendigvis brødteksten. Grænsen går ved, om
   svaret vokser med notens størrelse — derfor **måles** uddraget i stedet for at
   forbydes: en note på 200 KB giver et søgesvar under 5 KB.
@@ -461,8 +461,8 @@ aldrig sin egen besked.
 
 `PATCH` tager et valgfrit `ifUpdatedAt`. Passer det ikke, svares **409 med det
 aktuelle stempel** — aldrig en tavs overskrivning. Det er billigere end
-realtids-samredigering og dækker behovet (SAGU-PLAN §7 fraråder CRDT uden
-pakker). Versionshistorik skrives fra dag ét, uden UI: en wiki uden fortrydelse
+realtids-samredigering og dækker behovet (`docs/regler/krav-og-scope.md`
+fraråder CRDT uden pakker). Versionshistorik skrives fra dag ét, uden UI: en wiki uden fortrydelse
 er farlig.
 
 ### Frontenden
@@ -847,7 +847,7 @@ trigram-tokenizer (målt til stede i Node's FTS5) — ikke en større scanning.
 ### Hop til afsnittet
 
 »Et link, der hopper til afsnittet — ikke til toppen af en lang side. Det alene
-er forskellen på Notions« (SAGU-PLAN §5). Serveren finder første forekomst af
+er forskellen på Notions« (docs/regler/wiki.md). Serveren finder første forekomst af
 et af ordene, går op til nærmeste overskrift og returnerer **samme id, som
 rendereren giver den overskrift** — inklusive `-2`-suffikset ved to ens
 overskrifter. Peger ankeret et andet sted hen, lander hoppet på toppen, altså
@@ -1545,7 +1545,7 @@ App-koden når kun tre værter: `github.com`, `notion.so` og `dr.dk`.
   intet om indholdet, men det sagde, hvad arbejdspladsen bruger — og et
   eksempel skal vise sin POINTE, ikke hvor det kom fra. Fikstur og eksempler er
   nu neutrale (`backup-nat.log`, `logAnonymizer`, `Haandbog`).
-- **De interne dokumenter** (`DESIGN.md`, `SAGU-PLAN.md`, `docs/`, `START.md`,
+- **De interne dokumenter** (`DESIGN.md`, plan- og startfilerne, `docs/`,
   `CLAUDE.md`). De er skrevet til den næste, der arbejder på appen, og de er
   det bedste, repoet har at forklare sig med — men de fortæller også, hvordan
   der arbejdes, og hvad der er gået galt undervejs. **Anbefalingen er at lade

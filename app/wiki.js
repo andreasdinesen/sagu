@@ -540,7 +540,7 @@ ${o.krop}
      * wiki-forside skal vaere: soeg efter noget, eller se hvad der er nyt.
      */
     // De fem senest rørte. En wiki doer af foraeldet indhold, ikke af
-    // manglende indhold (SAGU-PLAN §5) - saa det, der ER friskt, skal staa
+    // manglende indhold (docs/regler/wiki.md) - saa det, der ER friskt, skal staa
     // paa forsiden.
     const nyeste = raekke.slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
     const link = (n) => `${rod}/${kort.get(n.id)}`;

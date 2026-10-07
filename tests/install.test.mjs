@@ -66,8 +66,8 @@ function byggArkiv(dir, { medApp = true, praefiks = 'sagu-1' } = {}) {
   const rod = path.join(scene, praefiks);
   mkdirSync(rod, { recursive: true });
   if (medApp) cpSync(path.join(ROD, 'app'), path.join(rod, 'app'), { recursive: true });
-  mkdirSync(path.join(rod, 'docs'), { recursive: true });
-  writeFileSync(path.join(rod, 'docs', 'HANDOVER.md'), '# krav\n');
+  mkdirSync(path.join(rod, 'docs', 'regler'), { recursive: true });
+  writeFileSync(path.join(rod, 'docs', 'regler', 'test.md'), '# regler\n');
   writeFileSync(path.join(rod, 'README.md'), '# sagu\n');
   // pax_global_header som en rigtig post foerst i arkivet.
   writeFileSync(path.join(scene, 'pax_global_header'), '52 comment=0000000000000000\n');

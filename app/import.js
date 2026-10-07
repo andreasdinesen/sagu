@@ -2,7 +2,7 @@
 /*
  * Sagu - import af en Notion-eksport.
  *
- * »Fasen, der afgør om Sagu bliver taget i brug« (SAGU-PLAN F5).
+ * »Fasen, der afgør om Sagu bliver taget i brug« (F5).
  *
  * Det koerer som et BAGGRUNDSJOB paa serveren, ikke i frontenden: 278 sider og
  * 249 filer er minutters arbejde, og en loekke i browseren doer med fanen
@@ -550,7 +550,7 @@ function opret(srv) {
    * Databasens forside: en note med en sorterbar tabel over raekkerne.
    *
    * »Databasens forside genereres som en note med en sorterbar tabel over
-   * raekkerne. Det er præcis det, Andreas bad om« (SAGU-PLAN F5).
+   * raekkerne. Det er præcis det, Andreas bad om« (F5).
    */
   function byggForside(userId, d, csv, bogId, s, noteEfterExtId, rigtigTitel) {
     if (!csv.length) return;

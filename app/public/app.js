@@ -2126,7 +2126,7 @@
  * praecis det samme. Ligger tolkningen to steder, driver de fra hinanden, og
  * feltet begynder at love noget, resultatet ikke holder.
  *
- * Syntaksen (SAGU-PLAN §5):
+ * Syntaksen (docs/regler/wiki.md):
  *
  *   tag:drift          kun noter med maerket
  *   in:Hjorten         kun i den notesbog eller under den side
@@ -15616,7 +15616,7 @@ async function vaelgRaekke(i) {
     ryd();
     await aabnNote(r.id);
     // Hop til det AFSNIT, traefferen staar i - ikke til toppen af en lang
-    // side. Det alene er forskellen paa Notions wiki-soegning (SAGU-PLAN §5).
+    // side. Det alene er forskellen paa Notions wiki-soegning (docs/regler/wiki.md).
     if (r.afsnit) {
       setTimeout(() => {
         const h = document.getElementById(r.afsnit);
@@ -18509,7 +18509,7 @@ async function visUdgivPanel(maal) {
    *
    * Loggen har ligget der siden F2, men kunne ikke SES nogen steder - og en
    * funktion, man ikke kan se, bliver meldt som manglende (tovo v8). Det er
-   * samtidig den bedste indholdsplan en wiki kan faa (SAGU-PLAN §5): listen
+   * samtidig den bedste indholdsplan en wiki kan faa (docs/regler/wiki.md): listen
    * siger, hvilke sider der mangler.
    */
   let forgaeves = [];

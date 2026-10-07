@@ -788,7 +788,7 @@ async function vaelgRaekke(i) {
     ryd();
     await aabnNote(r.id);
     // Hop til det AFSNIT, traefferen staar i - ikke til toppen af en lang
-    // side. Det alene er forskellen paa Notions wiki-soegning (SAGU-PLAN §5).
+    // side. Det alene er forskellen paa Notions wiki-soegning (docs/regler/wiki.md).
     if (r.afsnit) {
       setTimeout(() => {
         const h = document.getElementById(r.afsnit);

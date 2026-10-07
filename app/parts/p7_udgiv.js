@@ -100,7 +100,7 @@ async function visUdgivPanel(maal) {
    *
    * Loggen har ligget der siden F2, men kunne ikke SES nogen steder - og en
    * funktion, man ikke kan se, bliver meldt som manglende (tovo v8). Det er
-   * samtidig den bedste indholdsplan en wiki kan faa (SAGU-PLAN §5): listen
+   * samtidig den bedste indholdsplan en wiki kan faa (docs/regler/wiki.md): listen
    * siger, hvilke sider der mangler.
    */
   let forgaeves = [];

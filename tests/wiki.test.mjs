@@ -543,7 +543,7 @@ test('aendringsfeedet og Atom findes, og daekker kun det udgivne', async () => {
 test('det, laeserne ledte forgaeves efter, kan ses - og kun af ejeren', async () => {
   /*
    * »Listen over det, folk soegte efter uden at finde noget, er den bedste
-   * indholdsplan en wiki kan faa« (SAGU-PLAN §5). Den blev logget allerede i
+   * indholdsplan en wiki kan faa« (docs/regler/wiki.md). Den blev logget allerede i
    * F2 - men kunne ikke ses nogen steder, og en funktion, man ikke kan se,
    * findes ikke for brugeren (RUNE-ERFARINGER, tovo v8).
    */

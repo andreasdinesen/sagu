@@ -285,7 +285,7 @@ test('brugerens ord er ikke et FTS5-PROGRAM', async () => {
 test('body_md kommer ALDRIG med i et listesvar', async () => {
   // Kokkeris login-svar paa 247,9 MB kom af netop den slags (CLAUDE.md).
   //
-  // Reglen gaelder den FULDE krop. Et soegeuddrag er noget andet: SAGU-PLAN §5
+  // Reglen gaelder den FULDE krop. Et soegeuddrag er noget andet: docs/regler/wiki.md
   // KRAEVER et uddrag med fremhaevning, og det citerer noedvendigvis
   // broedteksten. Graensen gaar ved, om svaret vokser med notens stoerrelse -
   // derfor maales uddraget, i stedet for at forbyde det.

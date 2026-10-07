@@ -1,7 +1,7 @@
 # Sagu — projektregler
 
 Noteapp og wiki. Yggdrasil-rune. **Flerbruger.** Erstatter notion.so.
-Søskende til doda (opgaver) og tovo (tid) — bundet sammen med **links, aldrig synkronisering**.
+Søskende til doda (opgaver), tovo (tid) og qlk (kortlinks) — bundet sammen med **links, aldrig synkronisering**.
 
 > Denne fil rummer kun det, der gælder ved hver eneste ændring. De øvrige
 > projektregler ligger i `docs/regler/` og er lige så ufravigelige — slå op dér,
@@ -11,15 +11,13 @@ Søskende til doda (opgaver) og tovo (tid) — bundet sammen med **links, aldrig
 
 1. `~/ClaudeMacBook/RUNE-ERFARINGER.md` — hele filen. **Læs den FØR og EFTER** et stykke
    arbejde. Ny generel lærdom skrives nederst under »Log«, og repoet committes+pushes.
-2. `SAGU-PLAN.md` — fasen du er i gang med, og status.
-3. `docs/HANDOVER.md` — kravkilden.
-4. `DESIGN.md` — alle trufne beslutninger. Ændres noget, rettes det **her først**.
-5. `docs/OVERDRAGELSE.md` — hvor arbejdet står lige nu, og hvad der venter på Andreas.
+2. `DESIGN.md` — alle trufne beslutninger. Ændres noget, rettes det **her først**.
+3. `docs/regler/krav-og-scope.md` — kravene, de bærende valg og det, Sagu bevidst ikke er.
 
 Ved projektstart læses også kildekoden i `~/ClaudeMacBook/doda`: `app/parts/p2_omni.js`
 (søgefeltet), `app/mcp.js` + `app/oauth.js` (MCP og connector), `app/notion.js` (den
 integration, Sagu afløser), `app/server.js` omkring `link_url` (m10 — feltet er bevidst
-generisk) og `app/public/index.html` (CSS). **Sagu skal føles som doda.**
+generisk) og `app/public/style.css`. **Sagu skal føles som doda.**
 
 ## Ufravigeligt ved hver ændring
 
@@ -74,10 +72,12 @@ hver fase** — se `docs/regler/test.md`.
 
 | Fil | Læs den når |
 |---|---|
+| `docs/regler/krav-og-scope.md` | Du tilføjer en funktion eller rører et bærende valg — og før du kalder noget »manglende«. |
+| `docs/regler/wiki.md` | Du rører wikiens søgning, forside, feed eller sidevisning (»bedre end Notions«). |
 | `docs/regler/adgang.md` | Du rører adgang, deling, ejerskab, udgivelse, wiki-ruter, nøgler eller OAuth. |
 | `docs/regler/flade.md` | Du rører editoren, navigationen, markeringer, genveje eller en knap. |
 | `docs/regler/offline.md` | Du rører service workeren, cachen eller offline-køen. |
-| `docs/regler/indhold.md` | Du rører markdown, kommentarer, doda- eller qlk-broen, capture-API'et eller guiden. |
-| `docs/regler/github-og-import.md` | Du rører GitHub-integrationen, wiki-cachen, søgningen eller Notion-importen. |
+| `docs/regler/indhold.md` | Du rører markdown, vedhæftninger, kommentarer, doda- eller qlk-broen, capture-API'et eller guiden. |
+| `docs/regler/github-og-import.md` | Du rører GitHub-integrationen, wiki-cachen, søgeindekset eller Notion-importen. |
 | `docs/regler/faldgruber.md` | Før en større ændring — fælder, der allerede har kostet tid i de andre runer. |
 | `docs/regler/test.md` | Du skriver eller kører tests. |

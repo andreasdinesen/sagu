@@ -6,7 +6,7 @@
  * praecis det samme. Ligger tolkningen to steder, driver de fra hinanden, og
  * feltet begynder at love noget, resultatet ikke holder.
  *
- * Syntaksen (SAGU-PLAN §5):
+ * Syntaksen (docs/regler/wiki.md):
  *
  *   tag:drift          kun noter med maerket
  *   in:Hjorten         kun i den notesbog eller under den side

@@ -65,7 +65,7 @@ function opret(srv) {
    *
    * Et netvaerksbrud og et afslag er to forskellige ting, og de skal kunne
    * skelnes af den, der kalder: en fejlet forbindelse skal vises som en chip
-   * med en paen besked, ikke som en fejlet gemning (SAGU-PLAN F8's accept).
+   * med en paen besked, ikke som en fejlet gemning (F8's accept).
    */
   async function kald(userId, metode, sti, krop) {
     const { url, key } = opsaetning(userId);
