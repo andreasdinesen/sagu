@@ -201,6 +201,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **109** | **Markdown-mærket i stedet for »MD«.** Knappen i værktøjslinjen, der skifter blokken til markdown, viser nu Markdown-mærket (en ramme med M og en pil ned) i streg-stil som de andre ikoner, i stedet for bogstaverne »MD«. Navnet står stadig i tooltip og aria-label, og den trykkede tilstand er uændret. |
 | **108** | **Tomme tjekpunkter kan skrives i — og det bliver gemt.** Et tomt punkt havde ingen linje, markøren kunne stå på, så den landede foran fluebenet, og teksten blev aldrig gemt. Nu får tomme punkter en linje, teksten fylder rækken (klik ud for punktet lander bag boksen), og markøren flyttes ind i teksten, hvis den havner ved siden af boksen. `- [ ]` uden mellemrum efter `]` er nu også et tjekpunkt, så listen ikke længere deles i stykker, og tomme punkter skrives tilbage præcis, som de stod. |
 | **107** | **Søg kun i den note, du står i.** Tab i søgefeltet går nu rundt: alle noter → notesbogen → *In this note* → alle noter. I noten søges der i browseren: én række pr. blok med træffet fremhævet og overskriften, det står under; Enter ruller blokken frem og lader den gløde kort. `gron` finder »grøn«, `-ord` udelukker. |
 | **106** | **Tab søger i den notesbog, du har klikket på.** Klik på en notesbog i træet, og Tab i søgefeltet afgrænser søgningen til den bog — før skulle man have en note fra bogen åben. Klikket gælder, til man åbner en anden note; så er det dén notes bog igen. |

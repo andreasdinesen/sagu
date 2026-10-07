@@ -2469,11 +2469,22 @@ const DATOKNAPPER = [
  * Den staar sidst, efter Now, som han bad om - og den er den ENESTE knap i
  * raekken, naar man staar i markdown, for B/I/U kan ikke noget dér.
  */
+/*
+ * Markdown-maerket (en ramme med M og en pil ned) i stedet for bogstaverne »MD«
+ * (Andreas, 2026-10-07). Tegnet som de andre ikoner: streger i `currentColor`,
+ * saa det foelger temaet og den trykkede tilstand. Navnet staar stadig i
+ * title/aria-label, saa en skaermlaeser og et tooltip siger, hvad den goer.
+ */
+const MD_MAERKE = '<svg class="md-maerke" width="24" height="16" viewBox="0 0 24 16" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<rect x="1" y="1" width="22" height="14" rx="2.6"/>'
+  + '<path d="M5 11.2V4.8l3 3.6 3-3.6v6.4"/><path d="M17.4 4.8v6.2M14.9 8.7l2.5 2.5 2.5-2.5"/></svg>';
+
 function mdKnapHtml(rigt) {
   const navn = rigt ? 'Edit as Markdown' : 'Back to formatted text';
-  return `<button type="button" class="vt-knap vt-tekst vt-md" data-raa="1" tabindex="-1"
+  return `<button type="button" class="vt-knap vt-md" data-raa="1" tabindex="-1"
       aria-pressed="${rigt ? 'false' : 'true'}"
-      title="${navn}" aria-label="${navn}">MD</button>`;
+      title="${navn}" aria-label="${navn}">${MD_MAERKE}</button>`;
 }
 
 /*
