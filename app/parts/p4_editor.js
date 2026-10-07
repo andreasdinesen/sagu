@@ -806,6 +806,8 @@ function bindTrae() {
   host.querySelectorAll('[data-book]').forEach((el) => {
     el.addEventListener('click', () => {
       const id = el.dataset.book;
+      // Klikket folder bogen OG goer den til den, Tab i soegefeltet soeger i.
+      if (typeof klikPaaBog === 'function') klikPaaBog(id);
       if (editor.foldede.has(id)) editor.foldede.delete(id);
       else editor.foldede.add(id);
       gemFoldede();

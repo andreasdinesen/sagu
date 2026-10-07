@@ -6229,7 +6229,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 105;
+const APP_VERSION = 106;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -10941,6 +10941,8 @@ function bindTrae() {
   host.querySelectorAll('[data-book]').forEach((el) => {
     el.addEventListener('click', () => {
       const id = el.dataset.book;
+      // Klikket folder bogen OG goer den til den, Tab i soegefeltet soeger i.
+      if (typeof klikPaaBog === 'function') klikPaaBog(id);
       if (editor.foldede.has(id)) editor.foldede.delete(id);
       else editor.foldede.add(id);
       gemFoldede();
@@ -14961,19 +14963,40 @@ const omni = {
   // Det er et ID og ikke et flueben: valget gaelder kun, saa laenge den aabne
   // note ligger i netop den bog (se `soegeBog`).
   kunBog: null,
+  // Den notesbog, man sidst klikkede paa i traeet: { id, note }. `note` er
+  // den note, der var aaben ved klikket - aabner man en anden, gaelder
+  // klikket ikke laengere (se `aktuelBog`).
+  klikketBog: null,
 };
 
 /**
- * Den notesbog, man »staar i« - den aabne notes, hvis den er ens egen.
+ * Den notesbog, man »staar i«.
  *
- * Sagu har ingen side for en bog, saa den aabne note er den eneste kontekst.
+ * Det seneste af to ting vinder: et klik paa bogens navn i traeet, eller den
+ * aabne note (Andreas, 2026-10-07: »hvis jeg klikker paa en notebook ... saa
+ * skal det vaere muligt at trykke tab i feltet«). Klikket husker den note,
+ * der var aaben, saa naar man aabner en anden note, er det dens bog igen -
+ * uden at noget skal ryddes op i `aabnNote`.
+ *
  * En delt note fra en anden ligger i HANS bog, og den er ikke i
  * `state.notebooks` - saa er der ingen bog at tilbyde.
  */
 function aktuelBog() {
   const note = state.view === 'note' && typeof editor === 'object' ? editor.note : null;
+  const k = omni.klikketBog;
+  if (k && k.note === (note ? note.id : null)) {
+    const bog = (state.notebooks || []).find((b) => b.id === k.id);
+    if (bog) return bog;
+  }
   if (!note || !note.notebookId) return null;
   return (state.notebooks || []).find((b) => b.id === note.notebookId) || null;
+}
+
+/** Et klik paa en bogs navn i traeet: den bog staar man i nu. */
+function klikPaaBog(id) {
+  const note = state.view === 'note' && typeof editor === 'object' ? editor.note : null;
+  omni.klikketBog = { id, note: note ? note.id : null };
+  opfriskSoegeBog();
 }
 
 /** Den bog, soegningen er afgraenset til lige nu - eller null. */

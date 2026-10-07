@@ -801,9 +801,11 @@ note, der ligger i en af ens egne notesbøger, viser feltet en knap til højre �
 »All notes« / »In Privat« — og **Tab** skifter mellem de to, mens man søger.
 Legenden nævner Tab, kun når der er en bog at skifte til.
 
-- **Notesbogen er den åbne notes.** Sagu har ingen side for en bog (et klik
-  folder den ud i træet), så »den bog, man står i« er den eneste kontekst, der
-  findes. Uden en åben note — eller i en delt note fra en anden — er knappen væk.
+- **Notesbogen er den, man sidst klikkede på — ellers den åbne notes.** Sagu har
+  ingen side for en bog, men et klik på bogens navn i træet (der også folder den
+  ud) gør den til »den bog, man står i« (v106, Andreas 2026-10-07). Klikket
+  gælder, til man åbner en anden note; så er det dén notes bog igen. Uden et klik
+  og uden en åben note — eller i en delt note fra en anden — er knappen væk.
 - **Valget hører til ÉN bog.** Det gemmes som bogens id, og det gælder kun, så
   længe den åbne note ligger i den bog. Åbner man en note i en anden bog, eller
   rydder feltet (Esc, ×), er man tilbage på alle noter uden at skulle huske det.
