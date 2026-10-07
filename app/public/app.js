@@ -6229,7 +6229,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 106;
+const APP_VERSION = 107;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -14967,6 +14967,10 @@ const omni = {
   // den note, der var aaben ved klikket - aabner man en anden, gaelder
   // klikket ikke laengere (se `aktuelBog`).
   klikketBog: null,
+  // Id paa den note, man har valgt at soege i (»In this note«) - eller null.
+  // Samme regel som `kunBog`: det gaelder kun, saa laenge netop den note er
+  // aaben. Er den sat, er `kunBog` det ikke - de to er trin i samme skift.
+  kunNote: null,
 };
 
 /**
@@ -15005,11 +15009,56 @@ function soegeBog() {
   return bog && omni.kunBog === bog.id ? bog : null;
 }
 
-/** Skifter mellem »alle noter« og »kun denne bog« og soeger igen. */
+/** Den aabne note - ogsaa en delt, man kun maa laese. */
+function aktuelNote() {
+  return state.view === 'note' && typeof editor === 'object' && editor.note ? editor.note : null;
+}
+
+/** Den note, soegningen er afgraenset til lige nu - eller null. */
+function soegeNote() {
+  const n = aktuelNote();
+  return n && omni.kunNote === n.id ? n : null;
+}
+
+/*
+ * Tab gaar rundt: alle noter -> bogen -> denne note -> alle noter.
+ *
+ * »Kan det laves saa naar man staar paa en note at man ogsaa kan goere saa
+ * man kun soeger i den?« (Andreas, 2026-10-07). Et trin, der ikke findes
+ * (ingen bog, ingen aaben note), springes over - saa er det bare to trin,
+ * som foer.
+ */
+function omfangTrin() {
+  const trin = [null];
+  if (aktuelBog()) trin.push('bog');
+  if (aktuelNote()) trin.push('note');
+  return trin;
+}
+
+function aktueltOmfang() {
+  return soegeNote() ? 'note' : soegeBog() ? 'bog' : null;
+}
+
+function naesteOmfang() {
+  const trin = omfangTrin();
+  return trin[(trin.indexOf(aktueltOmfang()) + 1) % trin.length];
+}
+
+/** Hvad et omfang hedder paa knappen og i legenden. */
+function omfangNavn(o) {
+  if (o === 'note') return 'this note';
+  if (o === 'bog') return aktuelBog().name;
+  return 'all notes';
+}
+
+/** Tager naeste trin i runden og soeger igen. */
 function skiftSoegeBog() {
+  if (omfangTrin().length < 2) return;
+  const naeste = naesteOmfang();
   const bog = aktuelBog();
-  if (!bog) return;
-  omni.kunBog = omni.kunBog === bog.id ? null : bog.id;
+  const note = aktuelNote();
+  omni.kunBog = naeste === 'bog' ? bog.id : null;
+  omni.kunNote = naeste === 'note' ? note.id : null;
   omni.valgt = 0;
   opdaterOmni();
 }
@@ -15029,15 +15078,15 @@ function opfriskSoegeBog() {
 function tegnSoegeBog() {
   const knap = document.getElementById('omniScope');
   if (!knap) return;
-  const bog = aktuelBog();
-  knap.hidden = !bog || !!omni.mode;
+  knap.hidden = omfangTrin().length < 2 || !!omni.mode;
   if (knap.hidden) return;
-  const paa = omni.kunBog === bog.id;
-  knap.classList.toggle('on', paa);
-  knap.textContent = paa ? `In ${bog.name}` : 'All notes';
-  knap.title = paa ? 'Searching this notebook only — Tab for all notes'
-    : `Searching all notes — Tab for “${bog.name}” only`;
-  knap.setAttribute('aria-pressed', paa ? 'true' : 'false');
+  const nu = aktueltOmfang();
+  knap.classList.toggle('on', !!nu);
+  knap.textContent = nu === 'note' ? 'In this note' : nu === 'bog' ? `In ${aktuelBog().name}` : 'All notes';
+  const naeste = naesteOmfang();
+  knap.title = `Searching ${nu ? omfangNavn(nu) : 'all notes'} — Tab for `
+    + (naeste ? `“${omfangNavn(naeste)}” only` : 'all notes');
+  knap.setAttribute('aria-pressed', nu ? 'true' : 'false');
 }
 
 const omniEl = () => document.getElementById('omni');
@@ -15078,10 +15127,11 @@ function tegnLegend() {
   const host = document.getElementById('omniLegend');
   if (!host) return;
   const m = omni.mode ? OMNI_MODER[omni.mode] : null;
-  // Legenden lover kun Tab, naar der ER en bog at skifte til.
-  const bog = !m && aktuelBog();
+  // Legenden lover kun Tab, naar der ER noget at skifte til.
+  const tab = !m && omfangTrin().length > 1;
+  const naeste = tab ? naesteOmfang() : null;
   const dele = m ? m.legend
-    : OMNI_LEGEND.concat(bog ? [soegeBog() ? '⇥ all notes' : `⇥ only ${bog.name}`] : []);
+    : OMNI_LEGEND.concat(tab ? [naeste ? `⇥ only ${omfangNavn(naeste)}` : '⇥ all notes'] : []);
   const enter = m ? m.enter : 'Open';
   host.innerHTML = `
     <span class="legend-keys">${dele.map((d) => {
@@ -15100,6 +15150,7 @@ function tegnOmniChips(tolket, bog) {
   const dele = tolket ? saguSoeg.beskriv(tolket) : [];
   const bogSoeg = soegeBog();
   if (tolket && bogSoeg) dele.unshift(`in ${bogSoeg.name}`);
+  if (tolket && soegeNote()) dele.unshift('in this note');
   if (omni.fallback) dele.push('no index match — read the text');
   /*
    * `/navn`, der ikke rammer noget, skal SIGES.
@@ -15198,6 +15249,20 @@ async function opdaterOmni() {
   tegnOmniChips(tolket);
   if (!raa.trim()) {
     omni.raekker = omni.seneste.map((n) => ({ slags: 'note', id: n.id, etiket: n.title || 'Untitled', meta: 'recent' }));
+    tegnPanel();
+    return;
+  }
+
+  // I én note soeges der i browseren - teksten ER her, og et svar fra
+  // serveren ville kun kunne sige »ja, den note«.
+  const iNote = soegeNote();
+  if (iNote) {
+    clearTimeout(omni.timer);
+    ++omni.token;
+    omni.fallback = false;
+    omni.raekker = soegINote(raa, iNote);
+    if (!omni.raekker.length) omni.raekker = [{ slags: 'fejl', etiket: 'Nothing in this note matches.' }];
+    omni.valgt = 0;
     tegnPanel();
     return;
   }
@@ -15314,6 +15379,13 @@ function tegnPanel() {
     : (r.meta ? esc(r.meta) : '')}</span>
         </a>`;
     }
+    if (r.slags === 'linje') {
+      return `<button class="omni-row${paa}" data-row="${i}">
+          <span class="omni-row-ikon">${icon('notes', 16)}</span>
+          <span class="omni-row-tekst"><span class="omni-row-titel">${uddrag(r.tekst)}</span></span>
+          <span class="omni-row-meta meta">${esc(r.afsnitTitel || '')}</span>
+        </button>`;
+    }
     const ikon = { ny: 'plus', nybog: 'book', bog: null, udfyld: null, tag: 'tag', doda: 'plus', fejl: 'notes' }[r.slags];
     return `<button class="omni-row${paa}${r.slags === 'fejl' ? ' fejl' : ''}" data-row="${i}">
         <span class="omni-row-ikon">${r.ikon ? esc(r.ikon) : icon(ikon || 'book', 16)}</span>
@@ -15351,6 +15423,103 @@ function tegnPanel() {
   });
 }
 
+/* ------------------------------------------------------ soeg i én note */
+
+/** En markdown-linje som laesbar tekst - det, man ser, ikke det, der staar. */
+function rensLinje(l) {
+  if (/^\s*(```|~~~)/.test(l)) return '';
+  return l
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(#{1,6}\s+|>\s*(\[![a-z]+\]\s*)?|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)/i, '')
+    .replace(/\|/g, ' ')
+    .replace(/[*_`~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Traefferne i én note: én raekke pr. blok, hvor ALLE ordene staar.
+ *
+ * Samme foldning som serverens (`gron` finder »grøn«), og `-ord` udelukker.
+ * Filtre som `tag:` giver ingen mening inde i én note og ignoreres. Raekken
+ * viser linjen med traefferen - klippet omkring den, hvis den er lang - og
+ * overskriften, den staar under.
+ */
+function soegINote(raa, note) {
+  const t = saguSoeg.tolk(raa);
+  const ord = t.termer.concat(t.fraser).map((x) => saguSoeg.fold(x)).filter(Boolean);
+  const uden = t.uden.map((x) => saguSoeg.fold(x)).filter(Boolean);
+  if (!ord.length) return [];
+  const linjer = String(note.body || '').replace(/\r\n?/g, '\n').split('\n');
+  const ud = [];
+  let overskrift = '';
+  for (const b of saguMarkdown.blokke(note.body)) {
+    const vis = linjer.slice(b.fra, b.til + 1).map(rensLinje).filter(Boolean);
+    const samlet = saguSoeg.fold(vis.join(' '));
+    if (ord.every((o) => samlet.includes(o)) && !uden.some((u) => samlet.includes(u))) {
+      const linje = vis.find((l) => ord.some((o) => saguSoeg.fold(l).includes(o))) || vis[0];
+      ud.push({
+        slags: 'linje',
+        fra: b.fra,
+        tekst: markerOrd(klipOmkring(linje, ord), ord),
+        afsnitTitel: b.slags === 'overskrift' ? '' : overskrift,
+      });
+      if (ud.length >= 50) break;
+    }
+    if (b.slags === 'overskrift') overskrift = rensLinje(b.tekst);
+  }
+  return ud;
+}
+
+/** En lang linje klippes, saa traefferen staar i det, man kan se. */
+function klipOmkring(linje, ord) {
+  if (linje.length <= 140) return linje;
+  const f = saguSoeg.fold(linje);
+  const i = Math.max(0, Math.min(...ord.map((o) => { const x = f.indexOf(o); return x < 0 ? Infinity : x; })));
+  const start = i === Infinity ? 0 : Math.max(0, i - 50);
+  const stykke = linje.slice(start, start + 140);
+  return (start > 0 ? '…' : '') + stykke + (start + 140 < linje.length ? '…' : '');
+}
+
+/**
+ * Saetter `<<` og `>>` om ordene - samme markoerer som serverens uddrag, saa
+ * `uddrag()` escaper og laver <mark> af dem. Foldningen bevarer laengden
+ * (ø -> o), saa positionerne i den foldede tekst passer i den rigtige.
+ */
+function markerOrd(linje, ord) {
+  const f = saguSoeg.fold(linje);
+  if (f.length !== linje.length) return linje;
+  const paa = new Array(linje.length).fill(false);
+  for (const o of ord) {
+    for (let i = f.indexOf(o); i >= 0; i = f.indexOf(o, i + o.length)) {
+      for (let k = i; k < i + o.length; k++) paa[k] = true;
+    }
+  }
+  let ud = '';
+  for (let i = 0; i < linje.length; i++) {
+    if (paa[i] && (i === 0 || !paa[i - 1])) ud += '<<';
+    ud += linje[i];
+    if (paa[i] && (i === linje.length - 1 || !paa[i + 1])) ud += '>>';
+  }
+  return ud;
+}
+
+/** Ruller til blokken, der begynder ved linje `fra`, og lader den gloede. */
+function hopTilLinje(fra) {
+  const host = document.getElementById('noteBody');
+  if (!host) return;
+  let maal = null;
+  for (const el of host.querySelectorAll('[data-blok]')) {
+    const f = Number(el.dataset.blok);
+    if (f <= fra && (!maal || f > Number(maal.dataset.blok))) maal = el;
+  }
+  if (!maal) return;
+  maal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  maal.classList.add('soege-glimt');
+  setTimeout(() => maal.classList.remove('soege-glimt'), 1800);
+}
+
 async function vaelgRaekke(i) {
   const r = omni.raekker[i];
   if (!r) return;
@@ -15367,6 +15536,11 @@ async function vaelgRaekke(i) {
         if (h) h.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 120);
     }
+    return;
+  }
+  if (r.slags === 'linje') {
+    ryd();
+    hopTilLinje(r.fra);
     return;
   }
   if (r.slags === 'ny') {
@@ -15517,6 +15691,7 @@ function ryd() {
   omni.fallback = false;
   // Et tomt felt er en ny soegning, og en ny soegning er i alle noter.
   omni.kunBog = null;
+  omni.kunNote = null;
   saetMode(null);
   tegnLegend();
   tegnSoegeBog();
@@ -15602,7 +15777,7 @@ function bindOmni() {
      * Kun i den almindelige soegning og kun naar der er en bog - ellers er
      * Tab browserens, og fokus flytter videre som altid.
      */
-    if (e.key === 'Tab' && !e.shiftKey && !omni.mode && aktuelBog()) {
+    if (e.key === 'Tab' && !e.shiftKey && !omni.mode && omfangTrin().length > 1) {
       e.preventDefault();
       skiftSoegeBog();
     }

@@ -817,6 +817,17 @@ Legenden nævner Tab, kun når der er en bog at skifte til.
 - **»Create …« lander i bogen**, når man søger i den og ikke selv har skrevet
   `/bog`. Har man ledt i Privat uden at finde noget, er det dér, noten hører hjemme
   — samme tanke som `tag:`-filteret, der følger med over i den nye note.
+- **Tredje trin: »In this note«** (v107, Andreas 2026-10-07). Står man i en note,
+  går Tab rundt: alle noter → bogen → denne note → alle noter. Et trin uden indhold
+  (ingen bog, ingen åben note) springes over. Valget hører til ÉN note, som bogen
+  hører til ÉN bog, og Esc/× rydder det.
+  - **Der søges i browseren**, ikke på serveren — teksten er allerede her, og
+    serverens svar ville kun kunne sige »ja, den note«. Samme foldning
+    (`gron` finder »grøn«), alle ord skal stå i blokken, `-ord` udelukker; `tag:`,
+    `in:` og de andre filtre giver ingen mening i én note og ignoreres.
+  - **Én række pr. blok** (afsnit, liste, tabel …) med linjen, der rammer, og
+    overskriften, den står under. Enter ruller blokken midt på skærmen og lader
+    den gløde kort. Ingen »Create …«-række: man leder i noget, man allerede har.
 
 ### To lag, i den rækkefølge de svarer
 

@@ -201,6 +201,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **107** | **Søg kun i den note, du står i.** Tab i søgefeltet går nu rundt: alle noter → notesbogen → *In this note* → alle noter. I noten søges der i browseren: én række pr. blok med træffet fremhævet og overskriften, det står under; Enter ruller blokken frem og lader den gløde kort. `gron` finder »grøn«, `-ord` udelukker. |
 | **106** | **Tab søger i den notesbog, du har klikket på.** Klik på en notesbog i træet, og Tab i søgefeltet afgrænser søgningen til den bog — før skulle man have en note fra bogen åben. Klikket gælder, til man åbner en anden note; så er det dén notes bog igen. |
 | **105** | **E ruller ned til sidste afsnit.** Markøren blev sat til sidst i noten, men skærmen blev stående øverst — nu rulles det sidste afsnit frem (et kort midt på skærmen, et langt med enden nederst). Det gælder også Enter i titlen og en ny quicknote. **MCP og API:** loftet er hævet fra 600 til 3000 kald i timen pr. nøgle (`SAGU_API_KALD_I_TIMEN`); når det er nået, siger svaret hvor mange minutter, der er tilbage, og MCP'en melder det som et værktøjsresultat i stedet for en 401. `search_notes` giver nu også et par linjer omkring hvert træf. |
 | **104** | **Hvorfor hedder den Sagu?** Under login-knappen står nu et lille link, *Why “Sagu”?*, der folder en kort forklaring på navnet ud. Det er et `<details>` uden JavaScript, så det står ikke i vejen for login. Den samme forklaring står i README'en under »Navnet«. |

@@ -3766,6 +3766,9 @@ body.solo .notefaner { display: none; }
 
 /* Glimtet, der siger »her er den«. */
 .tree-row.fremhaevet { background: var(--accent-soft); transition: background .4s; }
+/* v107 - blokken, man hoppede til fra »In this note«. */
+#noteBody [data-blok] { transition: background-color .6s; }
+#noteBody .soege-glimt { background-color: var(--accent-soft); border-radius: 6px; }
 
 /* v98 - kortlink og QR-kode fra qlk i udgivelsesruden. Billedet staar paa
    hvidt, ogsaa i moerkt tema: en QR-kode paa en moerk flade kan ikke scannes. */
