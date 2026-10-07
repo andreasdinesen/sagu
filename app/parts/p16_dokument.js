@@ -139,6 +139,17 @@ function tegnDokument(host, n, opt) {
    */
   el.querySelectorAll('.inlinekode-kopi, .kodeblok-top, .tjek-boks, .callout-hoved')
     .forEach((x) => x.setAttribute('contenteditable', 'false'));
+  /*
+   * Et tomt tjekpunkt faar en <br>, som raekken Enter laver.
+   *
+   * Uden den er `.tjek-tekst` et tomt span uden hoejde, og browseren kan ikke
+   * saette markoeren derind - den landede i raekken FORAN fluebenet, og det,
+   * man skrev, kom til at staa foran boksen (Andreas, 2026-10-07: »jeg kan
+   * kun skrive foran dem og ikke bagved«).
+   */
+  el.querySelectorAll('.tjek-tekst').forEach((t) => {
+    if (!t.firstChild) t.appendChild(document.createElement('br'));
+  });
 
   const linjer = body.split('\n');
   const efterFra = new Map(stykker.map((b) => [b.fra, b]));
@@ -643,6 +654,54 @@ function dokNyTjekRaekke(raekke) {
   sel.addRange(m);
   return true;
 }
+
+/*
+ * Markoeren hoerer til i et tjekpunkts TEKST, aldrig ved siden af boksen.
+ *
+ * Et klik ud for et kort punkt eller en piletast kan stadig lande i selve
+ * raekken - foran eller efter fluebenet. Saa flyttes den ind i teksten:
+ * foran boksen -> tekstens start, ellers -> dens slutning.
+ *
+ * Venstre pil fra tekstens start lander ogsaa foran boksen. Det er et
+ * oenske om at gaa VIDERE til linjen foer, ikke om at blive staaende - saa
+ * husker vi, at markoeren stod dér, og tager ét skridt mere tilbage.
+ */
+let dokTjekStart = null;
+
+function dokRetTjekMarkoer() {
+  if (!dokHarFokus()) { dokTjekStart = null; return; }
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) { dokTjekStart = null; return; }
+  const n = sel.anchorNode;
+  const nEl = n && (n.nodeType === 1 ? n : n.parentElement);
+  const iTekst = nEl && nEl.closest('.tjek-tekst');
+  if (iTekst) {
+    const foer = document.createRange();
+    foer.setStart(iTekst, 0);
+    foer.setEnd(n, sel.anchorOffset);
+    dokTjekStart = foer.toString() === '' ? iTekst : null;
+    return;
+  }
+  const raekke = nEl && nEl.closest('.tjek');
+  const tekst = raekke && dok.el.contains(raekke) && raekke.querySelector('.tjek-tekst');
+  if (!tekst) { dokTjekStart = null; return; }
+  if (dokTjekStart === tekst && sel.modify) {
+    dokTjekStart = null;
+    sel.modify('move', 'backward', 'character');
+    return;
+  }
+  dokTjekStart = null;
+  if (!tekst.firstChild) tekst.appendChild(document.createElement('br'));
+  const her = sel.getRangeAt(0);
+  const foran = her.comparePoint(tekst, 0) > 0;
+  const r = document.createRange();
+  if (foran || !tekst.textContent) r.setStart(tekst, 0);
+  else r.setStart(tekst, tekst.childNodes.length);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+document.addEventListener('selectionchange', dokRetTjekMarkoer);
 
 function dokTast(e) {
   const el = dok.el;

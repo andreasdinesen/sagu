@@ -692,3 +692,16 @@ test('sletBlok bevarer en kodeblok som ét stykke', () => {
   assert.equal(ud, 'Om noget.\n\nSlut.\n');
   assert.ok(!ud.includes('const'), 'hele hegnet fulgte med');
 });
+
+test('et tomt tjekpunkt uden mellemrum efter ] er stadig et tjekpunkt (v108)', () => {
+  // Mellemrummet i linjens slutning overlever ikke altid en gemning. Faldt
+  // `- [ ]` ud af tjeklisten, blev listen delt i tre, og teksten, man skrev i
+  // det tomme punkt, forsvandt.
+  const b = md.blokke('- [ ] a\n- [ ]\n- [ ] \n- [x]\n- [ ] b');
+  assert.equal(b.length, 1, 'én liste, ikke tre');
+  assert.equal(b[0].slags, 'tjekliste');
+  assert.deepEqual(b[0].punkter.map((p) => p.tekst), ['a', '', '', '', 'b']);
+  assert.equal(b[0].punkter[3].tjekket, true);
+  // Og det tomme punkt kan stadig tikkes af paa sin linje.
+  assert.equal(md.saetTjek('- [ ]', 0, true), '- [x]');
+});

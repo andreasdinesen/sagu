@@ -306,7 +306,12 @@
   const ER_NUMMER = /^(\s*)(\d{1,9})[.)]\s+(.*)$/;
   // `- [ ]` og `- [x]`. Skal proeves FOER ER_PUNKT, ellers bliver
   // afkrydsningsfeltet bare til tekst i et almindeligt punkt.
-  const ER_TJEK = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/;
+  //
+  // Et TOMT punkt kan staa uden noget efter `]` - et mellemrum i linjens
+  // slutning overlever ikke altid en gemning. Uden `(?:...|$)` blev `- [ ]`
+  // et almindeligt punkt, listen delt i tre, og teksten, man skrev i det,
+  // forsvandt (Andreas, 2026-10-07).
+  const ER_TJEK = /^(\s*)[-*+]\s+\[([ xX])\](?:\s+(.*)|\s*)$/;
   // GitHub-stilens callout. Notion har farvede bokse; det her er den
   // markdown-native skrivemaade, og den overlever en rundtur ud og ind.
   const ER_CALLOUT = /^\s{0,3}>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i;
@@ -403,6 +408,7 @@
         const punkter = [];
         while (i < linjer.length && ER_TJEK.test(linjer[i])) {
           const m = linjer[i].match(ER_TJEK);
+          if (m[3] === undefined) m[3] = '';
           punkter.push({
             dybde: Math.min(Math.floor(m[1].replace(/\t/g, '  ').length / 2), 6),
             tjekket: m[2].toLowerCase() === 'x',
@@ -556,7 +562,7 @@
         html += `<div class="tjekliste"${mrk}>${b.punkter.map((p) => `
           <div class="tjek${p.tjekket ? ' er-tjekket' : ''}"${
   p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''}${
-  p.mellem && p.mellem !== ' ' ? ` data-mellem="${attr(p.mellem)}"` : ''} style="margin-left:${p.dybde * 22}px">
+  p.mellem !== undefined && p.mellem !== ' ' ? ` data-mellem="${attr(p.mellem)}"` : ''} style="margin-left:${p.dybde * 22}px">
             <button class="tjek-boks" data-tjek="${p.linje}" role="checkbox"
               aria-checked="${p.tjekket ? 'true' : 'false'}"${
   p.tjekket && p.maerke !== 'x' ? ` data-x="${attr(p.maerke)}"` : ''}>${p.tjekket ? '✓' : ''}</button>

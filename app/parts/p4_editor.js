@@ -3081,7 +3081,7 @@ function holdBlokISyne(host) {
  * Er ALLE linjer allerede tjekpunkter, tager knappen dem af igen. En knap,
  * der kun kan én vej, er en knap, man ikke toer trykke paa.
  */
-const TJEK_LINJE = /^(\s*)[-*+]\s+\[[ xX]\]\s+/;
+const TJEK_LINJE = /^(\s*)[-*+]\s+\[[ xX]\](?:\s+|$)/;
 const BLOKMAERKE = /^(\s*)(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)?/;
 
 function skiftTjekliste(vaert, b) {

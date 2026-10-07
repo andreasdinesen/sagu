@@ -563,7 +563,12 @@
   const ER_NUMMER = /^(\s*)(\d{1,9})[.)]\s+(.*)$/;
   // `- [ ]` og `- [x]`. Skal proeves FOER ER_PUNKT, ellers bliver
   // afkrydsningsfeltet bare til tekst i et almindeligt punkt.
-  const ER_TJEK = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/;
+  //
+  // Et TOMT punkt kan staa uden noget efter `]` - et mellemrum i linjens
+  // slutning overlever ikke altid en gemning. Uden `(?:...|$)` blev `- [ ]`
+  // et almindeligt punkt, listen delt i tre, og teksten, man skrev i det,
+  // forsvandt (Andreas, 2026-10-07).
+  const ER_TJEK = /^(\s*)[-*+]\s+\[([ xX])\](?:\s+(.*)|\s*)$/;
   // GitHub-stilens callout. Notion har farvede bokse; det her er den
   // markdown-native skrivemaade, og den overlever en rundtur ud og ind.
   const ER_CALLOUT = /^\s{0,3}>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i;
@@ -660,6 +665,7 @@
         const punkter = [];
         while (i < linjer.length && ER_TJEK.test(linjer[i])) {
           const m = linjer[i].match(ER_TJEK);
+          if (m[3] === undefined) m[3] = '';
           punkter.push({
             dybde: Math.min(Math.floor(m[1].replace(/\t/g, '  ').length / 2), 6),
             tjekket: m[2].toLowerCase() === 'x',
@@ -813,7 +819,7 @@
         html += `<div class="tjekliste"${mrk}>${b.punkter.map((p) => `
           <div class="tjek${p.tjekket ? ' er-tjekket' : ''}"${
   p.praefiks ? ` data-md="${attr(p.praefiks)}"` : ''}${
-  p.mellem && p.mellem !== ' ' ? ` data-mellem="${attr(p.mellem)}"` : ''} style="margin-left:${p.dybde * 22}px">
+  p.mellem !== undefined && p.mellem !== ' ' ? ` data-mellem="${attr(p.mellem)}"` : ''} style="margin-left:${p.dybde * 22}px">
             <button class="tjek-boks" data-tjek="${p.linje}" role="checkbox"
               aria-checked="${p.tjekket ? 'true' : 'false'}"${
   p.tjekket && p.maerke !== 'x' ? ` data-x="${attr(p.maerke)}"` : ''}>${p.tjekket ? '✓' : ''}</button>
@@ -1856,11 +1862,22 @@
       const tjekket = boks && (boks.attr || {})['aria-checked'] === 'true';
       const x = (boks && (boks.attr || {})['data-x']) || 'x';
       const raa = (raekke.attr || {})['data-md'];
-      const mellem = (raekke.attr || {})['data-mellem'] || ' ';
-      if (raa) return `${raa}[${tjekket ? x : ' '}]${mellem}${tekst ? ud(tekst, opt) : ''}`;
+      /*
+       * Et tomt punkt kan staa som `- [ ]` uden mellemrum (`data-mellem=""`)
+       * og skal skrives tilbage saadan - ellers er det »aendret«, og
+       * dokumentet nægter at redigere noten. Faar punktet tekst, skal der
+       * et mellemrum ind igen, ellers bliver det `- [ ]tekst`.
+       */
+      // Et tomt punkt baerer en <br>, saa markoeren har en linje at staa paa.
+      // Den er ikke indhold: blev den til et linjeskift, fik punktet en tom
+      // linje efter sig, og listen blev delt.
+      const indhold = tekst ? ud(tekst, opt).replace(/\n+$/, '') : '';
+      const maerket = (raekke.attr || {})['data-mellem'];
+      const mellem = maerket === undefined ? ' ' : (maerket === '' && indhold ? ' ' : maerket);
+      if (raa) return `${raa}[${tjekket ? x : ' '}]${mellem}${indhold}`;
       const m = /margin-left:\s*(\d+)px/.exec(String((raekke.attr || {}).style || ''));
       const dybde = m ? Math.round(Number(m[1]) / 22) : 0;
-      return `${'  '.repeat(dybde)}- [${tjekket ? x : ' '}] ${tekst ? ud(tekst, opt) : ''}`;
+      return `${'  '.repeat(dybde)}- [${tjekket ? x : ' '}] ${indhold}`;
     }).join('\n');
   }
 
@@ -4816,6 +4833,17 @@ function tegnDokument(host, n, opt) {
    */
   el.querySelectorAll('.inlinekode-kopi, .kodeblok-top, .tjek-boks, .callout-hoved')
     .forEach((x) => x.setAttribute('contenteditable', 'false'));
+  /*
+   * Et tomt tjekpunkt faar en <br>, som raekken Enter laver.
+   *
+   * Uden den er `.tjek-tekst` et tomt span uden hoejde, og browseren kan ikke
+   * saette markoeren derind - den landede i raekken FORAN fluebenet, og det,
+   * man skrev, kom til at staa foran boksen (Andreas, 2026-10-07: »jeg kan
+   * kun skrive foran dem og ikke bagved«).
+   */
+  el.querySelectorAll('.tjek-tekst').forEach((t) => {
+    if (!t.firstChild) t.appendChild(document.createElement('br'));
+  });
 
   const linjer = body.split('\n');
   const efterFra = new Map(stykker.map((b) => [b.fra, b]));
@@ -5320,6 +5348,54 @@ function dokNyTjekRaekke(raekke) {
   sel.addRange(m);
   return true;
 }
+
+/*
+ * Markoeren hoerer til i et tjekpunkts TEKST, aldrig ved siden af boksen.
+ *
+ * Et klik ud for et kort punkt eller en piletast kan stadig lande i selve
+ * raekken - foran eller efter fluebenet. Saa flyttes den ind i teksten:
+ * foran boksen -> tekstens start, ellers -> dens slutning.
+ *
+ * Venstre pil fra tekstens start lander ogsaa foran boksen. Det er et
+ * oenske om at gaa VIDERE til linjen foer, ikke om at blive staaende - saa
+ * husker vi, at markoeren stod dér, og tager ét skridt mere tilbage.
+ */
+let dokTjekStart = null;
+
+function dokRetTjekMarkoer() {
+  if (!dokHarFokus()) { dokTjekStart = null; return; }
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) { dokTjekStart = null; return; }
+  const n = sel.anchorNode;
+  const nEl = n && (n.nodeType === 1 ? n : n.parentElement);
+  const iTekst = nEl && nEl.closest('.tjek-tekst');
+  if (iTekst) {
+    const foer = document.createRange();
+    foer.setStart(iTekst, 0);
+    foer.setEnd(n, sel.anchorOffset);
+    dokTjekStart = foer.toString() === '' ? iTekst : null;
+    return;
+  }
+  const raekke = nEl && nEl.closest('.tjek');
+  const tekst = raekke && dok.el.contains(raekke) && raekke.querySelector('.tjek-tekst');
+  if (!tekst) { dokTjekStart = null; return; }
+  if (dokTjekStart === tekst && sel.modify) {
+    dokTjekStart = null;
+    sel.modify('move', 'backward', 'character');
+    return;
+  }
+  dokTjekStart = null;
+  if (!tekst.firstChild) tekst.appendChild(document.createElement('br'));
+  const her = sel.getRangeAt(0);
+  const foran = her.comparePoint(tekst, 0) > 0;
+  const r = document.createRange();
+  if (foran || !tekst.textContent) r.setStart(tekst, 0);
+  else r.setStart(tekst, tekst.childNodes.length);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+document.addEventListener('selectionchange', dokRetTjekMarkoer);
 
 function dokTast(e) {
   const el = dok.el;
@@ -6229,7 +6305,7 @@ async function dokIndsaetFiler(filer) {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 107;
+const APP_VERSION = 108;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -13216,7 +13292,7 @@ function holdBlokISyne(host) {
  * Er ALLE linjer allerede tjekpunkter, tager knappen dem af igen. En knap,
  * der kun kan én vej, er en knap, man ikke toer trykke paa.
  */
-const TJEK_LINJE = /^(\s*)[-*+]\s+\[[ xX]\]\s+/;
+const TJEK_LINJE = /^(\s*)[-*+]\s+\[[ xX]\](?:\s+|$)/;
 const BLOKMAERKE = /^(\s*)(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)?/;
 
 function skiftTjekliste(vaert, b) {

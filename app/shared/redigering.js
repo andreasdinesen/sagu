@@ -173,11 +173,22 @@
       const tjekket = boks && (boks.attr || {})['aria-checked'] === 'true';
       const x = (boks && (boks.attr || {})['data-x']) || 'x';
       const raa = (raekke.attr || {})['data-md'];
-      const mellem = (raekke.attr || {})['data-mellem'] || ' ';
-      if (raa) return `${raa}[${tjekket ? x : ' '}]${mellem}${tekst ? ud(tekst, opt) : ''}`;
+      /*
+       * Et tomt punkt kan staa som `- [ ]` uden mellemrum (`data-mellem=""`)
+       * og skal skrives tilbage saadan - ellers er det »aendret«, og
+       * dokumentet nægter at redigere noten. Faar punktet tekst, skal der
+       * et mellemrum ind igen, ellers bliver det `- [ ]tekst`.
+       */
+      // Et tomt punkt baerer en <br>, saa markoeren har en linje at staa paa.
+      // Den er ikke indhold: blev den til et linjeskift, fik punktet en tom
+      // linje efter sig, og listen blev delt.
+      const indhold = tekst ? ud(tekst, opt).replace(/\n+$/, '') : '';
+      const maerket = (raekke.attr || {})['data-mellem'];
+      const mellem = maerket === undefined ? ' ' : (maerket === '' && indhold ? ' ' : maerket);
+      if (raa) return `${raa}[${tjekket ? x : ' '}]${mellem}${indhold}`;
       const m = /margin-left:\s*(\d+)px/.exec(String((raekke.attr || {}).style || ''));
       const dybde = m ? Math.round(Number(m[1]) / 22) : 0;
-      return `${'  '.repeat(dybde)}- [${tjekket ? x : ' '}] ${tekst ? ud(tekst, opt) : ''}`;
+      return `${'  '.repeat(dybde)}- [${tjekket ? x : ' '}] ${indhold}`;
     }).join('\n');
   }
 

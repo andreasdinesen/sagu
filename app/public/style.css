@@ -1801,6 +1801,9 @@ body.fokus .topbar { display: none; }
 .tjek-boks[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
 .tjek.er-tjekket .tjek-tekst { color: var(--muted); text-decoration: line-through; }
 .tjek-tekst { min-width: 0; }
+/* v108 - i dokumentet fylder teksten raekken, saa et klik ud for et kort
+   (eller tomt) punkt lander i teksten og ikke foran fluebenet. */
+.dok .tjek-tekst { flex: 1; }
 
 /* -------------------------------------------------------------- callouts */
 

@@ -353,3 +353,21 @@ test('alle HTML\'s tomme elementer er tomme - ikke bare dem vi udsender', () => 
     assert.match(ud, new RegExp(`ordene efter ${tag}`), `<${tag}> slugte teksten efter sig`);
   }
 });
+
+test('tomme tjekpunkter - med og uden mellemrum efter ] - kommer uaendret tilbage (v108)', () => {
+  // Kom `- [ ]` tilbage som `- [ ] `, var noten »aendret«, og dokumentet
+  // faldt tilbage til raa redigering.
+  for (const k of ['- [ ] a\n- [ ]\n- [ ] \n- [x]\n- [ ] b', '- [ ]\n- [ ]']) {
+    assert.equal(rundtur(k), k);
+  }
+  // Skriver man i et tomt punkt, kommer mellemrummet med.
+  const h = md.render('- [ ]').html.replace(/<span class="tjek-tekst"><\/span>/, '<span class="tjek-tekst">Pas</span>');
+  assert.equal(R.tilMarkdown(h.trim()), '- [ ] Pas');
+});
+
+test('<br> i et tomt tjekpunkt bliver ikke til en tom linje (v108)', () => {
+  // Dokumentet giver tomme punkter en <br>, saa markoeren kan staa i dem.
+  const h = md.render('- [ ] a\n- [ ]\n- [ ] b').html
+    .replace(/<span class="tjek-tekst"><\/span>/, '<span class="tjek-tekst"><br></span>');
+  assert.equal(R.tilMarkdown(h.trim()), '- [ ] a\n- [ ]\n- [ ] b');
+});
