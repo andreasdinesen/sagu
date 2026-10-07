@@ -978,6 +978,23 @@ function rateAllow(bucket, limit, windowSec) {
   return true;
 }
 
+/** Sekunder til spanden `bucket` er tom igen (0, hvis den ikke er brugt). */
+function rateVent(bucket) {
+  const row = db.prepare('SELECT reset_at FROM rate WHERE bucket = ?').get(bucket);
+  return row ? Math.max(0, row.reset_at - now()) : 0;
+}
+
+/*
+ * Kald i timen pr. adgangsnoegle - REST-API'et og MCP'en deler spanden.
+ *
+ * Var 600. En MCP-samtale, der laeser sig gennem et arkiv paa 1000 noter, er
+ * ét kald pr. note plus soegningerne, og 600 sagde stop midt i en opgave
+ * (Andreas, 2026-10-06: »Kan 600 kald i timen sættes op?«). Loftet er der for
+ * en noegle, der er sluppet ud, ikke for ejeren - 3000 er stadig et loft.
+ * `SAGU_API_KALD_I_TIMEN` saetter det, ogsaa i proeverne.
+ */
+const API_KALD_I_TIMEN = Math.max(1, Number(process.env.SAGU_API_KALD_I_TIMEN) || 3000);
+
 function rateClear(bucket) {
   db.prepare('DELETE FROM rate WHERE bucket = ?').run(bucket);
 }
@@ -1464,8 +1481,11 @@ function godkend(req, res, kraevetScope) {
       apiFejl(res, 401, 'invalid_key', 'That access key is not valid. It may have been revoked.');
       return null;
     }
-    if (!rateAllow(`api:${token.id}`, 600, 3600)) {
-      apiFejl(res, 429, 'rate_limited', 'Too many requests with this key. Try again shortly.');
+    if (!rateAllow(`api:${token.id}`, API_KALD_I_TIMEN, 3600)) {
+      const min = Math.max(1, Math.ceil(rateVent(`api:${token.id}`) / 60));
+      res.setHeader('Retry-After', String(min * 60));
+      apiFejl(res, 429, 'rate_limited',
+        `Too many requests with this key: at most ${API_KALD_I_TIMEN} an hour. Try again in ${min} min.`);
       return null;
     }
     if (!SCOPE_TILLADER[token.scope] || !SCOPE_TILLADER[token.scope].has(kraevetScope)) {
@@ -8158,7 +8178,14 @@ function godkendMcp(req) {
     logSecurity(`mcp-noegle-afvist ip=${clientIp(req)}`);
     return null;
   }
-  if (!rateAllow(`api:${token.id}`, 600, 3600)) return null;
+  /*
+   * For mange kald er IKKE en forkert noegle. Med `null` her svarede /mcp 401,
+   * og klienten meldte »log ind igen« - for en noegle, der var i orden.
+   * `forMange` lader mcp.js svare med noget, modellen kan laese og vente paa.
+   */
+  if (!rateAllow(`api:${token.id}`, API_KALD_I_TIMEN, 3600)) {
+    return { forMange: true, venter: rateVent(`api:${token.id}`), loft: API_KALD_I_TIMEN };
+  }
   // Noeglen baerer sin bruger. En noegle uden en levende bruger er ingen
   // noegle - konti kan slettes, mens et token stadig ligger i en klient.
   const bruger = db.prepare('SELECT id FROM users WHERE id = ?').get(token.user_id);

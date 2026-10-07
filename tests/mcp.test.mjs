@@ -331,3 +331,48 @@ test('en nøgle når KUN sin egen brugers noter', async () => {
   const skriv = await kald('append_note', { id: min.structuredContent.note.id, text: 'hejsa' }, bNoegle);
   assert.equal(skriv.isError, true);
 });
+
+/* ===================== v104: forsmag i søgningen og et ærligt loft ===== */
+
+test('search_notes viser linjerne omkring træfferen, uden <<markører>> (v104)', async () => {
+  await kald('create_note', { text: 'Forsmagsnote\n\nFørste linje.\nHer står ordet kvartsur midt i teksten.\nTredje linje.' });
+  const r = await kald('search_notes', { query: 'kvartsur' });
+  const t = r.content[0].text;
+  assert.match(t, /Forsmagsnote/);
+  assert.match(t, /\n {4}Her står ordet kvartsur midt i teksten\./, 'linjen skal stå indrykket under titlen');
+  assert.doesNotMatch(t, /<<|>>/);
+});
+
+test('en noegle, der har brugt sine kald, faar en læsbar besked - ikke 401 (v104)', async () => {
+  const s2 = await startServer({ SAGU_API_KALD_I_TIMEN: '3' });
+  try {
+    const b = klient(s2.base);
+    await b.opret('ejer', 'kodeord-1234');
+    const k = (await b.kald('POST', '/api/v1/keys', { name: 'x', scope: 'full' })).data.key;
+    const post = (body) => fetch(`${s2.base}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${k}` },
+      body: JSON.stringify(body),
+    });
+    for (let i = 1; i <= 3; i++) {
+      assert.equal((await post({ jsonrpc: '2.0', id: i, method: 'ping' })).status, 200);
+    }
+    const v = await post({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'list_tags', arguments: {} } });
+    assert.equal(v.status, 200, 'ikke 401 - noeglen er i orden');
+    const res = (await v.json()).result;
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /at most 3 calls an hour/);
+    assert.match(res.content[0].text, /Try again in \d+ minute/);
+
+    const p = await (await post({ jsonrpc: '2.0', id: 10, method: 'ping' })).json();
+    assert.equal(p.error.code, -32000);
+
+    // REST-API'et deler spanden og siger det samme med 429 og Retry-After.
+    const rest = await fetch(`${s2.base}/api/v1/notebooks`, { headers: { Authorization: `Bearer ${k}` } });
+    assert.equal(rest.status, 429);
+    assert.ok(Number(rest.headers.get('retry-after')) > 0);
+    assert.match((await rest.json()).message, /at most 3 an hour/);
+  } finally {
+    s2.stop();
+  }
+});

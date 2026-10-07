@@ -68,7 +68,8 @@ function opret(srv) {
       description:
         'Search the archive. Same syntax as the app: plain words, "a phrase", -without, '
         + 'tag:name, in:notebook-or-page, updated:<30d, has:code|image|link|todo|table. '
-        + 'Returns titles and ids — read the note itself with get_note.',
+        + 'Returns titles, ids and a few lines of each note around the match — read the '
+        + 'whole note with get_note when those lines are not enough.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -78,9 +79,19 @@ function opret(srv) {
         required: ['query'],
       },
       kald(a, ctx) {
-        const r = srv.soegNoter(ctx.userId, String(a.query || ''), Math.min(Number(a.limit) || 20, 50));
+        const r = srv.soegNoter(ctx.userId, String(a.query || ''), Math.min(Number(a.limit) || 20, 50),
+          { forsmag: true });
         if (!r.results.length) return { tekst: 'Nothing matches that.', data: { results: [] } };
-        const linjer = r.results.map(noteLinje);
+        /*
+         * Linjerne omkring traefferen - soegefeltets forsmag (v82), bundet til
+         * 6 linjer og 600 tegn pr. note. Med dem kan modellen tit svare uden
+         * at hente hver note for sig, og hvert get_note er et kald af loftet.
+         * Markoererne `<<ord>>` er til appens <mark>; her er de kun stoej.
+         */
+        const linjer = r.results.map((n) => {
+          const smag = String(n.preview || '').replace(/<<|>>/g, '').trim();
+          return smag ? `${noteLinje(n)}\n${smag.split('\n').map((l) => `    ${l}`).join('\n')}` : noteLinje(n);
+        });
         // Faldt soegningen tilbage til at laese teksten, er resultatet
         // URANGERET - og det maa ikke se ud som en rangering (F2).
         const hoved = r.fallback
@@ -354,6 +365,25 @@ function opret(srv) {
     return fejl(id, -32601, `Method not found: ${method}`);
   }
 
+  /**
+   * Svaret, naar noeglen har brugt sine kald i den time, der er gaaet.
+   *
+   * Et VAERKTOEJSKALD faar et almindeligt resultat med `isError` og en
+   * ventetid i ord: saa er det modellen, der laeser det, og den kan sige det
+   * til én eller vente - en HTTP-fejl ville klienten selv sluge og kalde
+   * »forbindelsen er tabt«. Alt andet faar en JSON-RPC-fejl med samme tekst.
+   */
+  function forMange(besked, auth) {
+    if (!besked || besked.id === undefined || besked.id === null) return null;   // notifikation
+    const min = Math.max(1, Math.ceil((auth.venter || 0) / 60));
+    const tekst = `Sagu is rate limiting this key: at most ${auth.loft} calls an hour, and they are used up. `
+      + `Try again in ${min} minute${min === 1 ? '' : 's'}. The key itself is fine — do not reconnect.`;
+    if (besked.method === 'tools/call') {
+      return ok(besked.id, { isError: true, content: [{ type: 'text', text: tekst }] });
+    }
+    return fejl(besked.id, -32000, tekst);
+  }
+
   /* ---------------------------------------------------------------- http */
 
   async function haandter(req, res) {
@@ -417,7 +447,7 @@ function opret(srv) {
 
     const flere = Array.isArray(krop);
     const beskeder = flere ? krop : [krop];
-    const svar = beskeder.map((b) => behandl(b, auth)).filter(Boolean);
+    const svar = beskeder.map((b) => (auth.forMange ? forMange(b, auth) : behandl(b, auth))).filter(Boolean);
 
     // Kun notifikationer i bundtet: kvitter uden krop, som protokollen kraever.
     if (!svar.length) { res.writeHead(202); res.end(); return; }

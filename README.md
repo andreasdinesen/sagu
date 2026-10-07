@@ -201,6 +201,7 @@ og reglerne i [`CLAUDE.md`](CLAUDE.md).
 
 | Version | |
 |---|---|
+| **105** | **E ruller ned til sidste afsnit.** Markøren blev sat til sidst i noten, men skærmen blev stående øverst — nu rulles det sidste afsnit frem (et kort midt på skærmen, et langt med enden nederst). Det gælder også Enter i titlen og en ny quicknote. **MCP og API:** loftet er hævet fra 600 til 3000 kald i timen pr. nøgle (`SAGU_API_KALD_I_TIMEN`); når det er nået, siger svaret hvor mange minutter, der er tilbage, og MCP'en melder det som et værktøjsresultat i stedet for en 401. `search_notes` giver nu også et par linjer omkring hvert træf. |
 | **104** | **Hvorfor hedder den Sagu?** Under login-knappen står nu et lille link, *Why “Sagu”?*, der folder en kort forklaring på navnet ud. Det er et `<details>` uden JavaScript, så det står ikke i vejen for login. Den samme forklaring står i README'en under »Navnet«. |
 | **102** | **Quicknoten overtager T og »Today's note«; fanerne forklaret.** Tasten T og knappen i sidebaren (nu »Quick note«) laver en quicknote i Quicknotes — samme som ⌘⌥N; dagens note er fjernet fra fladen. Genvejslisten har én linje pr. sted, man åbner en ny fane: ⌥-klik/midterklik i sidebaren, ⌘↵ eller ⌘-klik i søgefeltet, ⌘-klik eller midterklik på et link til en note. |
 | **103** | **Højreklik på en fane i notebaren.** En lille menu ved musen: »Open in its own window« (popper noten ud i sit eget vindue, som knappen i notens hoved), »Close tab« og »Close other tabs«. Står også i genvejslisten. |

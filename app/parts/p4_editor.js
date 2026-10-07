@@ -3464,7 +3464,22 @@ function aabnSidste() {
    */
   if (!maaRette(editor.note)) return;
   // I dokumentet er »begynd at skrive« bare markoeren til sidst.
-  if (dokAktiv()) { dokSaetMarkoer('slut'); return; }
+  if (dokAktiv()) {
+    dokSaetMarkoer('slut');
+    /*
+     * Og rul derned. `dokSaetMarkoer` fokuserer med `preventScroll`, saa i
+     * en lang note stod markoeren i sidste afsnit, mens man kiggede paa
+     * toppen (Andreas, 2026-10-07: »hvis jeg trykker E saa scroller den ikke
+     * automatisk ned til den sidste paragraf«). Et kort afsnit midt paa
+     * skaermen, saa man ser det foregaaende; et langt med enden i bunden,
+     * for det er dér, markoeren staar.
+     */
+    const sidste = dok.el.lastElementChild;
+    if (sidste) {
+      sidste.scrollIntoView({ block: sidste.offsetHeight < window.innerHeight / 2 ? 'center' : 'end' });
+    }
+    return;
+  }
   const b = saguMarkdown.blokke(editor.note.body);
   if (!b.length) {
     // Tom note: laeg en tom linje ind, saa der er en blok at aabne.
