@@ -4541,3 +4541,34 @@ sidevindue), »Close tab« og »Close other tabs«. Menuen hænger i `<body>` me
 og ville skære en menu inde i sig. Den lukker ved klik udenfor, Escape, rul, ny størrelse
 og når vinduet mister fokus. Fanen bliver stående efter pop-ud: en fane er et bogmærke,
 ikke en editor. Klikhandleren er synkron, så `window.open` ikke bliver blokeret.
+
+## 62 · »Ask« — AI-assistenten i appen (2026-10-08)
+
+»Kan du også tilføje en AI assistant som kan hjælpe med at finde ting i noterne m.m. Den skal kunne
+give direkte links m.m. den skal kunne benytte claude, chatgpt og deepseek? Der er fx lavet en i qlk
+appen« (Andreas). **Det vender en tidligere beslutning:** »AI i appen« stod under *ikke i scope* i
+`krav-og-scope.md` (MCP dækkede det udefra). Nu er den i appen — men bygget, så den ikke er en ny vej
+ind i dataene.
+
+- **Portet fra qlk** (`qlk/app/assistent.js`, v26 + DeepSeek fra v30) til `app/assistent.js` og
+  `app/parts/p17_assistent.js`. Samme form: brugerens egen nøgle, rå `fetch`, ingen SDK.
+- **Værktøjerne er MCP-serverens** (`mcp.VAERKTOEJER`), kaldt med `{ userId }` — samme `user_id`-filter
+  som alt andet. `create_upload_link` er udeladt (en curl-kommando i et chatpanel). `read`-værktøjer
+  køres straks; `capture`/`write` (opret, tilføj, ret, kommenter, **udgiv**) vises som et kort, der skal
+  godkendes. Et nyt spørgsmål, mens noget venter, afviser det ventende.
+- **Direkte links:** systemteksten beder modellen skrive `[Titel](#note-<id>)`. Panelet gør dem til links,
+  der åbner med `aabnNote()` (⌘/Ctrl-klik → `aabnIBaggrunden`, som et link i en note), og et nøgent
+  32-tegns id efter »id:« bliver også et link.
+- **Udbydere:** `anthropic` (claude-opus-5-5, server-side fallback for 5-familien), `openai` (gpt-5),
+  `deepseek` (deepseek-chat på `https://api.deepseek.com`; `reasoning_content` sendes tilbage på
+  værktøjskald i SAMME spørgsmål og slettes ved et nyt) og `compatible` (kun admin — serveren henter
+  adressen, så en bruger kunne ellers kigge ind i hjemmenettet).
+- **Nøglen** er indstillingen `ai_key` i `HEMMELIGE_SETTINGS` — den forlader aldrig serveren, heller ikke
+  i loggen. Ingen migration: `ai_provider/ai_key/ai_model/ai_base` er almindelige indstillinger pr. bruger.
+- **Kun med session** (`requireUser`): en API-nøgle må ikke kunne bruge en brugers AI-kredit.
+- Samtalen bor i serverens hukommelse pr. bruger (3 timer), tilføj-kun — Claudes tænkeblokke lægges
+  tilbage uændret.
+- Panelet er lag **55** på z-index-kortet (over sidebaren, under brugermenuen og toasts). Over 1200 px
+  skubber det indholdet til side i stedet for at dække det.
+- Test: `tests/assistent.test.mjs` mod en falsk Claude/ChatGPT/DeepSeek (`SAGU_*_URL`); isolationen
+  (bo ser aldrig andreas' noter gennem assistenten) er en af prøverne.

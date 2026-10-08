@@ -783,6 +783,9 @@ async function sideSettings() {
   </div>`;
   } catch { /* vist som tom */ }
 
+  // AI-assistenten (»Ask«, 2026-10-08) - app/parts/p17_assistent.js.
+  const aiDel = await aiDelHtml();
+
   let ghDel = '';
   try {
     const g = await api('GET', '/api/v1/github/status');
@@ -936,6 +939,8 @@ async function sideSettings() {
   ${dodaDel}
 
   ${qlkDel}
+
+  ${aiDel}
 
   ${ghDel}
 
@@ -1325,6 +1330,8 @@ function bindSettings() {
       } catch (ex) { toast(ex.message); }
     });
   }
+
+  bindAiDel();
 
   const qlkGem = document.getElementById('qlkGem');
   if (qlkGem) {

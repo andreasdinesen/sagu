@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 109;
+const APP_VERSION = 110;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -251,6 +251,8 @@ const ICONS = {
   comment: '<path d="M20 12.5a6.5 6.5 0 01-6.5 6.5H9l-4 2.5v-4A6.5 6.5 0 016.5 6h7A6.5 6.5 0 0120 12.5z"/>',
   copy: '<path d="M9 9h10v10a1.5 1.5 0 01-1.5 1.5H9z"/><path d="M15 9V4.5A1.5 1.5 0 0013.5 3H5.5A1.5 1.5 0 004 4.5v9A1.5 1.5 0 005.5 15H9"/>',
   luk: '<path d="M6 6l12 12M18 6L6 18"/>',
+  // AI-assistenten (»Ask«): en gnist, som i qlk.
+  gnist: '<path d="M12 3.5l1.9 5.2 5.1 1.8-5.1 1.8L12 17.5l-1.9-5.2L5 10.5l5.1-1.8z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
   // Pil med skaft til rulleknappen - ned, og op er den samme drejet i CSS.
   pilNed: '<path d="M12 4.5v14.5"/><path d="M6.5 13.5L12 19l5.5-5.5"/>',
   kalender: '<path d="M4.5 6.5h15v13h-15z"/><path d="M4.5 10h15M9 4.5v3M15 4.5v3"/>',
@@ -587,6 +589,7 @@ function shellHtml() {
           <button class="synkbtn meta" id="synkBtn" title="Fetch new notes now"
             aria-label="Fetch new notes now">${icon('opfrisk', 14)}<span id="synkLabel">just now</span></button>
           <div class="stats meta" id="statsHost">${statsHtml()}</div>
+          ${aiKnapHtml()}
           ${genvejKnapHtml()}
           ${temaKnapHtml()}
         </div>
@@ -701,6 +704,7 @@ function bindShell() {
   bindNav();
   const genvejKnap = document.getElementById('genvejBtn');
   if (genvejKnap) genvejKnap.addEventListener('click', () => visGenvejsPanel());
+  bindAiKnap();
   registrerRullevagt();
   const rulleKnap = document.getElementById('rulleKnap');
   if (rulleKnap) rulleKnap.addEventListener('click', rulMedKnap);

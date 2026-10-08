@@ -27,6 +27,7 @@ import vm from 'node:vm';
 
 const p2 = readFileSync(new URL('../app/parts/p2_pages.js', import.meta.url), 'utf8');
 const p1 = readFileSync(new URL('../app/parts/p1_core.js', import.meta.url), 'utf8');
+const p17 = readFileSync(new URL('../app/parts/p17_assistent.js', import.meta.url), 'utf8');
 
 /** Én topniveau-erklæring (funktion eller const) ud af kilden - til den afsluttende kolonne-0-klamme. */
 function uddrag(kilde, start) {
@@ -41,7 +42,7 @@ const FORVENTET = {
   konto: ['Appearance', 'Account', 'Passkeys', 'Two-step verification', 'About'],
   skrivning: ['Editing', 'Version history'],
   filer: ['Files', 'Published pages'],
-  broer: ['doda', 'qlk', 'GitHub', 'Save to Sagu'],
+  broer: ['doda', 'qlk', 'AI assistant', 'GitHub', 'Save to Sagu'],
   noegler: ['Access keys', 'Connected apps'],
   server: ['Public address', 'Server'],
 };
@@ -60,6 +61,7 @@ const SVAR = {
   '/api/v1/doda': { connected: true, url: 'https://doda.eksempel.invalid', tasks: 2 },
   '/api/v1/qlk': { connected: true, url: 'https://qlk.eksempel.invalid', shortBase: 'https://q.eksempel.invalid', links: 2 },
   '/api/v1/github/status': { connected: true, login: 'eksempel' },
+  '/api/v1/assistant': { assistant: { connected: true, provider: 'deepseek', model: 'deepseek-chat', base: null } },
 };
 
 async function tegnSiden() {
@@ -71,6 +73,9 @@ async function tegnSiden() {
     uddrag(p2, 'function laesFane('),
     uddrag(p2, 'function aktivFane('),
     uddrag(p2, 'function fanebarHtml('),
+    uddrag(p17, 'const ai = {'),
+    uddrag(p17, 'const AI_NAVNE = {'),
+    uddrag(p17, 'async function aiDelHtml('),
     uddrag(p2, 'async function sideSettings('),
     'sideSettings();',
   ].join('\n');
@@ -110,11 +115,11 @@ function delOp(html) {
 
 const overskrifter = (html) => [...html.matchAll(/<h2>([^<]*)<\/h2>/g)].map((m) => m[1]);
 
-test('hver fane har sine afsnit - alle sytten, med navn', async () => {
+test('hver fane har sine afsnit - alle atten, med navn', async () => {
   const { faner, udenfor } = delOp(await tegnSiden());
   const faktisk = Object.fromEntries(faner.map((f) => [f.fane, overskrifter(f.krop)]));
   assert.deepEqual(faktisk, FORVENTET);
-  assert.equal(Object.values(faktisk).flat().length, 17);
+  assert.equal(Object.values(faktisk).flat().length, 18);   // + AI assistant (2026-10-08)
   assert.deepEqual(overskrifter(udenfor), [], 'et afsnit uden for enhver fane staar fremme paa dem alle');
 });
 

@@ -896,7 +896,7 @@ const MIGRATIONS = [
  * `totp_secret` ER det andet led. Kan den laeses ud, er hele
  * totrinsbekraeftelsen pynt (RUNE-ERFARINGER §9d).
  */
-const HEMMELIGE_SETTINGS = new Set(['github_token', 'doda_key', 'qlk_key', 'server_secret',
+const HEMMELIGE_SETTINGS = new Set(['github_token', 'doda_key', 'qlk_key', 'ai_key', 'server_secret',
   'vapid_private', 'totp_secret', 'totp_last']);
 
 function migrate() {
@@ -1519,6 +1519,23 @@ function godkend(req, res, kraevetScope) {
  * noegle nok til at give sig selv fuld og varig adgang - eller til at laase
  * ejeren ude af sin egen app (RUNE-ERFARINGER, doda F2).
  */
+/* Assistentens fejlkoder -> status og en laesbar engelsk besked. */
+function aiFejl(res, r) {
+  const [st, besked] = {
+    provider: [400, 'Pick Claude, ChatGPT, DeepSeek or a compatible server.'],
+    admin_only: [403, 'Only an administrator can point the server at an address of its own.'],
+    no_key: [400, 'Paste an API key the first time you connect.'],
+    bad_url: [400, 'The address must be a plain web address like http://192.168.1.10:1234/v1.'],
+    no_model: [400, 'Write the name of the model to use.'],
+    bad_key: [502, 'The AI service did not accept the key.'],
+    rate: [429, 'The AI service says too many requests - wait a moment and try again.'],
+    unreachable: [502, 'The AI service did not answer.'],
+    not_connected: [400, 'Connect an AI service under Settings → Connections first.'],
+    nothing_pending: [409, 'There is nothing waiting for an answer.'],
+  }[r.kode] || [502, `The AI service answered with an error${r.besked ? `: ${r.besked}` : '.'}`];
+  apiFejl(res, st, r.kode || 'ai_error', besked);
+}
+
 function requireUser(req, res) {
   const user = sessionUser(req);
   if (!user) { apiFejl(res, 401, 'not_signed_in', 'You are not signed in.'); return null; }
@@ -4917,6 +4934,52 @@ const ROUTES = {
     sendJson(res, 200, { connected: true, url, shortBase: kort, message: proevet.besked });
   },
 
+  /*
+   * AI-assistenten. KUN med session: en API-noegle maa ikke kunne bruge en
+   * brugers AI-kredit, og noeglen selv forlader aldrig serveren.
+   */
+  'GET /api/v1/assistant': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    sendJson(res, 200, { assistant: ai.offentlig(user.id) });
+  },
+  'POST /api/v1/assistant': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const r = await ai.forbind(user.id, user.isAdmin, await readJsonBody(req));
+    if (!r.ok) { aiFejl(res, r); return; }
+    audit('ai-forbundet', user.id, null, ai.offentlig(user.id).provider);
+    sendJson(res, 200, { assistant: ai.offentlig(user.id) });
+  },
+  'DELETE /api/v1/assistant': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    ai.afbryd(user.id);
+    sendJson(res, 200, { assistant: ai.offentlig(user.id) });
+  },
+  'POST /api/v1/assistant/chat': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const tekst = String((await readJsonBody(req)).message || '').trim();
+    if (!tekst) { apiFejl(res, 400, 'empty', 'Write a question first.'); return; }
+    const r = await ai.spoerg(user.id, tekst, vaert(req));
+    if (!r.ok) { aiFejl(res, r); return; }
+    sendJson(res, 200, { parts: r.dele, pending: r.venter });
+  },
+  'POST /api/v1/assistant/approve': async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const r = await ai.godkend(user.id, (await readJsonBody(req)).approve, vaert(req));
+    if (!r.ok) { aiFejl(res, r); return; }
+    sendJson(res, 200, { parts: r.dele, pending: r.venter });
+  },
+  'POST /api/v1/assistant/reset': (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    ai.nulstil(user.id);
+    sendJson(res, 200, { ok: true });
+  },
+
   'DELETE /api/v1/qlk': (req, res) => {
     const user = requireUser(req, res);
     if (!user) return;
@@ -8249,6 +8312,18 @@ const mcp = require('./mcp.js').opret({
   udgivNote,
   lavUploadLink,
   vaert,
+});
+
+/*
+ * AI-assistenten (»Ask«, 2026-10-08). Brugerens egen Claude-, ChatGPT- eller
+ * DeepSeek-noegle og MCP-serverens vaerktoejer - samme vej ind i dataene, samme
+ * user_id-filter. Noeglen er en hemmelig indstilling (ai_key).
+ */
+const ai = require('./assistent.js').opret({
+  vaerktoejer: () => mcp.VAERKTOEJER,
+  getSetting,
+  setSetting,
+  log,
 });
 
 /* ------------------------------------------------------------- oauth */
