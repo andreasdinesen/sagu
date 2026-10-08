@@ -372,7 +372,7 @@ ${o.krop}
 <div class="wwrap">
   ${navHtml(raekke, rod, kort, note.id, !!share.notebook_id)}
   <main class="wmain">
-    ${hjemHtml(rod)}
+    ${share.notebook_id && share.start_note_id === note.id ? '' /* startsiden ER forsiden (v111) */ : hjemHtml(rod)}
     ${krummerHtml(o.kaede || [], rod, kort)}
     <h1 class="wtitel">${note.icon ? `<span class="wicon">${esc(note.icon)}</span>` : ''}${esc(note.title || 'Untitled')}</h1>
     ${friskhed(note)}
@@ -861,14 +861,21 @@ ${nyeste.map((n) => `  <entry>
     }
 
     /* --- en side ------------------------------------------------------- */
-    // En notesbogs forside er GENERERET: bogen har ingen rod-note.
-    if (!rest && share.notebook_id) {
+    /*
+     * En notesbogs forside er GENERERET: bogen har ingen rod-note - medmindre
+     * ejeren har valgt en startside (v111). Saa vises DEN note paa wikiens
+     * adresse. Er den ikke (laengere) med i udgivelsen - flyttet, slettet,
+     * privat - falder den stille tilbage til den genererede forside.
+     */
+    const start = !rest && share.notebook_id && share.start_note_id && ider.includes(share.start_note_id)
+      ? share.start_note_id : null;
+    if (!rest && share.notebook_id && !start) {
       srv.taelVisning(share, share.notebook_id);
       srv.sendHtml(res, 200,
         bogForside(share, rod, raekke, kort, { kanonisk: `${srv.offentligVaert(req)}${rod}/` }), share);
       return true;
     }
-    let noteId = share.note_id;
+    let noteId = start || share.note_id;
     if (rest) {
       const fundet = [...kort.entries()].find(([, s]) => s === rest);
       if (!fundet) { srv.ikkeFundet(res); return true; }

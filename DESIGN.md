@@ -4572,3 +4572,22 @@ ind i dataene.
   skubber det indholdet til side i stedet for at dække det.
 - Test: `tests/assistent.test.mjs` mod en falsk Claude/ChatGPT/DeepSeek (`SAGU_*_URL`); isolationen
   (bo ser aldrig andreas' noter gennem assistenten) er en af prøverne.
+
+## 63 · En wiki kan starte på en bestemt note (v111, 2026-10-08)
+
+»Kan du i sagu lave så man kan vælge en startside når man laver en notebook om til en wiki. Nogle gange
+vil man gerne have den til at starte på en bestemt note« (Andreas).
+
+- **`shares.start_note_id`** (m20), kun for en notesbog. `PATCH /api/v1/shares/<id>` med `startNoteId`
+  (null/"" = den genererede oversigt). Serveren godtager kun en af ejerens egne noter, hvis `notebookId`
+  er udgivelsens bog — også en underside. En note-udgivelse har sin rod som forside og afviser feltet.
+- **Ingen fremmednøgle, og valget tjekkes ved HVER visning** mod udgivelsens id-liste (`app/wiki.js`).
+  Flyttes noten ud, slettes den eller gøres den utilgængelig, falder `/w/<slug>/` stille tilbage til
+  oversigten — udgivelsen må aldrig dø af, at man ryddede op i bogen. Dialogen viser et forældet valg
+  som »(a page that is no longer in this notebook)«, så det kan ses og skiftes.
+- Startsiden vises på wikiens EGEN adresse (ingen omdirigering — et kortlink og en QR-kode til
+  `/w/<slug>` giver den side, man valgte). Den kanoniske adresse er sidens egen (`/w/<slug>/<side>`),
+  så en søgemaskine ikke ser to sider. »← Front page« er skjult på startsiden (den pegede på sig selv).
+- Oversigten (søgefelt + »Recently updated«) er ikke væk, men kan ikke nås fra roden, så længe en
+  startside er valgt. Søgning og »Recent changes« står i foden på hver side.
+- Test: `tests/startside.test.mjs`.

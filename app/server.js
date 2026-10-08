@@ -879,6 +879,19 @@ const MIGRATIONS = [
       CREATE INDEX qlk_links_kode ON qlk_links(user_id, code);
     `);
   },
+
+  function m20(d) {
+    /*
+     * v111 - en udgivet NOTESBOG kan starte paa en bestemt note (Andreas, 2026-10-08:
+     * »nogle gange vil man gerne have den til at starte paa en bestemt note«).
+     *
+     * Ingen fremmednoegle: noten kan flyttes ud af bogen, slettes eller vaere
+     * privat, og saa skal wikien bare falde tilbage til den genererede forside -
+     * ikke miste udgivelsen. Om noten er med, afgoeres ved HVER visning mod
+     * udgivelsens egen id-liste (app/wiki.js).
+     */
+    d.exec('ALTER TABLE shares ADD COLUMN start_note_id TEXT;');
+  },
 ];
 
 /*
@@ -6410,6 +6423,19 @@ const MOENSTRE = [
       if (har('allowSearch')) { saet.push('allow_search = ?'); arg.push(body.allowSearch ? 1 : 0); }
       if (har('allowIndex')) { saet.push('allow_index = ?'); arg.push(body.allowIndex ? 1 : 0); }
       if (har('expiresAt')) { saet.push('expires_at = ?'); arg.push(tidsstempel(body.expiresAt)); }
+      if (har('startNoteId')) {
+        // Kun for en notesbog, og kun en af ejerens egne noter I bogen. null/"" = den genererede forside.
+        const start = body.startNoteId ? String(body.startNoteId) : null;
+        if (start) {
+          const n = share.notebook_id ? hentNote(auth.user.id, start) : null;
+          if (!n || n.notebookId !== share.notebook_id) {
+            apiFejl(res, 400, 'bad_start_page', 'The start page must be a note in this notebook.');
+            return;
+          }
+        }
+        saet.push('start_note_id = ?');
+        arg.push(start);
+      }
       if (!saet.length) { apiFejl(res, 400, 'nothing_to_change', 'Send at least one field to change.'); return; }
 
       db.prepare(`UPDATE shares SET ${saet.join(', ')} WHERE id = ? AND user_id = ?`)
@@ -7452,6 +7478,8 @@ function formUdgivelse(r) {
     allowSearch: !!r.allow_search,
     allowIndex: !!r.allow_index,
     expiresAt: r.expires_at || null,
+    // v111: den note, en udgivet notesbog starter paa - null = den genererede forside.
+    startNoteId: r.start_note_id || null,
     views: r.views,
     createdAt: r.created_at,
     topPages: db.prepare(`

@@ -188,6 +188,10 @@ async function visUdgivPanel(maal) {
       el.addEventListener('change', () => saet({ [el.dataset.flag]: el.checked }));
     });
 
+    // v111: den note, en udgivet notesbog starter paa ('' = den genererede oversigt).
+    const startside = q('udgivStart');
+    if (startside) startside.addEventListener('change', () => saet({ startNoteId: startside.value || null }));
+
     const mode = q('udgivModeSkift');
     if (mode) mode.addEventListener('change', () => saet({ mode: mode.value }));
 
@@ -298,6 +302,26 @@ function ikkeUdgivetHtml(m, qlkHtml) {
     ${qlkHtml || ''}`;
 }
 
+/*
+ * Startsiden for en udgivet notesbog (v111, Andreas 2026-10-08: »nogle gange vil man
+ * gerne have den til at starte paa en bestemt note«). Bogens noter i traeets
+ * raekkefoelge, indrykket som i sidebaren. En startside, der ikke findes i bogen
+ * laengere (flyttet eller slettet), staar som et valg for sig, saa den kan ses og
+ * skiftes - wikien selv viser saa oversigten.
+ */
+function startsideValg(share) {
+  const ud = [`<option value="">Overview — search and recent changes</option>`];
+  let fundet = false;
+  const gren = (note, dybde) => {
+    if (note.id === share.startNoteId) fundet = true;
+    ud.push(`<option value="${esc(note.id)}"${note.id === share.startNoteId ? ' selected' : ''}>${'\u00a0\u00a0'.repeat(dybde)}${esc(note.title || 'Untitled')}</option>`);
+    for (const b of boernAf(note.id, null)) gren(b, dybde + 1);
+  };
+  for (const n of boernAf(null, share.notebookId)) gren(n, 0);
+  if (share.startNoteId && !fundet) ud.push(`<option value="${esc(share.startNoteId)}" selected>(a page that is no longer in this notebook)</option>`);
+  return ud.join('');
+}
+
 function udgivetHtml(share, m, opt) {
   const o = opt || {};
   const erBog = share.kind === 'notebook';
@@ -318,7 +342,12 @@ function udgivetHtml(share, m, opt) {
 
     <h3 class="udgiv-hoved">What is published</h3>
     ${erBog
-    ? `<p class="meta saetning">The whole notebook — every page in it, including ones you add later.</p>`
+    ? `<p class="meta saetning">The whole notebook — every page in it, including ones you add later.</p>
+      <label class="field"><span>Start page</span>
+        <select class="input" id="udgivStart">${startsideValg(share)}</select></label>
+      <p class="meta saetning">What readers see when they open the wiki's address. The overview is
+      the search and what changed lately; pick a page to start on that instead — the search and
+      the list of changes are still at the bottom of every page.</p>`
     : `<label class="field"><span>Scope</span>
       <select class="input" id="udgivModeSkift">
         <option value="tree"${share.mode === 'tree' ? ' selected' : ''}>This page and everything under it</option>
