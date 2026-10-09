@@ -97,6 +97,25 @@ const GENVEJE = [
     gør: () => opretQuicknote(),
   },
   {
+    /*
+     * AI-assistenten - genvej nummer tre MED modifikator (Andreas, 2026-10-09).
+     * Samme moenster og samme begrundelse som quicknoten lige ovenfor: man skal
+     * kunne spoerge midt i en saetning. `Cmd+Option+A` / `Ctrl+Alt+A` er fri i
+     * Chrome, Edge, Safari og Firefox (J og I er udviklervaerktoejerne - derfor
+     * ikke dem), matches paa `e.code`, og `AltGr+A` skriver intet paa et dansk
+     * tastatur. Samme genvej i qlk.
+     */
+    tast: 'a', kode: 'KeyA', modifikator: 'alt',
+    vis: modTast() === '⌘' ? '⌘⌥A' : 'Ctrl+Alt+A',
+    hvad: 'Ask the assistant — opens and closes the AI panel from anywhere, even while you are writing. '
+      + 'Only when an assistant is connected (Settings → Connections).',
+    gør: () => skiftAi(),
+  },
+  {
+    tast: 'a', vis: 'A', hvad: 'Ask the assistant (when you are not writing)',
+    gør: () => skiftAi(),
+  },
+  {
     tast: 'n', vis: 'N', hvad: 'New note',
     gør: () => opretOgAaben({}),
   },

@@ -27,7 +27,7 @@ const AI_EKSEMPLER = [
 
 function aiKnapHtml() {
   return `<button class="temabtn ai-knap" id="aiBtn" type="button" aria-label="Ask the assistant"
-    title="Ask the assistant">${icon('gnist', 16)}<span>Ask</span></button>`;
+    title="Ask the assistant (${modTast() === '⌘' ? '⌘⌥A' : 'Ctrl+Alt+A'})">${icon('gnist', 16)}<span>Ask</span></button>`;
 }
 
 function aiPanel() {
@@ -79,8 +79,25 @@ function aiPanel() {
   return p;
 }
 
+/*
+ * Genvejen (Andreas, 2026-10-09): ⌘⌥A / Ctrl+Alt+A - og A, naar man ikke skriver -
+ * aabner panelet og lukker det igen. Kun naar en assistent ER forbundet; ellers en
+ * besked om, hvor den sættes op (knappen oeverst viser stadig vejen derhen).
+ */
+async function skiftAi() {
+  const p = document.getElementById('aiPanel');
+  if (p && !p.hidden) { visAi(false); return; }
+  if (ai.forbundet === null) {
+    try { ai.forbundet = (await api('GET', '/api/v1/assistant')).assistant.connected; } catch { ai.forbundet = false; }
+  }
+  if (!ai.forbundet) { toast('No assistant is connected yet — set one up under Settings → Connections.'); return; }
+  visAi(true);
+}
+
 async function visAi(vis) {
   const p = aiPanel();
+  // Lukkes panelet, maa fokus ikke blive i det skjulte chatfelt - saa troede genvejene, man skrev.
+  if (!vis && p.contains(document.activeElement)) document.activeElement.blur();
   p.hidden = !vis;
   document.body.classList.toggle('ai-aaben', vis);
   if (!vis) return;
