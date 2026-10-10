@@ -118,3 +118,19 @@ test('quicknoten staar i oversigten med tastaturets egne navne', () => {
   assert.ok(koer('MacIntel').vis.some((g) => g.vis === '⌘⌥N'));
   assert.ok(koer('Win32').vis.some((g) => g.vis === 'Ctrl+Alt+N'));
 });
+
+test('hver genvej har en gruppe, og grupperne staar i de fire apps’ raekkefoelge', () => {
+  const { vis, koerI } = koer('MacIntel');
+  // JSON-rundtur: arrays fra vm'en har en anden prototype end testens.
+  const grupper = JSON.parse(koerI('JSON.stringify(GENVEJSGRUPPER)'));
+  assert.deepEqual(grupper.map((g) => g[1]), ['Anywhere', 'In the search field', 'On a note']);
+  const ider = new Set(grupper.map((g) => g[0]));
+  for (const g of vis) assert.ok(ider.has(g.gruppe), `${g.vis} mangler en gyldig gruppe`);
+  const overalt = [...vis.filter((g) => g.gruppe === 'overalt').map((g) => g.vis)];
+  assert.deepEqual(overalt, ['?', '/', '⌘K', '⌘⌥N', '⌘⌥A', 'A', 'N', 'T', 'G', 'Esc']);
+  // Soegefeltets linjer er kun visning: feltet selv i p5 haandterer tasterne.
+  for (const g of vis.filter((x) => x.gruppe === 'soeg')) {
+    assert.equal(g.kunVist, true);
+    assert.equal(g.tast, '');
+  }
+});

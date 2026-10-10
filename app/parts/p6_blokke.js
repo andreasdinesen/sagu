@@ -2021,12 +2021,9 @@ function visSyntaksPanel() {
         <h3 style="margin-top:22px" id="syntaksTaster">Keyboard shortcuts</h3>
         <p class="meta saetning">The same list opens with <kbd>?</kbd> anywhere in Sagu, as long
         as you are not typing in a field.</p>
-        <div class="tablewrap"><table class="data genvejtabel">
-          <tbody>${GENVEJE.map((g) => `<tr>
-            <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
-            <td>${esc(g.tast === '?' ? 'Show the keyboard shortcuts' : g.hvad)}</td>
-          </tr>`).join('')}</tbody>
-        </table></div>
+        ${typeof genvejGrupperHtml === 'function' ? genvejGrupperHtml({
+          tekst: (g) => (g.tast === '?' ? 'Show the keyboard shortcuts' : g.hvad),
+        }) : ''}
       </div>
     </div>`;
   document.body.appendChild(host);

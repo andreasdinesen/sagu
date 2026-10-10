@@ -2819,6 +2819,11 @@ async function frysGhAdresser() {
  *
  * `naar` afgør, om genvejen overhovedet gælder lige nu — så oversigten kan
  * vise, hvad der virker HER, og ikke en liste, hvor halvdelen ikke gør noget.
+ *
+ * `gruppe` er den overskrift, linjen står under i oversigten (se
+ * `GENVEJSGRUPPER` lige under bordet). Grupperne er de samme i doda, tovo,
+ * qlk og Sagu (2026-10-10) - »Anywhere«, »In the search field« og så appens
+ * egen; Sagu har ingen tastaturliste, så »In a list« findes ikke her.
  */
 /**
  * Hedder tasten Cmd eller Ctrl paa DEN her maskine?
@@ -2834,11 +2839,11 @@ function modTast() {
 
 const GENVEJE = [
   {
-    tast: '?', vis: '?', hvad: 'Show this list',
+    tast: '?', vis: '?', gruppe: 'overalt', hvad: 'Show this list',
     gør: () => visGenvejsPanel(),
   },
   {
-    tast: '/', vis: '/', hvad: 'Jump to the search field',
+    tast: '/', vis: '/', gruppe: 'overalt', hvad: 'Jump to the search field',
     gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
   },
   {
@@ -2856,7 +2861,7 @@ const GENVEJE = [
      * Den virker OGSAA midt i en note. Netop dér er den mest vaerd: man er
      * ved at skrive, skal slaa noget op, og skal ikke foerst finde musen.
      */
-    tast: 'k', modifikator: true, vis: modTast() + 'K',
+    tast: 'k', modifikator: true, vis: modTast() + 'K', gruppe: 'overalt',
     hvad: 'Search — from anywhere, even mid-sentence',
     gør: () => { const o = omniEl(); if (o) { o.focus(); o.select(); } },
   },
@@ -2878,7 +2883,7 @@ const GENVEJE = [
      * - Paa Windows er `Ctrl+Alt` det samme som AltGr. `AltGr+N` skriver
      *   intet paa et dansk tastatur, saa der aedes ikke et bogstav her.
      */
-    tast: 'n', kode: 'KeyN', modifikator: 'alt',
+    tast: 'n', kode: 'KeyN', modifikator: 'alt', gruppe: 'overalt',
     vis: modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N',
     /*
      * Beskrivelsen siger, hvad der SKER - ikke bare hvad den hedder. »Hvordan
@@ -2900,18 +2905,18 @@ const GENVEJE = [
      * ikke dem), matches paa `e.code`, og `AltGr+A` skriver intet paa et dansk
      * tastatur. Samme genvej i qlk.
      */
-    tast: 'a', kode: 'KeyA', modifikator: 'alt',
+    tast: 'a', kode: 'KeyA', modifikator: 'alt', gruppe: 'overalt',
     vis: modTast() === '⌘' ? '⌘⌥A' : 'Ctrl+Alt+A',
     hvad: 'Ask the assistant — opens and closes the AI panel from anywhere, even while you are writing. '
       + 'Only when an assistant is connected (Settings → Connections).',
     gør: () => skiftAi(),
   },
   {
-    tast: 'a', vis: 'A', hvad: 'Ask the assistant (when you are not writing)',
+    tast: 'a', vis: 'A', gruppe: 'overalt', hvad: 'Ask the assistant (when you are not writing)',
     gør: () => skiftAi(),
   },
   {
-    tast: 'n', vis: 'N', hvad: 'New note',
+    tast: 'n', vis: 'N', gruppe: 'overalt', hvad: 'New note',
     gør: () => opretOgAaben({}),
   },
   {
@@ -2921,28 +2926,81 @@ const GENVEJE = [
      * Today's note i menuen?«). Samme handling som ⌘⌥N; T er bare den, man
      * naar, naar man ikke staar i et skrivefelt.
      */
-    tast: 't', vis: 'T',
+    tast: 't', vis: 'T', gruppe: 'overalt',
     hvad: `Quick note — the same as ${modTast() === '⌘' ? '⌘⌥N' : 'Ctrl+Alt+N'}, when you are not typing`,
     gør: () => opretQuicknote(),
   },
   {
-    tast: 'e', vis: 'E', hvad: 'Edit the last paragraph',
+    tast: 'g', vis: 'G', gruppe: 'overalt', hvad: 'Back to all notes',
+    gør: () => gaaTil('notes'),
+  },
+  {
+    tast: 'Escape', vis: 'Esc', gruppe: 'overalt', hvad: 'Close what is open',
+    // Escape håndteres af den enkelte rude, som skal lukkes — hver rude
+    // kender sin egen lukning. Den står her, fordi den skal STÅ i
+    // oversigten: en genvej, folk bruger hele tiden, må ikke mangle på
+    // listen, bare fordi den er implementeret et andet sted.
+    kunVist: true,
+  },
+  /*
+   * Soegefeltet (2026-10-10, ensretningen af de fire apps). Feltet har sine
+   * EGNE taster, og de haandteres af feltet selv i p5 (`bindOmni` og
+   * `OMNI_MODER`) - her staar de kun, saa oversigten viser dem. Derfor
+   * `kunVist` og tom `tast`: en tom tast kan aldrig matche en tastetryk, og
+   * `/` her maa ikke skygge for `/` i »Anywhere«.
+   */
+  {
+    tast: '', vis: '*', gruppe: 'soeg', kunVist: true,
+    hvad: 'First in the field: create a new note — the rest is its title '
+      + '(#tag and /notebook in the text work too)',
+  },
+  {
+    tast: '', vis: '/', gruppe: 'soeg', kunVist: true,
+    hvad: 'First in the field: find a notebook (or create one)',
+  },
+  {
+    tast: '', vis: '#', gruppe: 'soeg', kunVist: true,
+    hvad: 'First in the field: find a tag and filter by it (or create one)',
+  },
+  {
+    tast: '', vis: '+', gruppe: 'soeg', kunVist: true,
+    hvad: 'First in the field: send a new task to doda (linked to the open note, if any)',
+  },
+  {
+    tast: '', vis: '↑ ↓', gruppe: 'soeg', kunVist: true,
+    hvad: 'Move between results',
+  },
+  {
+    tast: '', vis: 'Enter', gruppe: 'soeg', kunVist: true,
+    hvad: 'Open the highlighted result — or create, when the field starts with * or +',
+  },
+  {
+    tast: '', vis: modTast() === '\u2318' ? '\u2318\u21b5' : 'Ctrl+Enter', gruppe: 'soeg', kunVist: true,
+    hvad: 'Open the highlighted result in a new tab — '
+      + `or ${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click the result`,
+  },
+  {
+    tast: '', vis: 'Tab', gruppe: 'soeg', kunVist: true,
+    hvad: 'Change where you search: all notes → this notebook → this note',
+  },
+  {
+    tast: '', vis: 'Esc', gruppe: 'soeg', kunVist: true,
+    hvad: 'Clear the field and leave it',
+  },
+  {
+    tast: 'e', vis: 'E', gruppe: 'note', hvad: 'Edit the last paragraph',
     naar: () => state.view === 'note' && maaRette(editor.note),
     gør: () => aabnSidste(),
   },
   {
-    tast: 'f', vis: 'F', hvad: 'Focus mode — just the note',
+    tast: 'f', vis: 'F', gruppe: 'note', hvad: 'Focus mode — just the note',
     naar: () => state.view === 'note',
     gør: () => saetFokus(!erIFokus()),
   },
   {
-    tast: 's', vis: 'S', hvad: 'Star this note',
+    tast: 's', vis: 'S', gruppe: 'note', hvad: 'Star this note',
     naar: () => state.view === 'note' && !!editor.note,
     gør: () => skiftFavorit(),
-  },
-  {
-    tast: 'g', vis: 'G', hvad: 'Back to all notes',
-    gør: () => gaaTil('notes'),
   },
   /*
    * Fanerne (F35). Enkelttaster, som resten - `Ctrl+W`, `Ctrl+Tab` og
@@ -2952,18 +3010,18 @@ const GENVEJE = [
    * genvejene afviser Alt med vilje.
    */
   {
-    tast: 'w', vis: 'W', hvad: 'Close this tab',
+    tast: 'w', vis: 'W', gruppe: 'note', hvad: 'Close this tab',
     naar: () => noteFanerAktive() && state.view === 'note'
       && noteFaner.liste.some((t) => t.id === state.openNote),
     gør: () => lukNoteFane(state.openNote),
   },
   {
-    tast: ',', vis: ',', hvad: 'Previous tab',
+    tast: ',', vis: ',', gruppe: 'note', hvad: 'Previous tab',
     naar: () => noteFanerAktive() && noteFaner.liste.length > 0,
     gør: () => skiftNoteFane(-1),
   },
   {
-    tast: '.', vis: '.', hvad: 'Next tab',
+    tast: '.', vis: '.', gruppe: 'note', hvad: 'Next tab',
     naar: () => noteFanerAktive() && noteFaner.liste.length > 0,
     gør: () => skiftNoteFane(1),
   },
@@ -2975,38 +3033,56 @@ const GENVEJE = [
    * Det hele haandteres af ÉN lytter i p15 (`noteMaalFraKlik`).
    */
   {
-    tast: '', vis: `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click`,
+    tast: '', vis: `${modTast() === '\u2318' ? '\u2325' : 'Alt'}-click`, gruppe: 'note',
     hvad: 'In the sidebar: open the note in a new tab (middle-click does the same). '
       + `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click there selects several notes instead`,
     kunVist: true,
   },
   {
-    tast: '', vis: modTast() === '\u2318' ? '\u2318\u21b5' : 'Ctrl+Enter',
-    hvad: 'In the search field: open the highlighted result in a new tab — '
-      + `or ${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click the result`,
-    kunVist: true,
-  },
-  {
-    tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`,
+    tast: '', vis: `${modTast() === '\u2318' ? '\u2318' : 'Ctrl'}-click`, gruppe: 'note',
     hvad: 'On a link to another note, a favourite or a recent note: open it in a new tab '
       + '(middle-click does the same). A plain click opens it in the tab you are in',
     kunVist: true,
   },
   {
-    tast: '', vis: 'Right-click',
+    tast: '', vis: 'Right-click', gruppe: 'note',
     hvad: 'On a tab in the bar above the search field: open the note in its own window, '
       + 'close the tab or close the other tabs',
     kunVist: true,
   },
-  {
-    tast: 'Escape', vis: 'Esc', hvad: 'Close what is open',
-    // Escape håndteres af den enkelte rude, som skal lukkes — hver rude
-    // kender sin egen lukning. Den står her, fordi den skal STÅ i
-    // oversigten: en genvej, folk bruger hele tiden, må ikke mangle på
-    // listen, bare fordi den er implementeret et andet sted.
-    kunVist: true,
-  },
 ];
+
+/*
+ * Overskrifterne i oversigten, i den rækkefølge de står. Hver post i
+ * `GENVEJE` peger på én af dem med `gruppe` - der er ingen anden kopi.
+ */
+const GENVEJSGRUPPER = [
+  ['overalt', 'Anywhere'],
+  ['soeg', 'In the search field'],
+  ['note', 'On a note'],
+];
+
+/**
+ * Hele oversigten som HTML: én overskrift og én tabel pr. gruppe.
+ *
+ * Bruges af `?`-ruden her og af »How to write« (p6), så de to ikke kan
+ * blive uenige. `tekst` lader kalderen omformulere en linje, og `doed`
+ * slår gråtoningen (`genvej-doed`) til - den giver kun mening i `?`-ruden,
+ * der åbnes oven på den skærm, man står på.
+ */
+function genvejGrupperHtml({ tekst = (g) => g.hvad, doed = false } = {}) {
+  return GENVEJSGRUPPER.map(([id, navn]) => {
+    const linjer = GENVEJE.filter((g) => g.gruppe === id);
+    if (!linjer.length) return '';
+    return `<h4 class="genvejgruppe">${esc(navn)}</h4>
+      <div class="tablewrap"><table class="data genvejtabel"><tbody>
+        ${linjer.map((g) => `<tr class="${!doed || g.kunVist || genvejGaelder(g) ? '' : 'genvej-doed'}">
+          <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
+          <td>${esc(tekst(g))}</td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
+  }).join('');
+}
 
 /*
  * Quicknoten (v94): titel med dato og klokkeslaet, i notesbogen »Quicknotes«,
@@ -3149,14 +3225,9 @@ function visGenvejsPanel() {
         <button class="iconbtn" id="genvejLuk" aria-label="Close">${icon('luk', 16)}</button>
       </div>
       <div class="modal-krop">
-        <div class="tablewrap"><table class="data genvejtabel"><tbody>
-          ${GENVEJE.map((g) => `<tr class="${g.kunVist || genvejGaelder(g) ? '' : 'genvej-doed'}">
-            <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
-            <td>${esc(g.hvad)}</td>
-          </tr>`).join('')}
-        </tbody></table></div>
+        ${genvejGrupperHtml({ doed: true })}
         <p class="meta saetning">Greyed-out shortcuts do something on other screens.
-        Apart from ${esc(modTast())}K and the quick note, no key uses ⌘ or Ctrl — those belong to the browser.</p>
+        Apart from ${esc(modTast())}K, the quick note and the assistant, no key uses ⌘ or Ctrl — those belong to the browser.</p>
       </div>
     </div>`;
   document.body.appendChild(host);
@@ -6620,7 +6691,7 @@ function bindAiDel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 112;
+const APP_VERSION = 113;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -18305,12 +18376,9 @@ function visSyntaksPanel() {
         <h3 style="margin-top:22px" id="syntaksTaster">Keyboard shortcuts</h3>
         <p class="meta saetning">The same list opens with <kbd>?</kbd> anywhere in Sagu, as long
         as you are not typing in a field.</p>
-        <div class="tablewrap"><table class="data genvejtabel">
-          <tbody>${GENVEJE.map((g) => `<tr>
-            <td style="width:1%"><kbd>${esc(g.vis)}</kbd></td>
-            <td>${esc(g.tast === '?' ? 'Show the keyboard shortcuts' : g.hvad)}</td>
-          </tr>`).join('')}</tbody>
-        </table></div>
+        ${typeof genvejGrupperHtml === 'function' ? genvejGrupperHtml({
+          tekst: (g) => (g.tast === '?' ? 'Show the keyboard shortcuts' : g.hvad),
+        }) : ''}
       </div>
     </div>`;
   document.body.appendChild(host);
