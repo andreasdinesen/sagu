@@ -3845,11 +3845,13 @@ body.solo .notefaner { display: none; }
 .kode-redigering .kodeblok { border-color: var(--accent); }
 .kode-redigering .kodeblok-top { padding: 4px 10px 4px 14px; }
 .kode-sprog {
-  width: 12em; max-width: 100%; padding: 2px 0; border: 0; outline: none;
+  width: 22em; max-width: 100%; padding: 2px 0; border: 0; outline: none;
   background: transparent; color: var(--muted); font: 600 10px/1.6 var(--mono);
   letter-spacing: .08em; text-transform: uppercase;
 }
-.kode-sprog::placeholder { color: var(--muted); opacity: .6; }
+.kode-sprog::placeholder { color: var(--muted); opacity: .6; text-transform: none; letter-spacing: 0; }
+/* Sprog-maerket paa en lukket kodeblok kan klikkes: det aabner sprogfeltet. */
+.dok .kodeblok-sprog { cursor: text; }
 .blok-felt.kode-felt {
   margin: 0; padding: 14px 16px; border: 0; background: none;
   font-size: 13.5px; line-height: 1.55; white-space: pre; overflow-x: auto; tab-size: 2;

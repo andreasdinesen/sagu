@@ -867,6 +867,25 @@ function dokSkiftForm(niveau) {
   dokTegnMedTegn();
 }
 
+/*
+ * Hele afsnittet (eller overskriften) bliver en kodeblok - via markdown, saa
+ * en overskrifts `#` og en inline-kodes backticks ikke kommer med som tekst.
+ * `lavKodeblok` lod `#` blive staaende som et afsnit over blokken.
+ */
+function dokLinjeTilKodeblok() {
+  if (dokFormVedMarkoer() === null) return false;
+  const fra = dokSkiftLinjer((l, b) => {
+    if (b.slags !== 'afsnit' && b.slags !== 'overskrift') return null;
+    return ['```', linjerTilKode(l.map((x) => x.split(DOK_MARKOER).join(''))), '```'];
+  });
+  if (fra === null) return true;
+  editor.raaBlok = false;
+  editor.markoerTil = null;
+  editor.aabenBlok = fra;
+  tegnKrop();
+  return true;
+}
+
 /** Formen paa den blok, markoeren staar i: 0 tekst, 1-6 overskrift, null andet. */
 function dokFormVedMarkoer() {
   const sel = window.getSelection();
@@ -1403,7 +1422,10 @@ function bindDokVaerktoej(linje) {
   linje.querySelectorAll('[data-goer]').forEach((k) => {
     k.addEventListener('mousedown', (e) => {
       stop(e);
-      if (k.dataset.goer === 'code' && kodeKnapGiverBlok(el)) { lavKodeblok(el, null); return; }
+      if (k.dataset.goer === 'code' && kodeKnapGiverBlok(el)) {
+        if (markeringOverFlereLinjer() || !dokLinjeTilKodeblok()) lavKodeblok(el, null);
+        return;
+      }
       omslut(el, k.dataset.goer);
     });
   });
@@ -1495,6 +1517,8 @@ function dokKlik(e) {
     // Knapperne paa en oe (Copy, GitHub-opdatering) klarer sig selv.
     if (e.target.closest('button, img')) return true;
     const fra = dokFra(oe);
+    // Et klik paa sprog-maerket (»TEXT«, »SQL«) aabner med markoeren i sproget.
+    if (e.target.closest('.kodeblok-sprog')) editor.markoerTil = 'sprog';
     if (fra !== null) { dokTvingSkriv(); aabnBlok(fra); }
     return true;
   }

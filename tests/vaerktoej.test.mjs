@@ -384,3 +384,28 @@ test('sproget kan skiftes - og kan ikke bryde hegnet', () => {
   assert.equal(kodeSaml(d, 'ls', 'b a`s\nh'), '```bash\nls\n```');
   assert.equal(md.blokke(kodeSaml(d, 'ls', 'bash'))[0].sprog, 'bash');
 });
+
+/*
+ * »hvis jeg laver en linje om til kode, saa bliver den bare gul markeret«
+ * (Andreas, 2026-10-13). En hel linje - ogsaa en overskrift og en linje, der
+ * allerede er inline-kode - bliver en kodeblok uden `#` og backticks.
+ */
+const linjerTilKode = hentRen('linjerTilKode');
+
+test('en overskrift bliver kode uden sit #', () => {
+  assert.equal(linjerTilKode(['# testing testing']), 'testing testing');
+  assert.equal(linjerTilKode(['### a']), 'a');
+});
+
+test('en linje, der ER inline-kode, mister sine backticks', () => {
+  assert.equal(linjerTilKode(['`powershell.exe -File ".\\x.ps1"`']), 'powershell.exe -File ".\\x.ps1"');
+  assert.equal(linjerTilKode(['`` a `b` c ``']), 'a `b` c');
+});
+
+test('to stykker kode i én linje er ikke ét par backticks om det hele', () => {
+  assert.equal(linjerTilKode(['`a` og `b`']), '`a` og `b`');
+});
+
+test('et afsnit over flere linjer bevarer linjerne', () => {
+  assert.equal(linjerTilKode(['en', 'to']), 'en\nto');
+});

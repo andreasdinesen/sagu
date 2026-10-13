@@ -4633,3 +4633,9 @@ overskrift« og »kan du lave så 1 linje kode, bliver vist på samme måde som 
   med at høre til listen. Nu forlader den listen som tjeklisten (`dokForladListe`).
 - **Et tomt markørtegn efterlader ikke en tom tekstknude** (`dokSaetMarkoer('tegn')`): i en tom knude
   kan markøren ikke stå, og det, man skrev efter `[] `, landede uden for tjekpunktet.
+- **Tilføjet samme dag** (Andreas' skærmbillede: »hvis jeg laver en linje om til kode, så bliver den
+  bare gul markeret«): kode-knappen på en linje, der i forvejen ER inline-kode fra ende til anden —
+  typisk importeret fra Notion — gør den til en kodeblok; markøren i linjen er nok. Den hele linje går
+  nu gennem markdown (`dokLinjeTilKodeblok` + den rene `linjerTilKode`), så en overskrifts `#` og
+  linjens backticks ikke følger med (v114 lod et løst `#` stå over blokken). Et klik på sprog-mærket
+  (»TEXT«, »SQL«) på en lukket kodeblok åbner den med markøren i sprogfeltet.

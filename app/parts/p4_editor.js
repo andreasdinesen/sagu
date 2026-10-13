@@ -2275,7 +2275,8 @@ function tegnKodeRedigering(host, b, raa, foerHtml, efterHtml) {
       <div class="kodeblok">
         <div class="kodeblok-top">
           <input class="kode-sprog" id="kodeSprog" type="text" spellcheck="false" autocomplete="off"
-            maxlength="20" placeholder="Language" aria-label="Language" value="${esc(d.sprog)}">
+            maxlength="20" placeholder="Language — e.g. sql, powershell" aria-label="Language"
+            title="The kind of code: sql, powershell, bash, js …" value="${esc(d.sprog)}">
         </div>
         <textarea class="blok-felt kode-felt" id="blokFelt" spellcheck="false" autocapitalize="off"
           aria-label="Code" rows="${Math.max(1, d.kode.split('\n').length)}">${esc(d.kode)}</textarea>
@@ -2296,11 +2297,16 @@ function tegnKodeRedigering(host, b, raa, foerHtml, efterHtml) {
   const sprog = document.getElementById('kodeSprog');
   if (!felt || !sprog) return;
   autoHoejde(felt);
-  felt.focus();
-  const tilStart = editor.markoerTil === 'start';
+  const hvor = editor.markoerTil;
   editor.markoerTil = null;
-  const pos = tilStart ? 0 : felt.value.length;
-  felt.setSelectionRange(pos, pos);
+  if (hvor === 'sprog') {
+    sprog.focus();
+    sprog.select();
+  } else {
+    felt.focus();
+    const pos = hvor === 'start' ? 0 : felt.value.length;
+    felt.setSelectionRange(pos, pos);
+  }
 
   const skriv = () => skrivBlokTilbage(kodeSaml(d, felt.value, sprog.value), b);
   felt.addEventListener('input', () => { autoHoejde(felt); skriv(); });
@@ -3435,10 +3441,29 @@ function kodeKnapGiverBlok(vaert) {
   const start = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
   const blok = start && start.closest('p, h1, h2, h3, h4, h5, h6');
   if (!blok || !vaert.contains(blok) || !r.intersectsNode(blok)) return false;
-  const hele = blok.textContent.replace(/ /g, ' ').trim();
+  const ren = (x) => String(x).replace(/\s+/g, ' ').trim();
+  const hele = ren(blok.textContent);
   if (!hele) return r.collapsed;
+  /*
+   * En linje, der i forvejen ER kode i linjen fra ende til anden (den gule
+   * markering - typisk importeret fra Notion): knappen goer den til en
+   * kodeblok i stedet for at tage koden af (Andreas, 2026-10-13).
+   */
+  const koder = blok.querySelectorAll('code');
+  if (koder.length === 1 && ren(koder[0].textContent) === hele) return true;
   if (r.collapsed) return false;
-  return sel.toString().replace(/ /g, ' ').trim() === hele;
+  return ren(sel.toString()) === hele;
+}
+
+/**
+ * Ren: et afsnits eller en overskrifts linjer -> koden i en kodeblok.
+ * `#`, `>` og ét par backticks om det hele tages af - de er formen, ikke koden.
+ */
+function linjerTilKode(linjer) {
+  let kode = linjer.map((x) => x.replace(/^\s{0,3}(#{1,6}\s+|#{1,6}$|>\s?)/, '')).join('\n').trim();
+  const m = /^(`+)([\s\S]+?)\1$/.exec(kode);
+  if (m && !m[2].includes(m[1])) kode = m[2].trim();
+  return kode;
 }
 
 /*
