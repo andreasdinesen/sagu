@@ -4591,3 +4591,45 @@ vil man gerne have den til at starte på en bestemt note« (Andreas).
 - Oversigten (søgefelt + »Recently updated«) er ikke væk, men kan ikke nås fra roden, så længe en
   startside er valgt. Søgning og »Recent changes« står i foden på hver side.
 - Test: `tests/startside.test.mjs`.
+
+## 64 · Skriv som i Notion: kode, overskrifter og markdown-genveje (2026-10-13)
+
+Andreas: »når man prøver at lave en tekst om til kode, så bliver den automatisk lavet om til markdown
+når man klikker ind i den«, »svært at komme videre hvis man har lavet en linje om til kode«, »man skal
+lave en refresh hvis man fx benytter markdown til at lave en overskrift«, »i tekst menuen kan lave en
+overskrift« og »kan du lave så 1 linje kode, bliver vist på samme måde som en multi linje kode blok?«
+— samlet: »det skal virke mere som notion gør i web versionen«.
+
+- **En kodeblok redigeres som kode** (`tegnKodeRedigering`). Klikket åbner ikke længere det rå felt med
+  ```` ``` ```` over og under, men den samme ramme som i noten: sproget foroven (et felt, `kodeSprog`),
+  koden nedenunder i et monospace-felt. Hegnet (```` ``` ````/`~~~`, længden, indrykningen) læses af
+  den oprindelige blok og sættes på igen ved hvert tastetryk (`kodeDele`/`kodeSaml`, rene og prøvet i
+  `tests/vaerktoej.test.mjs`) — en urørt blok samles til præcis sig selv. Tab rykker to mellemrum ind
+  (Shift+Tab ud), Esc og ⌘Enter lukker, pil op/ned fra yderste linje går til naboen **i dokumentet**
+  (`kodeUdTilNabo`), og pil ned fra en kodeblok sidst i noten laver et tomt afsnit under den
+  (`nyAfsnitEfter`). MD-knappen viser stadig hegnene, som »Edit as Markdown«.
+- **Kode-knappen giver en KODEBLOK**, når markeringen er flere linjer, en HEL linje eller en tom linje
+  (`kodeKnapGiverBlok`); kun et stykke af en linje bliver `kode` i linjen. Den nye kodeblok åbnes med
+  markøren i koden.
+- **Ud af `kode`, fed og kursiv:** for browseren er »sidst i koden« og »lige efter koden« samme sted, så
+  alt, man skrev efter en afsluttende backtick, blev kode. Højre pil i slutningen fører nu UD
+  (`dokSaetEfter`), og det næste tegn skrives af `dokSkrivUdenfor` (på `beforeinput`) uden for
+  elementet — et mellemrum som hårdt mellemrum, ellers sluger browseren det og trækker markøren tilbage.
+  Live-formateringen (`` `npm` ``) sætter samme flag. Enter i slutningen tager ikke formateringen med.
+- **Markdown-genveje virker, mens man skriver** (`dokBlokGenvej`), udløst af mellemrummet i starten af
+  et afsnit: `#`–`######` → overskrift, `-`/`*`/`+` → punkt, `1.` → nummereret, `[]` → tjekpunkt,
+  `>` → citat; ```` ``` ```` åbner en kodeblok, `---` en streg med et nyt afsnit under. De skriver
+  markdown og tegner om af den (`dokSkiftLinjer` + `dokTegnMedTegn`) — stadig ÉN vej fra tekst til note.
+  Kun i et `<p>`: en `#` inde i en overskrift eller et punkt er tekst.
+- **Backspace i starten af en overskrift eller et citat** gør det til tekst igen (`dokTilbageTilTekst`)
+  — en `# `, man ikke mente, fortrydes, hvor man står.
+- **»Turn into« i værktøjslinjen** (knappen H▾): Text, Heading 1–3, med det nuværende markeret. Kun et
+  afsnit eller en overskrift; et afsnit over flere linjer samles til én (en overskrift er én linje).
+  Menuen ligger i `body` med fast position — linjen kan rulle sidelæns på en telefon og ville skære
+  den af — og åbner opad, når linjen står i bunden. Lag 60 på z-index-kortet.
+- **Nye afsnit er tekst:** Enter (⌘Enter i en liste) i SLUTNINGEN af en overskrift, et citat eller en
+  liste giver et `<p>` efter blokken (`dokNytTekstafsnit`). Browserens eget gav et nyt citat, og en tom
+  række + Enter i en punktliste lagde afsnittet INDE i listens ramme (`div.liste`), så det blev ved
+  med at høre til listen. Nu forlader den listen som tjeklisten (`dokForladListe`).
+- **Et tomt markørtegn efterlader ikke en tom tekstknude** (`dokSaetMarkoer('tegn')`): i en tom knude
+  kan markøren ikke stå, og det, man skrev efter `[] `, landede uden for tjekpunktet.

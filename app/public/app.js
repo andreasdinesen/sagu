@@ -4831,6 +4831,7 @@ const dok = {
   obs: null,
   grebTimer: null,
   afvist: null,       // note-id, dokumentet ikke kunne rundture
+  udenfor: null,      // formaterings-element, hoejre pil lige er gaaet ud af
 };
 
 /* Elementer, der er en blok for sig. Alt andet paa oeverste niveau er tekst,
@@ -5259,7 +5260,21 @@ function dokSaetMarkoer(hvor) {
         return;
       }
     }
-    r.setStart(t, i);
+    /*
+     * Stod tegnet ALENE (en ny, tom overskrift eller et tjekpunkt fra `[] `),
+     * er tekstknuden tom nu - og i en tom knude kan markoeren ikke staa:
+     * browseren lagde det, man skrev, uden for tjekpunktets tekst. Et <br>
+     * giver elementet en linje at staa paa.
+     */
+    if (!t.data && t.parentNode) {
+      const p = t.parentNode;
+      const plads = [...p.childNodes].indexOf(t);
+      t.remove();
+      if (!p.firstChild) p.appendChild(document.createElement('br'));
+      r.setStart(p, p.childNodes.length === 1 && p.firstChild.nodeName === 'BR' ? 0 : plads);
+    } else {
+      r.setStart(t, i);
+    }
     r.collapse(true);
     sel.removeAllRanges();
     sel.addRange(r);
@@ -5328,6 +5343,11 @@ function dokTegnOmVedMarkoer() {
     r.insertNode(document.createTextNode(DOK_MARKOER));
   }
   dokTvingSkriv();
+  dokTegnMedTegn();
+}
+
+/** Tegn dokumentet af `body` og saet markoeren dér, hvor `DOK_MARKOER` staar. */
+function dokTegnMedTegn() {
   const host = document.getElementById('noteBody');
   const n = editor.note;
   const medTegn = n.body.includes(DOK_MARKOER);
@@ -5343,6 +5363,347 @@ function dokTegnOmVedMarkoer() {
       editor.note.body = editor.note.body.split(DOK_MARKOER).join('');
     }
   }
+}
+
+/*
+ * ── Som i Notion (2026-10-13) ─────────────────────────────────────────────
+ *
+ * »jeg ville gerne have det til at virke mere som notion goer i web
+ * versionen« (Andreas). Tre ting, han ramte:
+ *
+ *  1. `# ` blev staaende som tekst, til siden blev genindlaest. Nu bliver
+ *     afsnittet en overskrift i samme oejeblik, mellemrummet tastes - og det
+ *     samme for `- `, `1. `, `[] `, `> `, ``` og `---`.
+ *  2. Efter en linje var lavet om til `kode`, blev alt det, man skrev
+ *     bagefter, ogsaa kode. Hoejre pil ved enden af kode (eller fed, kursiv
+ *     ...) fører nu UD af den, og Enter tager ikke formateringen med.
+ *  3. »Turn into« i vaerktoejslinjen: tekst eller overskrift 1-3, uden at
+ *     skulle kunne markdown.
+ *
+ * Alle tre skriver MARKDOWN og tegner om af den (`dokSkiftLinjer`), saa der
+ * stadig kun er én vej fra tekst til noten.
+ */
+
+/** Genvejene i starten af et afsnit. Udloeses af det mellemrum, der slutter dem. */
+const DOK_BLOKGENVEJE = [
+  { re: /^(#{1,6})[  ]$/, md: (m) => `${m[1]} ` },
+  { re: /^[-*+][  ]$/, md: () => '- ' },
+  { re: /^(\d{1,3})[.)][  ]$/, md: (m) => `${m[1]}. ` },
+  { re: /^\[[ xX]?\][  ]$/, md: () => '- [ ] ' },
+  { re: /^>[  ]$/, md: () => '> ' },
+];
+
+/**
+ * Saet `DOK_MARKOER` ved markoeren, skriv noten - og lad `lav` bytte den
+ * blok, tegnet staar i, ud med nye linjer. `lav(linjer, blok)` faar blokkens
+ * linjer MED tegnet og giver de nye tilbage. Returnerer blokkens foerste
+ * linje, eller null.
+ */
+function dokSkiftLinjer(lav) {
+  const sel = window.getSelection();
+  if (!dokAktiv() || !sel || !sel.rangeCount || !editor.note) return null;
+  const r = sel.getRangeAt(0).cloneRange();
+  if (!dok.el.contains(r.startContainer)) return null;
+  r.collapse(true);
+  r.insertNode(document.createTextNode(DOK_MARKOER));
+  dokTvingSkriv();
+  const linjer = editor.note.body.split('\n');
+  const i = linjer.findIndex((l) => l.includes(DOK_MARKOER));
+  if (i < 0) return null;
+  const b = saguMarkdown.blokke(editor.note.body).find((x) => x.fra <= i && i <= x.til)
+    || { fra: i, til: i, slags: 'afsnit' };
+  const nye = lav(linjer.slice(b.fra, b.til + 1), b);
+  if (!nye) {
+    editor.note.body = editor.note.body.split(DOK_MARKOER).join('');
+    dokTegnMedTegn();
+    return null;
+  }
+  linjer.splice(b.fra, b.til - b.fra + 1, ...nye);
+  editor.note.body = linjer.join('\n');
+  markerBeskidt();
+  return b.fra;
+}
+
+/** Teksten fra afsnittets start hen til markoeren - og afsnittet. */
+function dokFoerMarkoer() {
+  const sel = window.getSelection();
+  if (!dokAktiv() || !sel || !sel.rangeCount || !sel.isCollapsed) return null;
+  const r = sel.getRangeAt(0);
+  const barn = dokBarn(r.startContainer);
+  if (!barn || barn.nodeType !== 1) return null;
+  const foer = document.createRange();
+  foer.selectNodeContents(barn);
+  foer.setEnd(r.startContainer, r.startOffset);
+  const efter = document.createRange();
+  efter.selectNodeContents(barn);
+  efter.setStart(r.startContainer, r.startOffset);
+  return { barn, foer, tekst: foer.toString(), rest: efter.toString() };
+}
+
+/** `# ` og venner: kaldes ved hvert tastetryk i dokumentet. */
+function dokBlokGenvej(e) {
+  if (!e || e.inputType !== 'insertText') return false;
+  const h = dokFoerMarkoer();
+  if (!h || h.barn.tagName !== 'P') return false;
+
+  // ``` -> en kodeblok, aabnet med markoeren i koden.
+  if (/^(```|~~~)$/.test(h.tekst)) {
+    h.foer.deleteContents();
+    const fra = dokSkiftLinjer((l) => {
+      const [foerste, ...resten] = l;
+      return ['```', foerste.split(DOK_MARKOER).join(''), '```', ...(resten.length ? ['', ...resten] : [])];
+    });
+    if (fra === null) return true;
+    editor.raaBlok = false;
+    editor.markoerTil = 'start';
+    editor.aabenBlok = fra;
+    tegnKrop();
+    return true;
+  }
+
+  // --- -> en streg, og et nyt afsnit under den.
+  if (h.tekst === '---' && !h.rest.trim()) {
+    h.foer.deleteContents();
+    const fra = dokSkiftLinjer(() => ['---']);
+    if (fra === null) return true;
+    nyAfsnitEfter({ fra });
+    return true;
+  }
+
+  for (const g of DOK_BLOKGENVEJE) {
+    const m = g.re.exec(h.tekst);
+    if (!m) continue;
+    h.foer.deleteContents();
+    const fra = dokSkiftLinjer((l) => [g.md(m) + l[0], ...l.slice(1)]);
+    if (fra !== null) dokTegnMedTegn();
+    return true;
+  }
+  return false;
+}
+
+/*
+ * En TOM raekke + Enter forlader en punktliste - som tjeklisten
+ * (`dokNyTjekRaekke`). Browserens egen udgave lagde afsnittet INDE i
+ * listens ramme (`div.liste`), saa det blev ved med at hoere til listen, og
+ * `[] ` i det kunne ikke blive til noget.
+ */
+function dokForladListe(li) {
+  const liste = li.parentElement;
+  const ramme = liste && dokBarn(liste);
+  if (!ramme || !liste.matches('ul, ol')) return false;
+  if (li.textContent.trim() || li.querySelector('img')) return false;
+  const p = document.createElement('p');
+  p.appendChild(document.createElement('br'));
+  const efter = [];
+  for (let k = li.nextElementSibling; k; k = k.nextElementSibling) efter.push(k);
+  li.remove();
+  ramme.after(p);
+  if (efter.length) {
+    const resten = ramme.cloneNode(false);
+    const ny = liste.cloneNode(false);
+    efter.forEach((x) => ny.appendChild(x));
+    resten.appendChild(ny);
+    p.after(resten);
+  }
+  if (!liste.querySelector('li')) ramme.remove();
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(p, 0);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  return true;
+}
+
+/*
+ * Backspace i starten af en overskrift eller et citat goer det til tekst
+ * igen - som i Notion. Saa kan en `# `, man ikke mente, fortrydes, hvor man
+ * staar.
+ */
+function dokTilbageTilTekst() {
+  const h = dokFoerMarkoer();
+  if (!h || h.tekst.length) return false;
+  if (!/^(H[1-6]|BLOCKQUOTE)$/.test(h.barn.tagName)) return false;
+  const fra = dokSkiftLinjer((l, b) => {
+    if (b.slags === 'overskrift') return [l[0].replace(/^(\s{0,3})#{1,6}\s*/, '$1')];
+    if (b.slags === 'citat') return l.map((x) => x.replace(/^(\s{0,3})>\s?/, '$1'));
+    return null;
+  });
+  if (fra !== null) dokTegnMedTegn();
+  return fra !== null;
+}
+
+/** Et tomt tekstafsnit efter blokken, markoeren staar i slutningen af. */
+function dokNytTekstafsnit(medListe) {
+  const h = dokFoerMarkoer();
+  if (!h || h.rest.replace(/\u00a0/g, ' ').trim()) return false;
+  const ok = /^(H[1-6]|BLOCKQUOTE)$/.test(h.barn.tagName)
+    || (medListe && h.barn.classList.contains('liste'));
+  if (!ok) return false;
+  const p = document.createElement('p');
+  p.appendChild(document.createElement('br'));
+  h.barn.after(p);
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(p, 0);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  return true;
+}
+
+/* Formatering i linjen, man kan gaa UD af. Ikke i en kodeblok. */
+const DOK_INLINE = 'code, strong, em, b, i, u, del, s';
+
+/** Det yderste formaterings-element, markoeren staar i SLUTNINGEN af. */
+function dokInlineVedSlut(punkt) {
+  const sel = window.getSelection();
+  if (!dokAktiv() || !sel || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  const knude = punkt ? punkt.knude : r.endContainer;
+  const pos = punkt ? punkt.pos : r.endOffset;
+  let el = knude.nodeType === 1 ? knude : knude.parentElement;
+  let fundet = null;
+  while (el && el !== dok.el && dok.el.contains(el)) {
+    if (el.matches(DOK_INLINE) && !el.closest('pre')) {
+      const rest = document.createRange();
+      rest.setStart(knude, pos);
+      rest.setEnd(el, el.childNodes.length);
+      if (rest.toString().length) break;
+      fundet = el;
+    }
+    el = el.parentElement;
+  }
+  // Inline-kode er pakket ind med sin kopiknap; det er pakken, man gaar ud af.
+  if (fundet && fundet.parentElement && fundet.parentElement.classList.contains('inlinekode')) {
+    fundet = fundet.parentElement;
+  }
+  return fundet;
+}
+
+/** Markoeren lige EFTER `el` - og det, der skrives dér, er ikke formateret. */
+function dokSaetEfter(el) {
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStartAfter(el);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  dok.udenfor = el;
+}
+
+/*
+ * Browseren lægger et bogstav, der tastes lige efter `</code>`, INDE i
+ * koden - for den er markoerens position den samme. Saa skriver vi selv
+ * bogstavet uden for, saa laenge markoeren staar dér, pilen satte den.
+ */
+function dokSkrivUdenfor(e) {
+  const el = dok.udenfor;
+  if (!el) return;
+  if (!el.isConnected || e.inputType !== 'insertText' || !e.data) { dok.udenfor = null; return; }
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) { dok.udenfor = null; return; }
+  const r = sel.getRangeAt(0);
+  const efter = document.createRange();
+  efter.setStartAfter(el);
+  const v = dokInlineVedSlut();
+  const ved = v === el || (v && v.contains(el))
+    || (r.startContainer === efter.startContainer && r.startOffset === efter.startOffset);
+  dok.udenfor = null;
+  if (!ved) return;
+  e.preventDefault();
+  let t = el.nextSibling;
+  /*
+   * Et mellemrum sidst i en linje er usynligt, og saa traekker browseren
+   * markoeren tilbage ind i koden og sluger det. Den bruger selv et haardt
+   * mellemrum dér; oversaetteren goer det til et almindeligt igen.
+   */
+  const foelger = t && t.nodeType === 3 && t.data.length && !/^[ \u00a0]/.test(t.data);
+  const data = foelger ? e.data : e.data.replace(/ /g, '\u00a0');
+  if (t && t.nodeType === 3) {
+    t.insertData(0, data);
+  } else {
+    t = document.createTextNode(data);
+    el.after(t);
+  }
+  const m = document.createRange();
+  m.setStart(t, data.length);
+  m.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(m);
+}
+
+/**
+ * »Turn into«: afsnittet ved markoeren som tekst (0) eller overskrift 1-6.
+ * En overskrift er én linje, saa et afsnit paa flere linjer samles.
+ */
+function dokSkiftForm(niveau) {
+  const fra = dokSkiftLinjer((l, b) => {
+    if (b.slags !== 'afsnit' && b.slags !== 'overskrift') return null;
+    const tekst = l.map((x) => x.trim()).filter(Boolean).join(' ')
+      .replace(/^#{1,6}\s+/, '').replace(/\s+#+\s*$/, '');
+    return [niveau ? `${'#'.repeat(niveau)} ${tekst}` : tekst];
+  });
+  if (fra === null) {
+    toast('Only a paragraph or a heading can be turned into this.');
+    return;
+  }
+  dokTegnMedTegn();
+}
+
+/** Formen paa den blok, markoeren staar i: 0 tekst, 1-6 overskrift, null andet. */
+function dokFormVedMarkoer() {
+  const sel = window.getSelection();
+  if (!dokAktiv() || !sel || !sel.rangeCount) return null;
+  const barn = dokBarn(sel.getRangeAt(0).startContainer);
+  if (!barn || barn.nodeType !== 1) return null;
+  if (barn.tagName === 'P') return 0;
+  const h = /^H([1-6])$/.exec(barn.tagName);
+  return h ? Number(h[1]) : null;
+}
+
+const DOK_FORMER = [
+  { niveau: 0, navn: 'Text', vis: 'Aa' },
+  { niveau: 1, navn: 'Heading 1', vis: 'H1' },
+  { niveau: 2, navn: 'Heading 2', vis: 'H2' },
+  { niveau: 3, navn: 'Heading 3', vis: 'H3' },
+];
+
+function lukFormMenu() {
+  const m = document.getElementById('dokFormMenu');
+  if (m) m.remove();
+}
+
+function visFormMenu(knap) {
+  if (document.getElementById('dokFormMenu')) { lukFormMenu(); return; }
+  const linje = knap.closest('#blokVaerktoej');
+  if (!linje) return;
+  const nu = dokFormVedMarkoer();
+  const m = document.createElement('div');
+  m.id = 'dokFormMenu';
+  m.className = 'dok-form-menu';
+  m.setAttribute('role', 'menu');
+  m.innerHTML = DOK_FORMER.map((f) => `<button type="button" class="dok-form-punkt" role="menuitemradio"
+      tabindex="-1" data-niveau="${f.niveau}" aria-checked="${nu === f.niveau}">
+      <span class="dok-form-vis">${f.vis}</span><span>${f.navn}</span></button>`).join('');
+  // I `body`, ikke i linjen: paa en telefon kan linjen rulle sidelaens og
+  // ville skaere menuen af.
+  document.body.appendChild(m);
+  const k = knap.getBoundingClientRect();
+  const mr = m.getBoundingClientRect();
+  m.style.left = `${Math.round(Math.max(8, Math.min(k.left, window.innerWidth - mr.width - 8)))}px`;
+  // Under knappen - eller over, naar linjen staar i bunden over tastaturet.
+  const under = k.bottom + 4;
+  m.style.top = `${Math.round(linje.classList.contains('bund') || under + mr.height > window.innerHeight - 8
+    ? k.top - mr.height - 4 : under)}px`;
+  m.querySelectorAll('[data-niveau]').forEach((k) => {
+    k.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      lukFormMenu();
+      dokSkiftForm(Number(k.dataset.niveau));
+    });
+  });
 }
 
 /** Den blok, markoeren staar i - som linjer i noten. */
@@ -5490,7 +5851,28 @@ document.addEventListener('selectionchange', dokRetTjekMarkoer);
 function dokTast(e) {
   const el = dok.el;
   if (wikiTast(e)) return;
-  if (e.key === 'Escape') { e.preventDefault(); lukWikiForslag(); el.blur(); return; }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (document.getElementById('dokFormMenu')) { lukFormMenu(); return; }
+    lukWikiForslag();
+    el.blur();
+    return;
+  }
+
+  /*
+   * Hoejre pil i slutningen af `kode`, fed eller kursiv: UD af den. For
+   * browseren er »sidst i koden« og »lige efter koden« det samme sted, saa
+   * uden det her blev alt, man skrev bagefter, en del af koden.
+   */
+  if (e.key === 'ArrowRight' && !e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey) {
+    const inl = dokInlineVedSlut();
+    if (inl && dok.udenfor !== inl) {
+      e.preventDefault();
+      dokSaetEfter(inl);
+      return;
+    }
+  }
+  if (/^(Arrow|Home|End|Page|Backspace|Delete)/.test(e.key)) dok.udenfor = null;
 
   if (e.key === 'Enter') {
     const sel = window.getSelection();
@@ -5508,11 +5890,30 @@ function dokTast(e) {
       dokNyTjekRaekke(raekke);
       return;
     }
+    // Et linjeskift i slutningen af `kode` eller fed tager ikke
+    // formateringen med ned paa naeste linje.
+    const inl = dokInlineVedSlut();
+    if (inl && sel.isCollapsed) {
+      const r = document.createRange();
+      r.setStartAfter(inl);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    // Et nyt afsnit i SLUTNINGEN af en overskrift, et citat - eller med
+    // ⌘Enter en liste - er tekst, som i Notion. Browserens eget gav et nyt
+    // citat og et afsnit inde i listens ramme.
+    const cmd = e.metaKey || e.ctrlKey;
+    if (!e.shiftKey && (cmd || !punkt) && dokNytTekstafsnit(cmd)) {
+      e.preventDefault();
+      return;
+    }
     // En overskrift er én linje. Enter i den giver et afsnit - ellers ville
     // naeste linje blive en del af overskriften i noten.
     const overskrift = hvorEl && hvorEl.closest('h1, h2, h3, h4, h5, h6');
     if ((punkt || overskrift) && !e.shiftKey) {
       e.preventDefault();
+      if (punkt && dokForladListe(punkt)) return;
       nytLinjeskift(el, true);
       return;
     }
@@ -5528,6 +5929,12 @@ function dokTast(e) {
    * en tast, man trykker for at fjerne et bogstav. Oeen slettes ved at
    * markere den eller fra dens egen menu.
    */
+  if (e.key === 'Backspace' && !e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey
+      && dokTilbageTilTekst()) {
+    e.preventDefault();
+    return;
+  }
+
   if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.altKey && !e.ctrlKey) {
     const sel = window.getSelection();
     if (sel && sel.rangeCount && sel.isCollapsed) {
@@ -5574,7 +5981,10 @@ function bindDokument(el, host) {
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch { /* aeldre browser */ }
 
   el.addEventListener('keydown', dokTast);
-  el.addEventListener('input', () => {
+  el.addEventListener('beforeinput', dokSkrivUdenfor);
+  el.addEventListener('input', (e) => {
+    // `# `, `- `, ``` ... i starten af et afsnit tegner blokken om.
+    if (dokBlokGenvej(e)) { lukWikiForslag(); return; }
     // Genvejene foerst - samme raekkefoelge som den rige blok.
     rigTekstgenvej(el);
     liveFormatering(el);
@@ -5619,6 +6029,8 @@ function bindDokument(el, host) {
    * og skriver noten, som ved alle andre aendringer.
    */
   el.addEventListener('mousedown', (e) => {
+    dok.udenfor = null;
+    lukFormMenu();
     if (e.target.closest('.tjek-boks')) e.preventDefault();
   });
   el.addEventListener('click', (e) => {
@@ -5670,6 +6082,17 @@ function visDokVaerktoej() {
     lk.textContent = 'Link';
     const md = linje.querySelector('[data-raa]');
     linje.insertBefore(lk, md || null);
+    // »Turn into« - tekst eller overskrift, uden at kunne markdown.
+    const fm = document.createElement('button');
+    fm.className = 'vt-knap vt-tekst';
+    fm.type = 'button';
+    fm.tabIndex = -1;
+    fm.dataset.form = '1';
+    fm.title = 'Turn into text or a heading';
+    fm.setAttribute('aria-label', 'Turn into text or a heading');
+    fm.setAttribute('aria-haspopup', 'menu');
+    fm.innerHTML = 'H<span class="vt-pil" aria-hidden="true">▾</span>';
+    linje.insertBefore(fm, linje.querySelector('[data-goer]'));
     linje.appendChild(hj);
     host.appendChild(linje);
     bindDokVaerktoej(linje);
@@ -5678,6 +6101,7 @@ function visDokVaerktoej() {
 }
 
 function skjulDokVaerktoej() {
+  lukFormMenu();
   const linje = document.getElementById('blokVaerktoej');
   if (linje && linje.classList.contains('dok-vaerktoej')) linje.remove();
   document.body.classList.remove('dok-skriver');
@@ -5763,7 +6187,7 @@ function bindDokVaerktoej(linje) {
   linje.querySelectorAll('[data-goer]').forEach((k) => {
     k.addEventListener('mousedown', (e) => {
       stop(e);
-      if (k.dataset.goer === 'code' && markeringOverFlereLinjer()) { lavKodeblok(el, null); return; }
+      if (k.dataset.goer === 'code' && kodeKnapGiverBlok(el)) { lavKodeblok(el, null); return; }
       omslut(el, k.dataset.goer);
     });
   });
@@ -5784,6 +6208,8 @@ function bindDokVaerktoej(linje) {
   if (hj) hj.addEventListener('mousedown', (e) => { stop(e); visSyntaksPanel(); });
   const lk = linje.querySelector('[data-link]');
   if (lk) lk.addEventListener('mousedown', (e) => { stop(e); dokLinkGenvej(); });
+  const fm = linje.querySelector('[data-form]');
+  if (fm) fm.addEventListener('mousedown', (e) => { stop(e); visFormMenu(fm); });
 }
 
 /* ----------------------------------------------------- [[forslag]] */
@@ -6691,7 +7117,7 @@ function bindAiDel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 113;
+const APP_VERSION = 114;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -12666,6 +13092,10 @@ function tegnMedAabenBlok(host, n) {
    * man er ude efter. Havde raekken vaeret helt vaek her, ville et klik i en
    * tabel vaere den ene blok, man ikke kunne komme videre fra.
    */
+  if (b.slags === 'kode' && !editor.raaBlok && !editor.raaNote) {
+    tegnKodeRedigering(host, b, raa, del(foer), del(efter));
+    return;
+  }
   const rigt = !editor.raaBlok && kanRedigereRigt(raa, b);
   host.innerHTML = `${del(foer)}
     <div class="blok-redigering${rigt ? ' rig' : ''}">
@@ -12834,6 +13264,198 @@ function tegnMedAabenBlok(host, n) {
       if (nr !== editor.aabenBlok) aabnBlok(nr);
     });
   });
+}
+
+/*
+ * En kodeblok redigeres SOM kode - ikke som markdown (2026-10-13).
+ *
+ * »naar man proever at lave en tekst om til kode, saa bliver den automatisk
+ * lavet om til markdown naar man klikker ind i den« (Andreas). Kodeblokken
+ * aabnede som det raa felt med ``` over og under; nu er den den samme ramme,
+ * man ser i noten - sprog foroven, koden nedenunder - og man skriver KUN
+ * koden. Hegnene laeses af den oprindelige blok og saettes paa igen ved hvert
+ * tastetryk (`kodeSaml`), saa ~~~ og et sprog overlever. MD-knappen viser
+ * stadig hegnene frem, som Notions »Edit as Markdown«.
+ */
+
+/** Ren: en kodebloks raa markdown -> hegn, sprog og selve koden. */
+function kodeDele(raa) {
+  const linjer = String(raa).split('\n');
+  const hegn = /^(\s{0,3})(`{3,}|~{3,})\s*([\w+-]{0,20})\s*$/;
+  const m = hegn.exec(linjer[0] || '') || ['', '', '```', ''];
+  const tegn = m[2];
+  // Den sidste linje er kun et hegn, hvis den ER et hegn - en uafsluttet
+  // blok loeber til slutningen af noten.
+  const sidst = linjer.length > 1 && /^\s{0,3}(?:`{3,}|~{3,})\s*$/.test(linjer[linjer.length - 1]);
+  return {
+    ind: m[1],
+    tegn,
+    sprog: m[3] || '',
+    kode: linjer.slice(1, sidst ? -1 : undefined).join('\n'),
+  };
+}
+
+/** Ren: hegn, sprog og kode -> markdown. Altid med et afsluttende hegn. */
+function kodeSaml(d, kode, sprog) {
+  const s = String(sprog == null ? d.sprog : sprog).replace(/[^\w+-]/g, '').slice(0, 20);
+  return `${d.ind}${d.tegn}${s}\n${String(kode).replace(/\r\n?/g, '\n')}\n${d.ind}${d.tegn}`;
+}
+
+function tegnKodeRedigering(host, b, raa, foerHtml, efterHtml) {
+  const d = kodeDele(raa);
+  host.innerHTML = `${foerHtml}
+    <div class="blok-redigering kode-redigering">
+      <div class="blok-vaerktoej" id="blokVaerktoej">${mdKnapHtml(true)}</div>
+      <div class="kodeblok">
+        <div class="kodeblok-top">
+          <input class="kode-sprog" id="kodeSprog" type="text" spellcheck="false" autocomplete="off"
+            maxlength="20" placeholder="Language" aria-label="Language" value="${esc(d.sprog)}">
+        </div>
+        <textarea class="blok-felt kode-felt" id="blokFelt" spellcheck="false" autocapitalize="off"
+          aria-label="Code" rows="${Math.max(1, d.kode.split('\n').length)}">${esc(d.kode)}</textarea>
+      </div>
+    </div>
+    ${efterHtml}`;
+
+  pyntKodeblokke(host);
+  pyntInlineKode(host);
+  bindTjek(host);
+  bindBilleder(host);
+  fyldGhIndlejringer(host);
+  tegnGreb(host);
+  holdBlokISyne(host);
+  bindMdKnap();
+
+  const felt = document.getElementById('blokFelt');
+  const sprog = document.getElementById('kodeSprog');
+  if (!felt || !sprog) return;
+  autoHoejde(felt);
+  felt.focus();
+  const tilStart = editor.markoerTil === 'start';
+  editor.markoerTil = null;
+  const pos = tilStart ? 0 : felt.value.length;
+  felt.setSelectionRange(pos, pos);
+
+  const skriv = () => skrivBlokTilbage(kodeSaml(d, felt.value, sprog.value), b);
+  felt.addEventListener('input', () => { autoHoejde(felt); skriv(); });
+  sprog.addEventListener('input', skriv);
+
+  // Sproget hoerer til blokken (se `fokusErIBlokken`).
+  [felt, sprog].forEach((x) => x.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (fokusErIBlokken()) return;
+      lukBlok();
+    }, 0);
+  }));
+  sprog.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); felt.focus(); }
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); }
+  });
+
+  felt.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+    // ⌘/Ctrl+Enter: faerdig med koden - som i alle andre blokke.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      lukBlok();
+      return;
+    }
+    // Tab rykker ind i kode, som i Notion. `insertText`, saa ⌘Z virker.
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const a = felt.selectionStart;
+      if (e.shiftKey) {
+        const start = felt.value.lastIndexOf('\n', a - 1) + 1;
+        const n = (felt.value.slice(start).match(/^ {1,2}/) || [''])[0].length;
+        if (n) {
+          felt.setSelectionRange(start, start + n);
+          document.execCommand('delete');
+          felt.setSelectionRange(Math.max(start, a - n), Math.max(start, a - n));
+        }
+      } else {
+        document.execCommand('insertText', false, '  ');
+      }
+      return;
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      const foer = felt.selectionStart;
+      const ned = e.key === 'ArrowDown';
+      const yderst = ned ? !felt.value.slice(foer).includes('\n') : !felt.value.slice(0, foer).includes('\n');
+      if (!yderst) return;
+      setTimeout(() => {
+        if (document.getElementById('blokFelt') !== felt || felt.selectionStart !== foer) return;
+        // Op fra foerste linje: sproget, som i rammen. Ned fra sidste linje
+        // i notens SIDSTE blok: et nyt afsnit - ellers var der ingen vej ud
+        // under en kodeblok, man lige havde lavet.
+        const blokke = saguMarkdown.blokke(editor.note.body);
+        if (ned && blokke[blokke.length - 1] && blokke[blokke.length - 1].fra === b.fra) {
+          nyAfsnitEfter(b);
+          return;
+        }
+        kodeUdTilNabo(b, ned);
+      }, 0);
+    }
+  });
+
+  host.querySelectorAll('[data-blok]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      const nr = Number(el.dataset.blok);
+      if (nr !== editor.aabenBlok) aabnBlok(nr);
+    });
+  });
+}
+
+/**
+ * Ud af kodeblokken til naboen - i dokumentet, hvis noten bruger det, saa
+ * man er tilbage i ét stykke tekst og ikke i en enkelt blok.
+ */
+function kodeUdTilNabo(b, ned) {
+  const blokke = saguMarkdown.blokke(editor.note.body);
+  const i = blokke.findIndex((x) => x.fra === b.fra);
+  const maal = blokke[i + (ned ? 1 : -1)];
+  if (!maal) return;
+  if (!brugDokument(editor.note)) { springTilNaboBlok(ned); return; }
+  editor.aabenBlok = null;
+  editor.raaBlok = false;
+  tegnKrop();
+  planlaegGem();
+  if (!dokAktiv()) return;
+  const naboEl = dok.el.querySelector(`[data-blok="${maal.fra}"]`);
+  if (naboEl && dokErOe(dokBarn(naboEl))) {
+    editor.markoerTil = ned ? 'start' : 'slut';
+    aabnBlok(maal.fra);
+    return;
+  }
+  dokSaetMarkoer({ fra: maal.fra, pos: ned ? 0 : Infinity });
+}
+
+/** Et tomt afsnit under blokken (en kodeblok, en streg), med markoeren i. */
+function nyAfsnitEfter(b) {
+  editor.aabenBlok = null;
+  editor.raaBlok = false;
+  tegnKrop();
+  if (dokAktiv()) {
+    // Et tomt <p> er ingen markdown, saa noten aendrer sig foerst, naar man
+    // skriver i det - og forlader man det tomt, er det vaek igen.
+    const oe = dok.el.querySelector(`[data-blok="${b.fra}"]`);
+    const barn = oe ? dokBarn(oe) : null;
+    if (!barn) return;
+    const p = document.createElement('p');
+    p.appendChild(document.createElement('br'));
+    barn.after(p);
+    dok.el.focus({ preventScroll: true });
+    const r = document.createRange();
+    r.setStart(p, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    p.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  nyBlokTilSidst();
 }
 
 /**
@@ -13426,6 +14048,15 @@ function liveFormatering(vaert) {
     efter.collapse(true);
     sel.removeAllRanges();
     sel.addRange(efter);
+    /*
+     * For browseren er »lige efter </code>« det samme sted som »sidst i
+     * koden«, og det naeste bogstav landede INDE i den (Andreas, 2026-10-13:
+     * »svaert at komme videre«). I dokumentet skriver `dokSkrivUdenfor` det
+     * derfor selv uden for.
+     */
+    if (typeof dok !== 'undefined' && vaert === dok.el) {
+      dok.udenfor = el.parentElement && el.parentElement.classList.contains('inlinekode') ? el.parentElement : el;
+    }
     return true;
   }
   return false;
@@ -13806,12 +14437,42 @@ function lavKodeblok(vaert, b) {
     lukBlok();
     return;
   }
-  skrivBlokTilbage(kodeblokMarkdown(rens(md.slice(0, i)), rens(md.slice(i + 1, j)),
-    rens(md.slice(j + 1))), b);
-  // Blokken skifter SLAGS og bliver til flere. Luk den, saa noten tegnes af
-  // den nye markdown - `lukBlok` skriver ikke DOM'en tilbage, saa maerkerne
-  // kan ikke komme med ud.
-  lukBlok();
+  const ny = kodeblokMarkdown(rens(md.slice(0, i)), rens(md.slice(i + 1, j)), rens(md.slice(j + 1)));
+  skrivBlokTilbage(ny, b);
+  /*
+   * Og kodeblokken AABNES, med markoeren i koden - som i Notion. Foer blev
+   * den bare tegnet, og man skulle klikke i den for at skrive videre.
+   * Blokken skifter SLAGS og bliver til flere; aabningen tegner noten af den
+   * nye markdown, saa maerkerne kan ikke komme med ud.
+   */
+  const hegn = ny.split('\n').findIndex((l) => /^```/.test(l));
+  editor.raaBlok = false;
+  editor.raaNote = false;
+  editor.aabenBlok = b.fra + Math.max(0, hegn);
+  tegnKrop();
+}
+
+/*
+ * Kode-knappen: hvornaar er det en KODEBLOK og ikke `kode` i linjen?
+ *
+ * »kan du lave saa 1 linje kode, bliver vist paa samme maade som en multi
+ * linje kode blok?« (Andreas, 2026-10-13). En markering over flere linjer,
+ * en HEL linje (afsnittets tekst, intet andet) eller en tom linje giver en
+ * kodeblok. Kun et stykke af en linje bliver inline-kode.
+ */
+function kodeKnapGiverBlok(vaert) {
+  if (markeringOverFlereLinjer()) return true;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const r = sel.getRangeAt(0);
+  if (!vaert.contains(r.startContainer)) return false;
+  const start = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  const blok = start && start.closest('p, h1, h2, h3, h4, h5, h6');
+  if (!blok || !vaert.contains(blok) || !r.intersectsNode(blok)) return false;
+  const hele = blok.textContent.replace(/ /g, ' ').trim();
+  if (!hele) return r.collapsed;
+  if (r.collapsed) return false;
+  return sel.toString().replace(/ /g, ' ').trim() === hele;
 }
 
 /*
@@ -13837,7 +14498,7 @@ function lavKodeblok(vaert, b) {
 function fokusErIBlokken() {
   const a = document.activeElement;
   if (!a) return false;
-  return a.id === 'blokRigt' || a.id === 'blokFelt'
+  return a.id === 'blokRigt' || a.id === 'blokFelt' || a.id === 'kodeSprog'
     || (typeof a.closest === 'function' && !!a.closest('#blokVaerktoej'));
 }
 
@@ -14044,7 +14705,7 @@ function bindRigBlok(vaert, b) {
       k.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (k.dataset.goer === 'code' && markeringOverFlereLinjer()) {
+        if (k.dataset.goer === 'code' && kodeKnapGiverBlok(vaert)) {
           lavKodeblok(vaert, b);
           return;
         }

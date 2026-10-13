@@ -11,9 +11,10 @@
  *
  *   1  kolonne   foerste kolonne i en tabel, der ruller vandret - kun under
  *                900 px (.tablewrap table.data, .tabelwrap .md-tabel)
- *   2  i boksen  kopiér-knappen paa inline-kode (.inlinekode-kopi) og
- *                vaerktoejerne i lysboksen (.lightbox-vaerktoej) - kun over
- *                deres egen boks
+ *   2  i boksen  kopiér-knappen paa inline-kode (.inlinekode-kopi),
+ *                vaerktoejerne i lysboksen (.lightbox-vaerktoej) og MD-knappen
+ *                i en aaben kodeblok (.kode-redigering > .blok-vaerktoej) -
+ *                kun over deres egen boks
  *  20  wikitop   wikiens klaebende topbjaelke (.wtop)
  *  30  oversigt  sideoversigten i hoejre side (.toc)
  *  35  svaevere  dokumentets vaerktoej (.dok-vaerktoej) og link- og
@@ -33,6 +34,7 @@
  *  58  menu      brugermenuen (.usermenu)
  *  60  flydere   toasts (.toasts), markeringsknappen (.mark-knap), linjen
  *                ved traek i traeet (.tree-indsaet), blokmenuen (.blok-menu)
+ *                og »Turn into«-menuen fra vaerktoejet (.dok-form-menu)
  *  70  traek     rammen om siden, naar en fil traekkes ind
  *                (body.traekker-fil .main::after), og traek-ned-for-at-
  *                opfriske (.traekopfrisk)
@@ -3836,3 +3838,40 @@ body.solo .notefaner { display: none; }
 .ai-prik { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ai-puls 1s ease-in-out infinite; }
 @keyframes ai-puls { 50% { opacity: .25; } }
 @media (max-width: 600px) { .ai-knap span { display: none; } .ai-knap { width: 30px; padding: 0; } }
+
+/* ------------------------------------------- som i Notion (2026-10-13) --
+ * Kodeblokken redigeres i sin egen ramme: sproget foroven, koden nedenunder,
+ * ingen ``` at se. Feltet arver kodeblokkens udseende, ikke det raa felts. */
+.kode-redigering .kodeblok { border-color: var(--accent); }
+.kode-redigering .kodeblok-top { padding: 4px 10px 4px 14px; }
+.kode-sprog {
+  width: 12em; max-width: 100%; padding: 2px 0; border: 0; outline: none;
+  background: transparent; color: var(--muted); font: 600 10px/1.6 var(--mono);
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.kode-sprog::placeholder { color: var(--muted); opacity: .6; }
+.blok-felt.kode-felt {
+  margin: 0; padding: 14px 16px; border: 0; background: none;
+  font-size: 13.5px; line-height: 1.55; white-space: pre; overflow-x: auto; tab-size: 2;
+}
+.kode-redigering > .blok-vaerktoej {
+  position: absolute; right: 6px; top: 3px; z-index: 2; margin: 0; padding: 0;
+  border: 0; background: none;
+}
+.kode-redigering .kodeblok-top { padding-right: 44px; }
+/* »Turn into«-menuen fra værktøjslinjen. */
+.vt-pil { font-size: 9px; margin-left: 2px; opacity: .7; }
+.dok-form-menu {
+  position: fixed; z-index: 60; min-width: 170px; padding: 6px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
+}
+.dok-form-punkt {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--text);
+  font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.dok-form-punkt:hover { background: var(--card-hover); }
+.dok-form-punkt[aria-checked="true"] { color: var(--accent); }
+.dok-form-vis { width: 22px; font-weight: 700; font-size: 12px; color: var(--muted); }
+.dok-form-punkt[aria-checked="true"] .dok-form-vis { color: var(--accent); }

@@ -325,9 +325,12 @@ test('tomme linjer i kanten af markeringen kommer ikke med i blokken', () => {
 test('Code-knappen spørger om flere linjer, FØR den pakker ind', () => {
   // Formregel: uden den gaar knappen tilbage til ét par backticks om det hele.
   const knap = p4.slice(p4.indexOf("linje.querySelectorAll('[data-goer]')"));
-  const spoerg = knap.indexOf('markeringOverFlereLinjer()');
+  const spoerg = knap.indexOf('kodeKnapGiverBlok(vaert)');
   const pak = knap.indexOf('omslut(vaert, k.dataset.goer)');
   assert.ok(spoerg > -1 && spoerg < pak);
+  // ... og reglen kender stadig markeringen over flere linjer.
+  const i = p4.indexOf('function kodeKnapGiverBlok(');
+  assert.match(p4.slice(i, p4.indexOf('\n}\n', i)), /markeringOverFlereLinjer\(\)/);
 });
 
 test('indrykningen bliver — også på første linje', () => {
@@ -336,4 +339,48 @@ test('indrykningen bliver — også på første linje', () => {
   const kode = '  if ($a) {\n    $b = 1\n  }';
   assert.equal(kodeblok('', kode, ''), '```\n' + kode + '\n```');
   assert.equal(md.blokke(kodeblok('', kode, ''))[0].tekst, kode);
+});
+
+/* ================================ Kodeblokken redigeres som kode ========== */
+
+/*
+ * »naar man proever at lave en tekst om til kode, saa bliver den automatisk
+ * lavet om til markdown naar man klikker ind i den« (Andreas, 2026-10-13).
+ * Kodeblokken aabner nu med KUN koden; hegnene og sproget saettes paa igen.
+ */
+function hentRen(navn) {
+  const i = p4.indexOf(`function ${navn}(`);
+  assert.ok(i > -1, `${navn} findes ikke laengere`);
+  // eslint-disable-next-line no-new-func
+  return new Function(`${p4.slice(i, p4.indexOf('\n}', i) + 2)}\nreturn ${navn};`)();
+}
+const kodeDele = hentRen('kodeDele');
+const kodeSaml = hentRen('kodeSaml');
+
+test('kodeDele: hegn, sprog og kode skilles ad', () => {
+  const d = kodeDele('```js\nconst a = 1;\n```');
+  assert.equal(d.tegn, '```');
+  assert.equal(d.sprog, 'js');
+  assert.equal(d.kode, 'const a = 1;');
+});
+
+test('urørt kodeblok samles til præcis sig selv', () => {
+  for (const raa of ['```\nls\n```', '~~~sh\necho hi\n  indrykket\n~~~', '````\nen ``` inde i\n````',
+    '```\n\n```', '```python\na\n\nb\n```']) {
+    const d = kodeDele(raa);
+    assert.equal(kodeSaml(d, d.kode), raa, raa);
+  }
+});
+
+test('en uafsluttet kodeblok får sit afsluttende hegn', () => {
+  const d = kodeDele('```\nen\nto');
+  assert.equal(d.kode, 'en\nto');
+  assert.equal(kodeSaml(d, d.kode), '```\nen\nto\n```');
+});
+
+test('sproget kan skiftes - og kan ikke bryde hegnet', () => {
+  const d = kodeDele('```\nls\n```');
+  assert.equal(kodeSaml(d, 'ls', 'bash'), '```bash\nls\n```');
+  assert.equal(kodeSaml(d, 'ls', 'b a`s\nh'), '```bash\nls\n```');
+  assert.equal(md.blokke(kodeSaml(d, 'ls', 'bash'))[0].sprog, 'bash');
 });

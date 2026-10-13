@@ -2058,6 +2058,10 @@ function tegnMedAabenBlok(host, n) {
    * man er ude efter. Havde raekken vaeret helt vaek her, ville et klik i en
    * tabel vaere den ene blok, man ikke kunne komme videre fra.
    */
+  if (b.slags === 'kode' && !editor.raaBlok && !editor.raaNote) {
+    tegnKodeRedigering(host, b, raa, del(foer), del(efter));
+    return;
+  }
   const rigt = !editor.raaBlok && kanRedigereRigt(raa, b);
   host.innerHTML = `${del(foer)}
     <div class="blok-redigering${rigt ? ' rig' : ''}">
@@ -2226,6 +2230,198 @@ function tegnMedAabenBlok(host, n) {
       if (nr !== editor.aabenBlok) aabnBlok(nr);
     });
   });
+}
+
+/*
+ * En kodeblok redigeres SOM kode - ikke som markdown (2026-10-13).
+ *
+ * »naar man proever at lave en tekst om til kode, saa bliver den automatisk
+ * lavet om til markdown naar man klikker ind i den« (Andreas). Kodeblokken
+ * aabnede som det raa felt med ``` over og under; nu er den den samme ramme,
+ * man ser i noten - sprog foroven, koden nedenunder - og man skriver KUN
+ * koden. Hegnene laeses af den oprindelige blok og saettes paa igen ved hvert
+ * tastetryk (`kodeSaml`), saa ~~~ og et sprog overlever. MD-knappen viser
+ * stadig hegnene frem, som Notions »Edit as Markdown«.
+ */
+
+/** Ren: en kodebloks raa markdown -> hegn, sprog og selve koden. */
+function kodeDele(raa) {
+  const linjer = String(raa).split('\n');
+  const hegn = /^(\s{0,3})(`{3,}|~{3,})\s*([\w+-]{0,20})\s*$/;
+  const m = hegn.exec(linjer[0] || '') || ['', '', '```', ''];
+  const tegn = m[2];
+  // Den sidste linje er kun et hegn, hvis den ER et hegn - en uafsluttet
+  // blok loeber til slutningen af noten.
+  const sidst = linjer.length > 1 && /^\s{0,3}(?:`{3,}|~{3,})\s*$/.test(linjer[linjer.length - 1]);
+  return {
+    ind: m[1],
+    tegn,
+    sprog: m[3] || '',
+    kode: linjer.slice(1, sidst ? -1 : undefined).join('\n'),
+  };
+}
+
+/** Ren: hegn, sprog og kode -> markdown. Altid med et afsluttende hegn. */
+function kodeSaml(d, kode, sprog) {
+  const s = String(sprog == null ? d.sprog : sprog).replace(/[^\w+-]/g, '').slice(0, 20);
+  return `${d.ind}${d.tegn}${s}\n${String(kode).replace(/\r\n?/g, '\n')}\n${d.ind}${d.tegn}`;
+}
+
+function tegnKodeRedigering(host, b, raa, foerHtml, efterHtml) {
+  const d = kodeDele(raa);
+  host.innerHTML = `${foerHtml}
+    <div class="blok-redigering kode-redigering">
+      <div class="blok-vaerktoej" id="blokVaerktoej">${mdKnapHtml(true)}</div>
+      <div class="kodeblok">
+        <div class="kodeblok-top">
+          <input class="kode-sprog" id="kodeSprog" type="text" spellcheck="false" autocomplete="off"
+            maxlength="20" placeholder="Language" aria-label="Language" value="${esc(d.sprog)}">
+        </div>
+        <textarea class="blok-felt kode-felt" id="blokFelt" spellcheck="false" autocapitalize="off"
+          aria-label="Code" rows="${Math.max(1, d.kode.split('\n').length)}">${esc(d.kode)}</textarea>
+      </div>
+    </div>
+    ${efterHtml}`;
+
+  pyntKodeblokke(host);
+  pyntInlineKode(host);
+  bindTjek(host);
+  bindBilleder(host);
+  fyldGhIndlejringer(host);
+  tegnGreb(host);
+  holdBlokISyne(host);
+  bindMdKnap();
+
+  const felt = document.getElementById('blokFelt');
+  const sprog = document.getElementById('kodeSprog');
+  if (!felt || !sprog) return;
+  autoHoejde(felt);
+  felt.focus();
+  const tilStart = editor.markoerTil === 'start';
+  editor.markoerTil = null;
+  const pos = tilStart ? 0 : felt.value.length;
+  felt.setSelectionRange(pos, pos);
+
+  const skriv = () => skrivBlokTilbage(kodeSaml(d, felt.value, sprog.value), b);
+  felt.addEventListener('input', () => { autoHoejde(felt); skriv(); });
+  sprog.addEventListener('input', skriv);
+
+  // Sproget hoerer til blokken (se `fokusErIBlokken`).
+  [felt, sprog].forEach((x) => x.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (fokusErIBlokken()) return;
+      lukBlok();
+    }, 0);
+  }));
+  sprog.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); felt.focus(); }
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); }
+  });
+
+  felt.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); lukBlok(); return; }
+    // ⌘/Ctrl+Enter: faerdig med koden - som i alle andre blokke.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      lukBlok();
+      return;
+    }
+    // Tab rykker ind i kode, som i Notion. `insertText`, saa ⌘Z virker.
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const a = felt.selectionStart;
+      if (e.shiftKey) {
+        const start = felt.value.lastIndexOf('\n', a - 1) + 1;
+        const n = (felt.value.slice(start).match(/^ {1,2}/) || [''])[0].length;
+        if (n) {
+          felt.setSelectionRange(start, start + n);
+          document.execCommand('delete');
+          felt.setSelectionRange(Math.max(start, a - n), Math.max(start, a - n));
+        }
+      } else {
+        document.execCommand('insertText', false, '  ');
+      }
+      return;
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      const foer = felt.selectionStart;
+      const ned = e.key === 'ArrowDown';
+      const yderst = ned ? !felt.value.slice(foer).includes('\n') : !felt.value.slice(0, foer).includes('\n');
+      if (!yderst) return;
+      setTimeout(() => {
+        if (document.getElementById('blokFelt') !== felt || felt.selectionStart !== foer) return;
+        // Op fra foerste linje: sproget, som i rammen. Ned fra sidste linje
+        // i notens SIDSTE blok: et nyt afsnit - ellers var der ingen vej ud
+        // under en kodeblok, man lige havde lavet.
+        const blokke = saguMarkdown.blokke(editor.note.body);
+        if (ned && blokke[blokke.length - 1] && blokke[blokke.length - 1].fra === b.fra) {
+          nyAfsnitEfter(b);
+          return;
+        }
+        kodeUdTilNabo(b, ned);
+      }, 0);
+    }
+  });
+
+  host.querySelectorAll('[data-blok]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      const nr = Number(el.dataset.blok);
+      if (nr !== editor.aabenBlok) aabnBlok(nr);
+    });
+  });
+}
+
+/**
+ * Ud af kodeblokken til naboen - i dokumentet, hvis noten bruger det, saa
+ * man er tilbage i ét stykke tekst og ikke i en enkelt blok.
+ */
+function kodeUdTilNabo(b, ned) {
+  const blokke = saguMarkdown.blokke(editor.note.body);
+  const i = blokke.findIndex((x) => x.fra === b.fra);
+  const maal = blokke[i + (ned ? 1 : -1)];
+  if (!maal) return;
+  if (!brugDokument(editor.note)) { springTilNaboBlok(ned); return; }
+  editor.aabenBlok = null;
+  editor.raaBlok = false;
+  tegnKrop();
+  planlaegGem();
+  if (!dokAktiv()) return;
+  const naboEl = dok.el.querySelector(`[data-blok="${maal.fra}"]`);
+  if (naboEl && dokErOe(dokBarn(naboEl))) {
+    editor.markoerTil = ned ? 'start' : 'slut';
+    aabnBlok(maal.fra);
+    return;
+  }
+  dokSaetMarkoer({ fra: maal.fra, pos: ned ? 0 : Infinity });
+}
+
+/** Et tomt afsnit under blokken (en kodeblok, en streg), med markoeren i. */
+function nyAfsnitEfter(b) {
+  editor.aabenBlok = null;
+  editor.raaBlok = false;
+  tegnKrop();
+  if (dokAktiv()) {
+    // Et tomt <p> er ingen markdown, saa noten aendrer sig foerst, naar man
+    // skriver i det - og forlader man det tomt, er det vaek igen.
+    const oe = dok.el.querySelector(`[data-blok="${b.fra}"]`);
+    const barn = oe ? dokBarn(oe) : null;
+    if (!barn) return;
+    const p = document.createElement('p');
+    p.appendChild(document.createElement('br'));
+    barn.after(p);
+    dok.el.focus({ preventScroll: true });
+    const r = document.createRange();
+    r.setStart(p, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    p.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  nyBlokTilSidst();
 }
 
 /**
@@ -2818,6 +3014,15 @@ function liveFormatering(vaert) {
     efter.collapse(true);
     sel.removeAllRanges();
     sel.addRange(efter);
+    /*
+     * For browseren er »lige efter </code>« det samme sted som »sidst i
+     * koden«, og det naeste bogstav landede INDE i den (Andreas, 2026-10-13:
+     * »svaert at komme videre«). I dokumentet skriver `dokSkrivUdenfor` det
+     * derfor selv uden for.
+     */
+    if (typeof dok !== 'undefined' && vaert === dok.el) {
+      dok.udenfor = el.parentElement && el.parentElement.classList.contains('inlinekode') ? el.parentElement : el;
+    }
     return true;
   }
   return false;
@@ -3198,12 +3403,42 @@ function lavKodeblok(vaert, b) {
     lukBlok();
     return;
   }
-  skrivBlokTilbage(kodeblokMarkdown(rens(md.slice(0, i)), rens(md.slice(i + 1, j)),
-    rens(md.slice(j + 1))), b);
-  // Blokken skifter SLAGS og bliver til flere. Luk den, saa noten tegnes af
-  // den nye markdown - `lukBlok` skriver ikke DOM'en tilbage, saa maerkerne
-  // kan ikke komme med ud.
-  lukBlok();
+  const ny = kodeblokMarkdown(rens(md.slice(0, i)), rens(md.slice(i + 1, j)), rens(md.slice(j + 1)));
+  skrivBlokTilbage(ny, b);
+  /*
+   * Og kodeblokken AABNES, med markoeren i koden - som i Notion. Foer blev
+   * den bare tegnet, og man skulle klikke i den for at skrive videre.
+   * Blokken skifter SLAGS og bliver til flere; aabningen tegner noten af den
+   * nye markdown, saa maerkerne kan ikke komme med ud.
+   */
+  const hegn = ny.split('\n').findIndex((l) => /^```/.test(l));
+  editor.raaBlok = false;
+  editor.raaNote = false;
+  editor.aabenBlok = b.fra + Math.max(0, hegn);
+  tegnKrop();
+}
+
+/*
+ * Kode-knappen: hvornaar er det en KODEBLOK og ikke `kode` i linjen?
+ *
+ * »kan du lave saa 1 linje kode, bliver vist paa samme maade som en multi
+ * linje kode blok?« (Andreas, 2026-10-13). En markering over flere linjer,
+ * en HEL linje (afsnittets tekst, intet andet) eller en tom linje giver en
+ * kodeblok. Kun et stykke af en linje bliver inline-kode.
+ */
+function kodeKnapGiverBlok(vaert) {
+  if (markeringOverFlereLinjer()) return true;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const r = sel.getRangeAt(0);
+  if (!vaert.contains(r.startContainer)) return false;
+  const start = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  const blok = start && start.closest('p, h1, h2, h3, h4, h5, h6');
+  if (!blok || !vaert.contains(blok) || !r.intersectsNode(blok)) return false;
+  const hele = blok.textContent.replace(/ /g, ' ').trim();
+  if (!hele) return r.collapsed;
+  if (r.collapsed) return false;
+  return sel.toString().replace(/ /g, ' ').trim() === hele;
 }
 
 /*
@@ -3229,7 +3464,7 @@ function lavKodeblok(vaert, b) {
 function fokusErIBlokken() {
   const a = document.activeElement;
   if (!a) return false;
-  return a.id === 'blokRigt' || a.id === 'blokFelt'
+  return a.id === 'blokRigt' || a.id === 'blokFelt' || a.id === 'kodeSprog'
     || (typeof a.closest === 'function' && !!a.closest('#blokVaerktoej'));
 }
 
@@ -3436,7 +3671,7 @@ function bindRigBlok(vaert, b) {
       k.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (k.dataset.goer === 'code' && markeringOverFlereLinjer()) {
+        if (k.dataset.goer === 'code' && kodeKnapGiverBlok(vaert)) {
           lavKodeblok(vaert, b);
           return;
         }
