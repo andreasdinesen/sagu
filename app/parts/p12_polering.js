@@ -189,6 +189,10 @@ const GENVEJE = [
     hvad: 'Change where you search: all notes → this notebook → this note',
   },
   {
+    tast: '', vis: '?', gruppe: 'soeg', kunVist: true,
+    hvad: 'Alone in the field: open this list',
+  },
+  {
     tast: '', vis: 'Esc', gruppe: 'soeg', kunVist: true,
     hvad: 'Clear the field and leave it',
   },

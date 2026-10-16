@@ -35,7 +35,7 @@ const OMNI_MODER = {
   },
 };
 
-const OMNI_LEGEND = ['* new note', '/ notebooks', '# tags', 'tag: in: updated: has:'];
+const OMNI_LEGEND = ['* new note', '/ notebooks', '# tags', 'tag: in: updated: has:', '? help'];
 
 /*
  * `/notesbog` INDE i en tekst, man opretter en note ud fra.
@@ -427,6 +427,13 @@ async function opdaterOmni() {
   const el = omniEl();
   if (!el) return;
   const raa = el.value;
+  /*
+   * `?` alene i feltet aabner hjaelpen (Andreas, 2026-10-16) - samme tegn som
+   * udenfor feltet, men dér naas det ikke, naar man staar i soegningen. Kun
+   * naar `?` er HELE feltet: »?« midt i en soegning er bare et tegn, og ingen
+   * note begynder med et enligt spoergsmaalstegn. Samme regel i doda.
+   */
+  if (raa === '?') { ryd(); visGenvejsPanel(); return; }
   const tegn = raa[0];
   saetMode(OMNI_MODER[tegn] ? tegn : null);
   const tekst = omni.mode ? raa.slice(1).trim() : raa.trim();

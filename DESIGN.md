@@ -4639,3 +4639,12 @@ overskrift« og »kan du lave så 1 linje kode, bliver vist på samme måde som 
   nu gennem markdown (`dokLinjeTilKodeblok` + den rene `linjerTilKode`), så en overskrifts `#` og
   linjens backticks ikke følger med (v114 lod et løst `#` stå over blokken). Et klik på sprog-mærket
   (»TEXT«, »SQL«) på en lukket kodeblok åbner den med markøren i sprogfeltet.
+
+## 65 · `?` i søgefeltet åbner hjælpen (2026-10-16)
+
+`?` udenfor et felt viste allerede genvejsoversigten, men stod man i søgefeltet,
+blev tegnet bare skrevet — og netop dér leder man efter, hvad feltet kan (Andreas,
+16-10-2026). Nu åbner `?` **alene i feltet** oversigten og rydder feltet. Kun når
+det er hele feltet: midt i en søgning er det et almindeligt tegn, og ingen note
+starter med et enligt spørgsmålstegn. Legenden siger `? help`, og oversigten har
+linjen under »In the search field«. Samme regel i doda, hvor den åbner Guiden.

@@ -2984,6 +2984,10 @@ const GENVEJE = [
     hvad: 'Change where you search: all notes → this notebook → this note',
   },
   {
+    tast: '', vis: '?', gruppe: 'soeg', kunVist: true,
+    hvad: 'Alone in the field: open this list',
+  },
+  {
     tast: '', vis: 'Esc', gruppe: 'soeg', kunVist: true,
     hvad: 'Clear the field and leave it',
   },
@@ -7141,7 +7145,7 @@ function bindAiDel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 115;
+const APP_VERSION = 116;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -15970,7 +15974,7 @@ const OMNI_MODER = {
   },
 };
 
-const OMNI_LEGEND = ['* new note', '/ notebooks', '# tags', 'tag: in: updated: has:'];
+const OMNI_LEGEND = ['* new note', '/ notebooks', '# tags', 'tag: in: updated: has:', '? help'];
 
 /*
  * `/notesbog` INDE i en tekst, man opretter en note ud fra.
@@ -16362,6 +16366,13 @@ async function opdaterOmni() {
   const el = omniEl();
   if (!el) return;
   const raa = el.value;
+  /*
+   * `?` alene i feltet aabner hjaelpen (Andreas, 2026-10-16) - samme tegn som
+   * udenfor feltet, men dér naas det ikke, naar man staar i soegningen. Kun
+   * naar `?` er HELE feltet: »?« midt i en soegning er bare et tegn, og ingen
+   * note begynder med et enligt spoergsmaalstegn. Samme regel i doda.
+   */
+  if (raa === '?') { ryd(); visGenvejsPanel(); return; }
   const tegn = raa[0];
   saetMode(OMNI_MODER[tegn] ? tegn : null);
   const tekst = omni.mode ? raa.slice(1).trim() : raa.trim();
