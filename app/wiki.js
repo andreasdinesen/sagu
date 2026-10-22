@@ -31,6 +31,8 @@
 
 'use strict';
 
+const soeg = require('./shared/soeg.js');
+
 /*
  * Ord, en sides adresse ALDRIG maa blive.
  *
@@ -188,7 +190,7 @@ ${o.krop}
     return `<header class="wtop">
   <a class="wbrand" href="${attr(rod)}/">${share.icon ? `<span class="wicon">${esc(share.icon)}</span>` : ''}<span>${esc(share.title)}</span></a>
   ${o.udenSoeg ? '' : `<form class="wsearch" method="get" action="${attr(rod)}/search" role="search"
-        data-levende="${attr(rod)}/search">
+        data-levende="${attr(rod)}/search"${maerkeData(o.maerker)}>
     <input type="search" name="q" id="wq" placeholder="Search this wiki" value="${attr(o.q || '')}"
            aria-label="Search this wiki" autocomplete="off">
     <button class="btn" type="submit">Search</button>
@@ -196,6 +198,12 @@ ${o.krop}
   </form>`}
   <button class="wtheme" id="wtheme" type="button" aria-label="Switch theme" hidden>◐</button>
 </header>`;
+  }
+
+  /** Maerkernes navne til `#`-forslagene i feltet (wiki.js). Tomt = ingen forslag. */
+  function maerkeData(maerker) {
+    if (!maerker || !maerker.length) return '';
+    return ` data-maerker="${attr(JSON.stringify(maerker.map((m) => m.name)))}"`;
   }
 
   /** Navigationstraeet. Kun titler - en side, der ikke er udgivet, staar der ikke. */
@@ -237,13 +245,54 @@ ${o.krop}
       <summary>Pages</summary>${punkter}</details></nav>`;
   }
 
-  /** Sideoversigten i hoejre kant. Samme id'er, som rendereren gav overskrifterne. */
-  function tocHtml(overskrifter) {
-    const brugbare = overskrifter.filter((h) => h.niveau <= 3);
-    if (brugbare.length < 2) return '';
-    return `<aside class="wtoc"><div class="wtoc-inder"><p class="wtoc-hoved">On this page</p>${
+  /**
+   * Hoejre kant: sideoversigten og - naar udgivelsen viser dem - maerkerne (v117).
+   *
+   * Sideoversigten bruger samme id'er, som rendereren gav overskrifterne.
+   * Maerkerne ligger UNDER den: sideoversigten handler om DENNE side, maerkerne
+   * om hele wikien, og den naere ting skal staa foerst.
+   */
+  function sidekant(overskrifter, maerker, rod, aktive) {
+    const brugbare = (overskrifter || []).filter((h) => h.niveau <= 3);
+    const toc = brugbare.length < 2 ? '' : `<div class="wtoc-inder"><p class="wtoc-hoved">On this page</p>${
       brugbare.map((h) => `<a class="wtoc-link n${h.niveau}" href="#${attr(h.id)}">${esc(h.tekst)}</a>`).join('')
-    }</div></aside>`;
+    }</div>`;
+    const tags = maerkeHtml(maerker, rod, aktive);
+    if (!toc && !tags) return '';
+    return `<aside class="wtoc${tags ? ' har-maerker' : ''}${toc ? '' : ' uden-toc'}">${toc}${tags}</aside>`;
+  }
+
+  /**
+   * Et maerkes soegning. `#drift` er den laesbare form; et maerke med
+   * mellemrum kan ikke staa efter `#`, saa det faar `tag:"…"`.
+   */
+  function maerkeSoeg(navn) {
+    return /\s|"/.test(navn) ? `tag:"${String(navn).replace(/"/g, '')}"` : `#${navn}`;
+  }
+
+  /**
+   * Maerkelisten. Hvert maerke er et LINK til soegningen - ingen JS, og den
+   * virker ogsaa, naar scriptet ikke gor. Det aktive (paa resultatsiden)
+   * peger tilbage til en tom soegning, saa et klik mere slaar det fra.
+   */
+  function maerkeHtml(maerker, rod, aktive) {
+    if (!maerker || !maerker.length) return '';
+    const aktiv = new Set((aktive || []).map((t) => String(t).toLowerCase()));
+    return `<div class="wmaerker"><p class="wtoc-hoved">Tags</p><div class="wmaerker-liste">${
+      maerker.map((m) => {
+        const paa = aktiv.has(m.name.toLowerCase());
+        const href = paa ? `${rod}/search` : `${rod}/search?q=${encodeURIComponent(maerkeSoeg(m.name))}`;
+        return `<a class="wmaerke${paa ? ' on' : ''}" href="${attr(href)}"${paa ? ' aria-current="true"' : ''}
+          title="${m.n} page${m.n === 1 ? '' : 's'}">#${esc(m.name)}<span class="wmaerke-n">${m.n}</span></a>`;
+      }).join('')}</div></div>`;
+  }
+
+  /**
+   * `#ord` i wikiens soegefelt er et maerke - som `#` i appens soegefelt.
+   * Kun i starten af et ord: `C#` og `side#anker` er tekst.
+   */
+  function hashTilTag(q) {
+    return String(q || '').replace(/(^|\s)#([^\s#"]+)/g, '$1tag:$2');
   }
 
   /**
@@ -368,7 +417,7 @@ ${o.krop}
     // ikke er delt, maa ikke kunne ses - heller ikke som en titel.
     const bagud = (note.backlinks || []).filter((b) => kort.has(b.id));
 
-    const krop = `${top(share, rod)}
+    const krop = `${top(share, rod, { maerker: o.maerker })}
 <div class="wwrap">
   ${navHtml(raekke, rod, kort, note.id, !!share.notebook_id)}
   <main class="wmain">
@@ -384,7 +433,7 @@ ${o.krop}
     ${kommentarAfsnit(share, rod, sideSlug, note.id, o)}
     ${fodHtml(share, rod)}
   </main>
-  ${tocHtml(overskrifter)}
+  ${sidekant(overskrifter, o.maerker, rod)}
 </div>`;
 
     return ramme({
@@ -552,7 +601,7 @@ ${o.krop}
     <h1 class="wtitel">${share.icon ? `<span class="wicon">${esc(share.icon)}</span>` : ''}${esc(share.title)}</h1>
     <p class="wmeta">${raekke.length} page${raekke.length === 1 ? '' : 's'}</p>
     ${share.allow_search ? `<form class="wsoegstor" method="get" action="${attr(rod)}/search" role="search"
-      data-levende="${attr(rod)}/search">
+      data-levende="${attr(rod)}/search"${maerkeData((opt || {}).maerker)}>
       <input type="search" name="q" id="wq" placeholder="Search ${attr(share.title)}"
              aria-label="Search this wiki" autocomplete="off" autofocus>
       <button class="btn primary" type="submit">Search</button>
@@ -568,6 +617,7 @@ ${o.krop}
       </li>`).join('')}</ul>` : ''}
     ${fodHtml(share, rod)}
   </main>
+  ${sidekant([], (opt || {}).maerker, rod)}
 </div>`;
     return ramme({
       sted: share.title,
@@ -581,7 +631,7 @@ ${o.krop}
 
   /* ------------------------------------------------------------- soegning */
 
-  function soegeSide(share, rod, raekke, kort, q, svar) {
+  function soegeSide(share, rod, raekke, kort, q, svar, maerker) {
     const erBog = !!share.notebook_id;
     const link = (id) => {
       const n = raekke.find((x) => x.id === id);
@@ -597,11 +647,14 @@ ${o.krop}
         <a class="wtraef-titel" href="${attr(til)}">${esc(r.title || 'Untitled')}</a>
         ${r.sectionTitle ? `<span class="wtraef-afsnit">§ ${esc(r.sectionTitle)}</span>` : ''}
         <p class="wtraef-uddrag">${uddrag}</p>
-        ${r.tags && r.tags.length ? `<p class="meta">${r.tags.map((t) => `#${esc(t)}`).join(' ')}</p>` : ''}
+        ${r.tags && r.tags.length ? `<p class="meta">${r.tags.map((t) => (maerker && maerker.length
+    // Med maerkelisten slaaet til er et traeffers maerker ogsaa links (v117).
+    ? `<a class="wmaerke-link" href="${attr(`${rod}/search?q=${encodeURIComponent(maerkeSoeg(t))}`)}">#${esc(t)}</a>`
+    : `#${esc(t)}`)).join(' ')}</p>` : ''}
       </li>`;
     }).join('');
 
-    const krop = `${top(share, rod, { q })}
+    const krop = `${top(share, rod, { q, maerker })}
 <div class="wwrap">
   ${navHtml(raekke, rod, kort, null, !!share.notebook_id)}
   <main class="wmain">
@@ -617,15 +670,16 @@ ${o.krop}
       <code>"a phrase"</code> and <code>-without</code>.</p>` : ''}
     ${fodHtml(share, rod)}
   </main>
+  ${sidekant([], maerker, rod, soeg.tolk(hashTilTag(q)).tags)}
 </div>`;
     return ramme({ sted: share.title, titel: q ? `Search: ${q}` : 'Search', krop, indekserbar: false });
   }
 
   /* -------------------------------------------------------- aendringsfeed */
 
-  function aendringsSide(share, rod, raekke, kort) {
+  function aendringsSide(share, rod, raekke, kort, maerker) {
     const nyeste = raekke.slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
-    const krop = `${top(share, rod)}
+    const krop = `${top(share, rod, { maerker })}
 <div class="wwrap">
   ${navHtml(raekke, rod, kort, null, !!share.notebook_id)}
   <main class="wmain">
@@ -638,6 +692,7 @@ ${o.krop}
       <span class="meta">${esc(new Date(n.updatedAt * 1000).toISOString().slice(0, 10))}</span></li>`).join('')}</ul>
     ${fodHtml(share, rod)}
   </main>
+  ${sidekant([], maerker, rod)}
 </div>`;
     return ramme({ sted: share.title, titel: 'Recent changes', krop, feed: `${rod}/feed`, indekserbar: false });
   }
@@ -739,6 +794,9 @@ ${nyeste.map((n) => `  <entry>
     const raekke = iLaeseraekkefoelge(noter, share.notebook_id ? null : share.note_id);
     const kort = slugKort(raekke);
     const ider = raekke.map((n) => n.id);
+    // Maerkelisten (v117) - kun naar ejeren har slaaet den til, og kun med
+    // soegningen: et klik paa et maerke ER en soegning.
+    const maerker = share.show_tags && share.allow_search ? srv.maerkerIUdgivelse(share, ider) : [];
 
     /* --- en kommentar fra en gaest -------------------------------------- */
     if (rest === 'comment') {
@@ -800,7 +858,7 @@ ${nyeste.map((n) => `  <entry>
       // Forsmagen (flere linjer under den valgte traeffer) kun til den levende
       // liste - resultatsiden viser ét uddrag pr. traeffer og betaler ikke for den.
       const json = ctx.query.get('format') === 'json';
-      const resultat = q ? srv.soegIUdgivelse(share, q, ider, json) : { results: [], fallback: false };
+      const resultat = q ? srv.soegIUdgivelse(share, hashTilTag(q), ider, json) : { results: [], fallback: false };
       /*
        * Levende soegning, som i appen - men uden appens API.
        *
@@ -834,12 +892,12 @@ ${nyeste.map((n) => `  <entry>
         }), 'application/json; charset=utf-8', share);
         return true;
       }
-      srv.sendHtml(res, 200, soegeSide(share, rod, raekke, kort, q, resultat), share);
+      srv.sendHtml(res, 200, soegeSide(share, rod, raekke, kort, q, resultat, maerker), share);
       return true;
     }
 
     if (rest === 'changes') {
-      srv.sendHtml(res, 200, aendringsSide(share, rod, raekke, kort), share);
+      srv.sendHtml(res, 200, aendringsSide(share, rod, raekke, kort, maerker), share);
       return true;
     }
 
@@ -872,7 +930,7 @@ ${nyeste.map((n) => `  <entry>
     if (!rest && share.notebook_id && !start) {
       srv.taelVisning(share, share.notebook_id);
       srv.sendHtml(res, 200,
-        bogForside(share, rod, raekke, kort, { kanonisk: `${srv.offentligVaert(req)}${rod}/` }), share);
+        bogForside(share, rod, raekke, kort, { kanonisk: `${srv.offentligVaert(req)}${rod}/`, maerker }), share);
       return true;
     }
     let noteId = start || share.note_id;
@@ -916,6 +974,7 @@ ${nyeste.map((n) => `  <entry>
       kvittering: KVIT[String(ctx.query.get('posted') || '')] || null,
       svarPaa: String(ctx.query.get('reply') || '').slice(0, 32) || null,
       kaede,
+      maerker,
       // Kun filer, der hoerer til udgivelsen, faar en adresse. Alt andet
       // bliver til et synligt link med en forklaring, praecis som i appen.
       filUrl: (u) => {

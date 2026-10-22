@@ -731,3 +731,41 @@ test('wikien har kopi paa kode i teksten og billeder i stort med »Copy image« 
   assert.match(w, /credentials: 'same-origin'/, 'en wiki med adgangskode sender cookien med');
   assert.doesNotMatch(w, /fetch\(['"]data:/, "CSP'en forbyder fetch af data:");
 });
+
+test('v117: maerkelisten er SLAAET FRA, til ejeren slaar den til - og viser kun udgivne maerker', async () => {
+  const bog = (await a.kald('POST', '/api/v1/notebooks', { name: 'Maerkebog' })).data.notebook;
+  await a.kald('POST', '/api/v1/notes', {
+    title: 'Switche', notebookId: bog.id, tags: ['drift', 'net vaerk'], body: '# Switche\n\nKaelderen.',
+  });
+  await a.kald('POST', '/api/v1/notes', {
+    title: 'Vagter', notebookId: bog.id, tags: ['drift'], body: '# Vagter\n\nMandag.',
+  });
+  // Et maerke, der KUN sidder paa en note uden for udgivelsen, maa ikke ses.
+  await a.kald('POST', '/api/v1/notes', { title: 'Loen', tags: ['hemmeligt'], body: '# Loen' });
+
+  const share = (await a.kald('POST', '/api/v1/shares',
+    { notebookId: bog.id, slug: 'maerkebog' })).data.share;
+  assert.equal(share.showTags, false, 'fravaer betyder nej');
+  const g = gaest(srv.base);
+  assert.doesNotMatch((await g.hent('/w/maerkebog/switche')).tekst, /class="wmaerker"/);
+
+  const paa = (await a.kald('PATCH', `/api/v1/shares/${share.id}`, { showTags: true })).data.share;
+  assert.equal(paa.showTags, true);
+  const side = (await g.hent('/w/maerkebog/switche')).tekst;
+  assert.match(side, /class="wmaerker"/);
+  assert.match(side, /href="\/w\/maerkebog\/search\?q=%23drift"/, '#drift er et link til soegningen');
+  assert.match(side, /q=%23net-vaerk"/, 'mellemrum i et maerke er bindestreg');
+  assert.match(side, /#drift<span class="wmaerke-n">2<\/span>/, 'antallet af udgivne sider');
+  assert.doesNotMatch(side, /hemmeligt/, 'et maerke uden for udgivelsen findes ikke');
+  assert.match(side, /data-maerker="/, 'feltet faar navnene til #-forslagene');
+
+  // `#drift` i soegningen er maerket - og det aktive maerke er markeret.
+  const res = (await g.hent('/w/maerkebog/search?q=%23drift')).tekst;
+  assert.match(res, /Switche/);
+  assert.match(res, /Vagter/);
+  assert.match(res, /class="wmaerke on"/);
+
+  // Uden soegning er der ingen maerkeliste: et klik paa et maerke ER en soegning.
+  await a.kald('PATCH', `/api/v1/shares/${share.id}`, { allowSearch: false });
+  assert.doesNotMatch((await g.hent('/w/maerkebog/switche')).tekst, /class="wmaerker"/);
+});

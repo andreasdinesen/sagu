@@ -356,6 +356,49 @@
       liste.hidden = false;
     }
 
+    /*
+     * `#` foreslaar maerker (v117) - som `#` i appens soegefelt.
+     *
+     * Listen staar i `data-maerker` (kun naar ejeren har slaaet maerkelisten
+     * til), saa forslagene koster intet kald. Et valgt maerke er et LINK til
+     * soegningen med `#ord` skrevet ind i stedet for det halve ord - resten
+     * af linjen bliver staaende, saa »vpn #dri« bliver til »vpn #drift«.
+     */
+    var maerker = [];
+    try { maerker = JSON.parse(form.dataset.maerker || '[]'); } catch (e) { maerker = []; }
+
+    function esc(t) {
+      return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function maerkeForslag(raa) {
+      var m = /(^|\s)#([^\s#"]*)$/.exec(raa);
+      if (!m || !maerker.length) return false;
+      var del = m[2].toLowerCase();
+      var foran = raa.slice(0, raa.length - m[2].length - 1);
+      var fundne = maerker.filter(function (t) { return t.toLowerCase().indexOf(del) >= 0; })
+        // Dem, der BEGYNDER med det skrevne, foerst.
+        .sort(function (a, b) {
+          return (a.toLowerCase().indexOf(del) === 0 ? 0 : 1) - (b.toLowerCase().indexOf(del) === 0 ? 0 : 1);
+        })
+        .slice(0, 12);
+      if (!fundne.length) {
+        liste.innerHTML = '<p class="wtraefliste-tom">No tag matches. Press Enter to search the text.</p>';
+        liste.hidden = false;
+        valgt = -1;
+        return true;
+      }
+      liste.innerHTML = fundne.map(function (t, i) {
+        var soeg = /\s/.test(t) ? 'tag:"' + t + '"' : '#' + t;
+        var href = form.dataset.levende + '?q=' + encodeURIComponent((foran + soeg).trim());
+        return '<a class="wtraefliste-et' + (i === 0 ? ' paa' : '') + '" href="' + esc(href) + '">'
+          + '<span class="wtraefliste-titel">#' + esc(t) + '</span></a>';
+      }).join('');
+      valgt = 0;
+      liste.hidden = false;
+      return true;
+    }
+
     function marker(n) {
       var alle = liste.querySelectorAll('.wtraefliste-et');
       if (!alle.length) return;
@@ -367,6 +410,8 @@
     felt.addEventListener('input', function () {
       var q = felt.value.trim();
       clearTimeout(timer);
+      // token++: et soegesvar, der allerede er paa vej, maa ikke overskrive forslagene.
+      if (maerkeForslag(felt.value)) { token++; return; }
       if (q.length < 2) { luk(); return; }
       // 140 ms: kort nok til at foeles levende, langt nok til ikke at sende et
       // kald pr. tastetryk.

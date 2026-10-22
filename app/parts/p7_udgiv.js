@@ -355,6 +355,12 @@ function udgivetHtml(share, m, opt) {
       </select></label>`}
     <label class="switch"><input type="checkbox" data-flag="allowSearch"
       ${share.allowSearch ? 'checked' : ''}><span>Let readers search the wiki</span></label>
+    ${share.allowSearch ? `
+      <label class="switch"><input type="checkbox" data-flag="showTags"
+        ${share.showTags ? 'checked' : ''}><span>Show the tags readers can click</span></label>
+      <p class="meta saetning">A list of the tags used on the published pages, under
+      »On this page«. A click — or <code>#tag</code> in the search field — shows the pages
+      with that tag.</p>` : ''}
     <label class="switch"><input type="checkbox" data-flag="allowIndex"
       ${share.allowIndex ? 'checked' : ''}><span>Let search engines find it</span></label>
     <p class="meta saetning">Off means the page asks not to be indexed. A password-protected

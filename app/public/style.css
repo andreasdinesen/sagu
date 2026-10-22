@@ -2487,6 +2487,24 @@ body.wiki {
 .wtoc-link:hover { color: var(--text); }
 .wtoc-link.n3 { padding-left: 12px; font-size: 13px; }
 
+/*
+ * Maerkerne (v117) - under sideoversigten, som chips. De handler om hele
+ * wikien, ikke om siden, saa der er luft imellem; staar de alene, er der ingen.
+ */
+.wmaerker { margin-top: 22px; }
+.wtoc.uden-toc .wmaerker { margin-top: 0; }
+.wmaerker-liste { display: flex; flex-wrap: wrap; gap: 5px; }
+.wmaerke {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 2px 8px; border-radius: 999px; font-size: 12.5px; line-height: 1.5;
+  background: var(--accent-soft); color: var(--accent-text); text-decoration: none;
+}
+.wmaerke:hover { filter: brightness(.95); }
+.wmaerke.on { background: var(--accent); color: #fff; }
+.wmaerke-n { font-size: 11px; opacity: .65; }
+.wmaerke-link { color: inherit; text-decoration: none; }
+.wmaerke-link:hover { color: var(--accent-text); text-decoration: underline; }
+
 .wtraeffer { list-style: none; margin: 0; padding: 0; }
 .wtraef { padding: 14px 0; border-bottom: 1px solid var(--border-soft); }
 .wtraef-titel { font-size: 16px; font-weight: 600; color: var(--text); text-decoration: none; }
@@ -2501,6 +2519,12 @@ body.wiki {
   /* Sideoversigten ville ligge oven i teksten paa en telefon; navigationen
      folder browseren selv sammen via <details>. */
   .wtoc { display: none; }
+  /* Maerkerne skal ogsaa kunne naas paa en telefon: under artiklen, uden
+     sideoversigten, der ville ligge oven i teksten. */
+  .wtoc.har-maerker { display: block; order: 3; position: static; max-height: none;
+    border-top: 1px solid var(--border); padding-top: 12px; }
+  .wtoc.har-maerker .wtoc-inder { display: none; }
+  .wtoc.har-maerker .wmaerker { margin-top: 0; }
   .wwrap { grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 18px 14px 50px; }
   /* Ét spor: alt ligger i kolonne 1, og raekkefoelgen styres af `order`. */
   .wwrap > .wnav, .wwrap > .wmain, .wwrap > .wtoc { grid-column: 1; }

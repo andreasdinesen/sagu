@@ -892,6 +892,15 @@ const MIGRATIONS = [
      */
     d.exec('ALTER TABLE shares ADD COLUMN start_note_id TEXT;');
   },
+
+  function m21(d) {
+    /*
+     * v117 - en udgivelse kan vise sine MAERKER som en liste, man kan klikke i
+     * (Andreas, 2026-10-22). Fravaer betyder nej: en udgivelse, ingen har taget
+     * stilling til, viser ikke pludselig sine maerker frem.
+     */
+    d.exec('ALTER TABLE shares ADD COLUMN show_tags INTEGER NOT NULL DEFAULT 0;');
+  },
 ];
 
 /*
@@ -6422,6 +6431,7 @@ const MOENSTRE = [
       if (har('moderateComments')) { saet.push('moderate_comments = ?'); arg.push(body.moderateComments ? 1 : 0); }
       if (har('allowSearch')) { saet.push('allow_search = ?'); arg.push(body.allowSearch ? 1 : 0); }
       if (har('allowIndex')) { saet.push('allow_index = ?'); arg.push(body.allowIndex ? 1 : 0); }
+      if (har('showTags')) { saet.push('show_tags = ?'); arg.push(body.showTags ? 1 : 0); }
       if (har('expiresAt')) { saet.push('expires_at = ?'); arg.push(tidsstempel(body.expiresAt)); }
       if (har('startNoteId')) {
         // Kun for en notesbog, og kun en af ejerens egne noter I bogen. null/"" = den genererede forside.
@@ -7477,6 +7487,7 @@ function formUdgivelse(r) {
        WHERE share_id = ? AND deleted_at IS NULL AND status = 'pending'`).get(r.id).n,
     allowSearch: !!r.allow_search,
     allowIndex: !!r.allow_index,
+    showTags: !!r.show_tags,
     expiresAt: r.expires_at || null,
     // v111: den note, en udgivet notesbog starter paa - null = den genererede forside.
     startNoteId: r.start_note_id || null,
@@ -7540,6 +7551,22 @@ const wiki = wikiModul.opret({
     let e;
     try { e = JSON.parse(gemt.data); } catch { return null; }
     return e.slags === 'fil' ? wikiGhFil(e, info) : wikiGhSag(e);
+  },
+
+  /*
+   * Maerkerne paa udgivelsens noter, med antal (v117).
+   *
+   * Kun de noter, der ER udgivet - samme id-liste som alt andet i wikien. Et
+   * maerke, der kun sidder paa en privat note, findes ikke for en laeser.
+   */
+  maerkerIUdgivelse(share, ider) {
+    if (!ider.length) return [];
+    const huller = ider.map(() => '?').join(',');
+    return db.prepare(`
+      SELECT t.name, COUNT(*) AS n FROM note_tags nt JOIN tags t ON t.id = nt.tag_id
+       WHERE nt.note_id IN (${huller}) AND t.user_id = ?
+       GROUP BY lower(t.name) ORDER BY lower(t.name)`).all(...ider, share.user_id)
+      .map((r) => ({ name: r.name, n: r.n }));
   },
 
   soegIUdgivelse(share, q, ider, forsmag) {

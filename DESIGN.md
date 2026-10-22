@@ -4648,3 +4648,25 @@ blev tegnet bare skrevet — og netop dér leder man efter, hvad feltet kan (And
 det er hele feltet: midt i en søgning er det et almindeligt tegn, og ingen note
 starter med et enligt spørgsmålstegn. Legenden siger `? help`, og oversigten har
 linjen under »In the search field«. Samme regel i doda, hvor den åbner Guiden.
+
+## 66 · Wikien kan vise sine mærker (2026-10-22)
+
+Andreas, 22-10-2026: »når man benytter en notebook som wiki, at man kan vælge at slå til, så
+man kan få listet alle de tags, som er benyttet, og søge i dem via # og/eller ved at klikke på
+dem«. En kontakt pr. udgivelse, **»Show the tags readers can click«** (`shares.show_tags`, m21),
+**slået fra** som udgangspunkt — en udgivelse, ingen har taget stilling til, viser ikke pludselig
+sine mærker frem.
+
+- **Listen ligger under »On this page«** i højre kant, som chips med antal sider. Sideoversigten
+  handler om DENNE side, mærkerne om hele wikien, så den nære ting står først. Den står også på
+  forsiden, søgesiden og »Recent changes«. På en telefon (hvor sideoversigten er skjult) ligger
+  listen under artiklen og navigationen.
+- **Kun mærker på udgivne noter** — samme id-liste som resten af wikien (`maerkerIUdgivelse`).
+- **Et mærke er et LINK til søgningen** (`/search?q=%23drift`), så det virker uden JS. Det aktive
+  mærke på resultatsiden er fremhævet, og et klik på det igen slår det fra. Med listen slået til
+  er mærkerne under hvert søgeresultat også links.
+- **`#ord` i wikiens søgefelt er `tag:ord`** — som `#` i appens søgefelt; kun i starten af et
+  ord, så `C#` er tekst. Det gælder altid, også uden listen. Med listen slået til foreslår feltet
+  mærkerne, mens man skriver `#…` (navnene står i `data-maerker`, så forslagene koster intet kald).
+- **Kræver søgningen**: kontakten vises kun, når »Let readers search the wiki« er slået til, og
+  listen tegnes kun da — et klik på et mærke ER en søgning.
