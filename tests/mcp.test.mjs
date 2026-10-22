@@ -272,7 +272,21 @@ test('update_note erstatter, og kræver noget at ændre', async () => {
   assert.match(r.content[0].text, /Saved “Ændret”/);
   const tom = await kald('update_note', { id: c.structuredContent.note.id });
   assert.equal(tom.isError, true);
-  assert.match(tom.content[0].text, /Send a title or a body/);
+  assert.match(tom.content[0].text, /Send a title, a body or tags/);
+});
+
+test('v118: update_note saetter maerkerne - hele listen, og kun dem', async () => {
+  const c = await kald('create_note', { text: 'Skal have maerker' });
+  const id = c.structuredContent.note.id;
+  await kald('update_note', { id, tags: ['queue', '#qp', 'agent client'] });
+  const efter = await kald('get_note', { id });
+  assert.deepEqual([...efter.structuredContent.note.tags].sort(), ['agent-client', 'qp', 'queue']);
+  // Listen ERSTATTER: et maerke, der ikke er med, ryger af.
+  await kald('update_note', { id, tags: ['queue'] });
+  assert.deepEqual((await kald('get_note', { id })).structuredContent.note.tags, ['queue']);
+  // Uden tags roeres maerkerne ikke, naar titlen aendres.
+  await kald('update_note', { id, title: 'Ny titel' });
+  assert.deepEqual((await kald('get_note', { id })).structuredContent.note.tags, ['queue']);
 });
 
 test('list_notebooks og list_tags viser det, søgningen kan bruge', async () => {

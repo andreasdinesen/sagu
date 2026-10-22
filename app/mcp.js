@@ -152,14 +152,19 @@ function opret(srv) {
       name: 'update_note',
       scope: 'write',
       description:
-        'Replace a note\'s title or its whole body. The body is markdown and REPLACES what '
-        + 'is there — read the note first, or use append_note if you are only adding.',
+        'Replace a note\'s title, its whole body or its tags. The body is markdown and REPLACES what '
+        + 'is there — read the note first, or use append_note if you are only adding. Tags also '
+        + 'REPLACE the note\'s tags: send the full list (an empty list removes them all).',
       inputSchema: {
         type: 'object',
         properties: {
           id: { type: 'string' },
           title: { type: 'string' },
           body: { type: 'string', description: 'The whole new body, in markdown.' },
+          tags: {
+            type: 'array', items: { type: 'string' },
+            description: 'The note\'s tags, all of them, without #. Spaces become hyphens.',
+          },
         },
         required: ['id'],
       },
@@ -167,7 +172,10 @@ function opret(srv) {
         const felter = {};
         if (typeof a.title === 'string') felter.title = a.title;
         if (typeof a.body === 'string') felter.body = a.body;
-        if (!Object.keys(felter).length) return { fejl: 'Send a title or a body to change.' };
+        // v118: maerker ogsaa via MCP. gemNote -> saetMaerker skriver dem forfra
+        // og renser dem, saa der er intet at validere her ud over formen.
+        if (Array.isArray(a.tags)) felter.tags = a.tags.map(String);
+        if (!Object.keys(felter).length) return { fejl: 'Send a title, a body or tags to change.' };
         const svar = srv.gemNote(ctx.userId, String(a.id || ''), felter);
         if (svar.fejl === 'not_found') return { fejl: 'No note with that id.' };
         if (svar.fejl) return { fejl: 'Could not save that note.' };

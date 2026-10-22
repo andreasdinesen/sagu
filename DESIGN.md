@@ -4670,3 +4670,11 @@ sine mærker frem.
   mærkerne, mens man skriver `#…` (navnene står i `data-maerker`, så forslagene koster intet kald).
 - **Kræver søgningen**: kontakten vises kun, når »Let readers search the wiki« er slået til, og
   listen tegnes kun da — et klik på et mærke ER en søgning.
+
+## 67 · Mærker via MCP (v118, 2026-10-22)
+
+`update_note` kunne kun ændre titel og tekst, så en assistent kunne ikke mærke Andreas'
+TrioWiki op (han bad om det, efter mærkelisten i v117). Nu tager værktøjet også `tags`:
+**hele listen**, der erstatter notens mærker — samme form som `body`, der også erstatter.
+En tom liste fjerner dem; uden feltet røres de ikke. Rensningen (`#`, mellemrum → bindestreg,
+dubletter) sker ét sted, i `saetMaerker`.
