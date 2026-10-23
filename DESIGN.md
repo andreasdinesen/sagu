@@ -472,6 +472,11 @@ Vanilla JS i `app/parts/p*.js` → `public/app.js`. Designtokens, skal, sidebar
 sig gøre. **Interfacet er engelsk; koden, kommentarerne og dokumenterne er
 dansk.**
 
+I en note viser sideoversigten notens **h1, h2 og h3** (fra to stk.). h1 var
+ikke med før, så en note skrevet med lutter `# ` fik ingen oversigt — og `# `
+er det, man skriver. Titlen er et tekstfelt uden for `.note-body` og tæller
+ikke med.
+
 Fem ting, arvet som *regler* frem for som kode:
 
 - **Mobilgrænsen er 900 px** og bor i én konstant, brugt af både

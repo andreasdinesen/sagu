@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 118;
+const APP_VERSION = 119;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -1087,9 +1087,11 @@ function byggToc() {
   const rail = document.getElementById('tocRail');
   if (!rail) return;
   const host = document.getElementById('pageHost');
-  // I en note er det notens egne overskrifter, oversigten skal vise - baade
-  // h2 og h3, saa et langt dokument kan navigeres.
-  const vaelger = state.view === 'note' ? '.note-body h2, .note-body h3' : 'h2';
+  // I en note er det notens egne overskrifter, oversigten skal vise - h1, h2
+  // og h3, saa et langt dokument kan navigeres. h1 skal med: `# ` er det,
+  // man skriver, og en note bygget af lutter h1 fik ellers ingen oversigt.
+  // Titlen er et tekstfelt uden for .note-body og taeller ikke med.
+  const vaelger = state.view === 'note' ? '.note-body h1, .note-body h2, .note-body h3' : 'h2';
   const fundne = host ? [...host.querySelectorAll(vaelger)] : [];
 
   // Under to afsnit er der ingen oversigt at lave, og paa en telefon ville en

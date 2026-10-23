@@ -201,6 +201,7 @@ Beslutningerne og deres begrundelser står i [`DESIGN.md`](DESIGN.md), kravene i
 
 | Version | |
 |---|---|
+| **119** | **Sideoversigten ser også `# `.** Menuen i højre kant viser nu notens h1 sammen med h2 og h3 — en note skrevet med lutter `# ` fik ellers ingen oversigt. |
 | **118** | **Mærker via MCP.** `update_note` tager nu også `tags` — hele listen, som erstatter notens mærker (en tom liste fjerner dem). Uden `tags` røres mærkerne ikke. Så kan en assistent mærke en hel wiki op. |
 | **117** | **Wikien kan vise sine mærker.** En ny kontakt i udgivelsesdialogen, *Show the tags readers can click* (slået fra som udgangspunkt, og kun når søgningen er slået til), lister mærkerne på de udgivne sider under *On this page* — med antal sider. Et klik viser siderne med mærket; det aktive er fremhævet. `#ord` i wikiens søgefelt er `tag:ord`, og feltet foreslår mærkerne, mens du skriver `#…`. På en telefon ligger listen under artiklen. |
 | **116** | **`?` i søgefeltet åbner genvejsoversigten.** `?` udenfor et felt gjorde det allerede, men stod du i søgefeltet, blev tegnet bare skrevet. Nu åbner et `?` alene i feltet oversigten og rydder feltet; midt i en søgning er det stadig et almindeligt tegn. Legenden under feltet siger `? help`, og oversigten har linjen under *In the search field*. Samme genvej i doda, hvor den åbner Guiden. |
