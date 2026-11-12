@@ -371,3 +371,20 @@ test('<br> i et tomt tjekpunkt bliver ikke til en tom linje (v108)', () => {
     .replace(/<span class="tjek-tekst"><\/span>/, '<span class="tjek-tekst"><br></span>');
   assert.equal(R.tilMarkdown(h.trim()), '- [ ] a\n- [ ]\n- [ ] b');
 });
+
+/*
+ * Windows' udklipsholder pakker et indsaet fra Chrome/Edge ind i
+ * <html>\r\n<body>\r\n<!--StartFragment-->...  - og teksten landede paa en ny
+ * linje i stedet for paa den, man stod paa (Andreas, 2026-11-12).
+ */
+test('rydKanter: Windows-indpakningen giver ingen tomme linjer omkring teksten', () => {
+  const win = '<html>\r\n<body>\r\n<!--StartFragment--><span>UR0649563010</span><!--EndFragment-->\r\n</body>\r\n</html>';
+  assert.equal(R.rydKanter(R.tilMarkdown(win)), 'UR0649563010');
+  assert.equal(R.rydKanter('celle\r\n'), 'celle');
+});
+
+test('rydKanter: indholdet og indrykningen inde i teksten bliver staaende', () => {
+  assert.equal(R.rydKanter('\n\n  a\n\nb  \n\n'), '  a\n\nb  ');
+  assert.equal(R.rydKanter('a\r\nb'), 'a\nb');
+  assert.equal(R.rydKanter(''), '');
+});

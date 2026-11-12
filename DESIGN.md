@@ -3442,6 +3442,13 @@ opdigtet prøve ikke ville have fundet:
 
 Et Word-indsæt giver nu `roedt og **fedt** og [et link](https://x.dk)`.
 
+**Et tredje hul, fra Windows (v120).** Chrome og Edge på Windows pakker alt, der kopieres,
+ind i `<html>\r\n<body>\r\n<!--StartFragment-->…`, og linjeskiftene mellem
+indpakningens tags blev til tomme linjer før og efter teksten — et indsæt landede på sin
+egen linje i stedet for ved markøren. `rydKanter()` skærer hele tomme linjer i kanterne
+af; der skæres **ikke** efter `StartFragment`, for `<ul>` og `<table>` står uden for
+markørerne.
+
 ### Anden etape: lister, tjeklister, citater og callouts
 
 Målt pr. bloktype mod det rigtige arkiv — ikke som ét gennemsnit, for et gennemsnit

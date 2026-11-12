@@ -3086,7 +3086,9 @@ async function indsaetFilerIBlok(filer, vaert, b) {
  */
 function indsatMarkdown(html, flad) {
   const ren = html ? saguRedigering.tilMarkdown(html) : flad;
-  return String(ren || '').trim() ? ren : (flad || '');
+  // Tomme linjer i kanterne er Windows' indpakning, ikke indhold - se
+  // `rydKanter` i redigering.js (Andreas, 2026-11-12).
+  return saguRedigering.rydKanter(String(ren || '').trim() ? ren : (flad || ''));
 }
 
 async function indsaetRent(e, vaert, b) {

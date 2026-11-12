@@ -2112,7 +2112,38 @@
     return { body: linjer.join('\n'), pladser };
   }
 
-  const api = { tilMarkdown, laes, afkod, sammensaet };
+  /**
+   * Et indsaets tomme linjer FOER og EFTER teksten skaeres vaek.
+   *
+   * »Naar jeg paster tekst ind paa min windows maskine via ctrl+v, saa
+   * bliver det sat ind paa en ny linje istedet for den samme linje jeg
+   * staar paa ... det virker paa min mac« (Andreas, 2026-11-12).
+   *
+   * Windows' udklipsholder (CF_HTML) pakker ALT, der kopieres i Chrome og
+   * Edge, ind i
+   *
+   *   <html>\r\n<body>\r\n<!--StartFragment-->tekst<!--EndFragment-->\r\n</body>\r\n</html>
+   *
+   * og linjeskiftene mellem indpakningens tags er tekst for oversaetteren:
+   * `tilMarkdown` gav »\r\n\r\ntekst\r\n\r\n«, og saa landede teksten paa sin
+   * egen linje. macOS har ingen indpakning - derfor saas fejlen kun paa pc.
+   * Excel og Notepad giver desuden et afsluttende \r\n i den rene tekst.
+   *
+   * Vi skaerer IKKE efter StartFragment-markoererne: Chrome og Excel lader
+   * fragmentets omgivende tags (`<ul>`, `<table>`) staa UDEN for dem, og saa
+   * ville en liste eller tabel miste sin form.
+   *
+   * Kun HELE tomme linjer i kanterne ryger. Indrykningen paa foerste linje
+   * og mellemrum sidst paa sidste linje bliver staaende - de kan vaere ment.
+   */
+  function rydKanter(s) {
+    return String(s == null ? '' : s)
+      .replace(/\r\n?/g, '\n')
+      .replace(/^(?:[ \t ]*\n)+/, '')
+      .replace(/(?:\n[ \t ]*)+$/, '');
+  }
+
+  const api = { tilMarkdown, laes, afkod, sammensaet, rydKanter };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else global.saguRedigering = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this));
@@ -7145,7 +7176,7 @@ function bindAiDel() {
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 119;
+const APP_VERSION = 120;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -14150,7 +14181,9 @@ async function indsaetFilerIBlok(filer, vaert, b) {
  */
 function indsatMarkdown(html, flad) {
   const ren = html ? saguRedigering.tilMarkdown(html) : flad;
-  return String(ren || '').trim() ? ren : (flad || '');
+  // Tomme linjer i kanterne er Windows' indpakning, ikke indhold - se
+  // `rydKanter` i redigering.js (Andreas, 2026-11-12).
+  return saguRedigering.rydKanter(String(ren || '').trim() ? ren : (flad || ''));
 }
 
 async function indsaetRent(e, vaert, b) {
