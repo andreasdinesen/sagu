@@ -2992,6 +2992,14 @@ body.traekker { cursor: grabbing; user-select: none; }
 /* En oe (kode, tabel, GitHub-kort) redigeres raat ved et klik. */
 .dok .dok-oe { cursor: pointer; }
 .dok .dok-oe:hover { box-shadow: 0 0 0 1px var(--border); border-radius: 6px; }
+/* En tabel redigeres som tabel (v122): cellerne er skrivefelter, ikke et klik
+   ind i markdown. Rammen om cellen viser, hvor man skriver. */
+.dok .dok-oe.dok-tabel { cursor: text; }
+.dok .dok-oe.dok-tabel:hover { box-shadow: none; }
+.dok-tabel th, .dok-tabel td { outline: none; }
+.dok-tabel th:focus, .dok-tabel td:focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
 .dok.traekker { outline: 2px dashed var(--accent); outline-offset: 6px; }
 /* Vaerktoejet svaever over den blok, markoeren staar i - til hoejre. */
 .blok-vaerktoej.dok-vaerktoej {

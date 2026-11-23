@@ -363,7 +363,13 @@
       // det bare tekst med roer i - og det skal det blive ved med at vaere.
       if (ER_TABEL.test(linje) && i + 1 < linjer.length && ER_TABELSKEL.test(linjer[i + 1])) {
         const start = i;
-        const celler = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+        /*
+         * `\|` er et roer I cellen, ikke en kant - som i GitHubs markdown.
+         * Uden det kunne en celle aldrig indeholde »a|b«, og tabel-editoren
+         * (v122) skriver netop `\|`, naar man taster et roer i en celle.
+         */
+        const celler = (l) => l.trim().replace(/^\|/, '').replace(/(^|[^\\])\|$/, '$1')
+          .split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
         const hoved = celler(linje);
         const just = celler(linjer[i + 1]).map((c) => {
           if (/^:.*:$/.test(c)) return 'center';

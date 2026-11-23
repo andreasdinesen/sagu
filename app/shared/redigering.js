@@ -350,7 +350,9 @@
         const raekker = find(knude, (k) => k.tag === 'tr');
         if (!raekker.length) return boern();
         const celler = (tr) => (tr.boern || []).filter((k) => k.tag === 'th' || k.tag === 'td');
-        const linje = (tr) => `| ${celler(tr).map((c) => ud(c, opt).trim()).join(' | ')} |`;
+        // Et roer i en celle skrives `\|` - ellers ville det blive en kant.
+        const linje = (tr) => `| ${celler(tr).map((c) => ud(c, opt).trim().replace(/\n+/g, ' ')
+          .replace(/(?<!\\)\|/g, '\\|')).join(' | ')} |`;
         const just = celler(raekker[0]).map((c) => {
           const kl = klasser(c);
           if (kl.includes('center')) return ':-:';
@@ -454,7 +456,37 @@
       .replace(/(?:\n[ \t ]*)+$/, '');
   }
 
-  const api = { tilMarkdown, laes, afkod, sammensaet, rydKanter };
+  /*
+   * Tabel-editoren (v122): cellerne redigeres som celler, og kun de RAEKKER,
+   * der er aendret, skrives om. De tre her er den rene del - de kan proeves
+   * uden en DOM.
+   */
+
+  /** Én celle som markdown paa én linje: roer bliver `\|`, linjeskift mellemrum. */
+  function tabelCelle(md) {
+    return String(md == null ? '' : md).replace(/\s*\n+\s*/g, ' ').trim()
+      .replace(/(?<!\\)\|/g, '\\|');
+  }
+
+  /** En hel raekke: `| a | b |`. */
+  function tabelRaekke(celler) {
+    return `| ${celler.map(tabelCelle).join(' | ')} |`;
+  }
+
+  /** Skillelinjen af justeringen - `left` uden tegn, som markdown goer det. */
+  function tabelSkil(just) {
+    return `| ${just.map((j) => (j === 'center' ? ':-:' : j === 'right' ? '--:' : '---')).join(' | ')} |`;
+  }
+
+  /** Antal kolonner i en raekke eller skillelinje. */
+  function tabelKolonner(linje) {
+    return String(linje || '').trim().replace(/^\|/, '').replace(/(^|[^\\])\|$/, '$1')
+      .split(/(?<!\\)\|/).length;
+  }
+
+  const api = {
+    tilMarkdown, laes, afkod, sammensaet, rydKanter, tabelCelle, tabelRaekke, tabelSkil, tabelKolonner,
+  };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else global.saguRedigering = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this));

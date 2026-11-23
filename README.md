@@ -201,6 +201,7 @@ Beslutningerne og deres begrundelser står i [`DESIGN.md`](DESIGN.md), kravene i
 
 | Version | |
 |---|---|
+| **122** | **Tabeller redigeres som tabeller.** Et klik i en tabel åbner den ikke længere som markdown — man skriver direkte i cellerne og kan markere og kopiere, som den ser ud. Tab/Enter/pile mellem cellerne, og tabellens egen linje har + Row, + Column, − Row, − Column, Copy (lander som celler i Excel) og MD (den rå vej). »Table« i værktøjslinjen indsætter en ny tabel. Et `\|` er et rør i en celle. |
 | **121** | **Træk en fil ind → ny note.** Uden en åben note (eller i sidemenuen) bliver en trukket fil til en ny note med filens navn. En `.txt` eller `.md` bliver notens tekst — også en Windows-kodet med æøå; billeder, PDF'er og alt andet hænges på som vedhæftning. Sluppet på en notesbog i sidemenuen lander noten i bogen. På en åben note vedhæfter et træk stadig som før. |
 | **120** | **Indsæt fra Windows lander på linjen.** Ctrl+V i Chrome eller Edge på Windows satte teksten på en ny linje, fordi Windows' indpakning af udklipsholderen gav tomme linjer før og efter. De skæres nu af — også det afsluttende linjeskift fra Excel og Notepad. |
 | **119** | **Sideoversigten ser også `# `.** Menuen i højre kant viser nu notens h1 sammen med h2 og h3 — en note skrevet med lutter `# ` fik ellers ingen oversigt. |

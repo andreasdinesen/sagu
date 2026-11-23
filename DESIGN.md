@@ -4705,3 +4705,28 @@ dubletter) sker ét sted, i `saetMaerker`.
 - **Alt andet hænges på** en ny note med filens navn. Noten oprettes FØRST og filen sendes
   med dens id, så vedhæftningen aldrig står uden ejer. Fejler uploaden, slettes den tomme note.
 - Import og Settings tager ikke imod — de har deres egne felter.
+
+## 69 · Tabeller redigeres som tabeller (v122, 2026-11-23)
+
+»Når jeg klikker ind i en tabel, så bliver den lavet om til markdown, og det er lidt svært at
+overskue, når man skal kopiere noget ud fra den« (Andreas, 2026-11-23).
+
+- **Tabellen er stadig en ø** i dokumentet og går aldrig gennem oversætteren — men hver
+  **celle** er sit eget `contenteditable`. Et klik sætter markøren i cellen; teksten kan
+  markeres og kopieres, som den ser ud. `p18_tabel.js`.
+- **Markdownen skrives af tabellen selv**: øens hukommelse (`dok.urort`) får den nye tekst,
+  og `dokSkriv()` sætter noten sammen. Kun de RÆKKER, man har rørt, skrives om — resten
+  står tegn for tegn med sin gamle skillelinje og afstand. Ændres strukturen (række/kolonne
+  ind eller ud), skrives hele tabellen; skillelinjen beholdes, hvis kolonnetallet er det samme.
+- **`\|` er et rør i cellen** (som GitHub) — i parseren, i oversætteren og i editoren. Før
+  kunne en celle ikke rumme »a|b«.
+- **Taster:** Tab/Shift+Tab = næste/forrige celle (Tab i sidste celle → ny række), Enter =
+  cellen nedenunder (i sidste række → ny række), ↑/↓ = række op/ned og ud af tabellen,
+  Esc = ud under tabellen, ⌘B/I/U i cellen. Shift+Enter gør intet: en markdown-celle har
+  ingen linjeskift. Indsæt i en celle er ren tekst på én linje; filer kan ikke slippes i en celle.
+- **Tabellens egen linje** (i stedet for dokumentets, hvis knapper ville ramme dokumentet):
+  + Row, + Column, − Row, − Column, Copy (TSV + HTML, så den lander som celler i Excel),
+  MD (den gamle vej: tabellen som rå markdown). Overskriftsrækken kan ikke slettes her.
+- **»Table« i dokumentets værktøjslinje** indsætter en 3×2-tabel efter blokken — eller i
+  stedet for et tomt afsnit — med markøren i første overskrift.
+- Kun i dokument-editoren. Den klassiske blok-editor åbner stadig tabellen råt.

@@ -177,6 +177,8 @@ function tegnDokument(host, n, opt) {
     forrige = barn;
     forrigeTil = b.til;
   });
+  // Tabellerne er oeer, men deres CELLER kan skrives i (v122, p18_tabel.js).
+  dokTabeller(el);
   const foerste = stykker[0];
   const sidste = stykker[stykker.length - 1];
   dok.ramme = {
@@ -814,6 +816,7 @@ function dokSaetEfter(el) {
  * bogstavet uden for, saa laenge markoeren staar dér, pilen satte den.
  */
 function dokSkrivUdenfor(e) {
+  if (tabelCelle(e.target)) return;
   const el = dok.udenfor;
   if (!el) return;
   if (!el.isConnected || e.inputType !== 'insertText' || !e.data) { dok.udenfor = null; return; }
@@ -1085,6 +1088,8 @@ document.addEventListener('selectionchange', dokRetTjekMarkoer);
 
 function dokTast(e) {
   const el = dok.el;
+  // En tast i en tabelcelle er tabellens (p18_tabel.js).
+  if (tabelTast(e)) return;
   if (wikiTast(e)) return;
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -1218,6 +1223,9 @@ function bindDokument(el, host) {
   el.addEventListener('keydown', dokTast);
   el.addEventListener('beforeinput', dokSkrivUdenfor);
   el.addEventListener('input', (e) => {
+    // En celle skriver sin tabel - ingen genveje, ingen oversaetter.
+    const celle = tabelCelle(e.target);
+    if (celle) { tabelSkriv(dokBarn(celle)); return; }
     // `# `, `- `, ``` ... i starten af et afsnit tegner blokken om.
     if (dokBlokGenvej(e)) { lukWikiForslag(); return; }
     // Genvejene foerst - samme raekkefoelge som den rige blok.
@@ -1226,7 +1234,20 @@ function bindDokument(el, host) {
     const a = dokWikiAdapter();
     if (a) { opdaterWikiForslag(a); placerDokWiki(); } else lukWikiForslag();
   });
-  el.addEventListener('paste', (e) => indsaetRent(e, el, null));
+  el.addEventListener('paste', (e) => {
+    /*
+     * I en celle: kun ren tekst, paa én linje. En celle i markdown kan
+     * hverken rumme et afsnit eller et billede - og HTML fra et regneark
+     * ville komme med sin egen tabel inden i cellen.
+     */
+    if (tabelCelle(e.target)) {
+      e.preventDefault();
+      const t = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+      document.execCommand('insertText', false, t.replace(/\s*[\r\n\t]+\s*/g, ' ').trim());
+      return;
+    }
+    indsaetRent(e, el, null);
+  });
   /*
    * ⌘C/⌘X paa en markering med billeder: browserens egen kopi FOERST (saa
    * noget altid naar frem), og straks efter billederne oven i - se
@@ -1245,13 +1266,14 @@ function bindDokument(el, host) {
     if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
     e.preventDefault();
     el.classList.remove('traekker');
+    if (tabelCelle(e.target)) { toast('Drop files outside the table.'); return; }
     indsaetRent(e, el, null);
   });
   el.addEventListener('focus', () => { visDokVaerktoej(); });
   el.addEventListener('blur', () => {
     setTimeout(() => {
       const a = document.activeElement;
-      if (a && a.closest && a.closest('#blokVaerktoej, #wikiforslag, #linkBoble')) return;
+      if (a && a.closest && a.closest('#blokVaerktoej, #tabelBar, #wikiforslag, #linkBoble')) return;
       if (dokHarFokus()) return;
       lukWikiForslag();
       skjulDokVaerktoej();
@@ -1291,6 +1313,8 @@ function bindDokument(el, host) {
 function visDokVaerktoej() {
   const host = document.getElementById('noteBody');
   if (!host || !dokAktiv()) return;
+  // I en tabelcelle staar tabellens egen linje i stedet (p18_tabel.js).
+  if (tabelCelleVedMarkoer()) { visTabelBar(); return; }
   let linje = document.getElementById('blokVaerktoej');
   if (linje && !linje.classList.contains('dok-vaerktoej')) return;
   if (!linje) {
@@ -1328,6 +1352,16 @@ function visDokVaerktoej() {
     fm.setAttribute('aria-haspopup', 'menu');
     fm.innerHTML = 'H<span class="vt-pil" aria-hidden="true">▾</span>';
     linje.insertBefore(fm, linje.querySelector('[data-goer]'));
+    // »Table« - en ny tabel, der redigeres som tabel (v122).
+    const tb = document.createElement('button');
+    tb.className = 'vt-knap vt-tekst';
+    tb.type = 'button';
+    tb.tabIndex = -1;
+    tb.dataset.nytabel = '1';
+    tb.title = 'Insert a table';
+    tb.setAttribute('aria-label', 'Insert a table');
+    tb.textContent = 'Table';
+    linje.insertBefore(tb, lk);
     linje.appendChild(hj);
     host.appendChild(linje);
     bindDokVaerktoej(linje);
@@ -1346,6 +1380,7 @@ function placerDokVaerktoejVedMarkoer() {
   let linje = document.getElementById('blokVaerktoej');
   // `focus` kommer ikke altid (et vindue uden fokus, et programmatisk
   // fokus) - men markoeren flytter sig altid. Saa ogsaa herfra.
+  if (tabelCelleVedMarkoer()) return;
   if (!linje && dokHarFokus()) { visDokVaerktoej(); return; }
   if (!linje || !linje.classList.contains('dok-vaerktoej') || !dokHarFokus()) return;
   const sel = window.getSelection();
@@ -1448,6 +1483,8 @@ function bindDokVaerktoej(linje) {
   if (lk) lk.addEventListener('mousedown', (e) => { stop(e); dokLinkGenvej(); });
   const fm = linje.querySelector('[data-form]');
   if (fm) fm.addEventListener('mousedown', (e) => { stop(e); visFormMenu(fm); });
+  const tb = linje.querySelector('[data-nytabel]');
+  if (tb) tb.addEventListener('mousedown', (e) => { stop(e); dokNyTabel(); });
 }
 
 /* ----------------------------------------------------- [[forslag]] */
@@ -1495,7 +1532,7 @@ function placerDokWiki() {
 function dokKlik(e) {
   if (!dokAktiv()) return false;
   const host = document.getElementById('noteBody');
-  if (e.target.closest('.blok-greb, .blok-menu, .blok-indsaet, #blokVaerktoej, #wikiforslag, #linkBoble')) return true;
+  if (e.target.closest('.blok-greb, .blok-menu, .blok-indsaet, #blokVaerktoej, #tabelBar, #wikiforslag, #linkBoble')) return true;
 
   const a = e.target.closest('a');
   if (a && dok.el.contains(a)) {
@@ -1513,6 +1550,18 @@ function dokKlik(e) {
   }
 
   const oe = e.target.closest('.dok-oe');
+  /*
+   * En tabel aabner IKKE som markdown ved et klik (v122): cellerne kan
+   * skrives i, og teksten kan markeres og kopieres, som den ser ud. Et klik
+   * paa en kant eller i rammen ved siden af saetter markoeren i naermeste celle.
+   */
+  if (oe && dok.el.contains(oe) && oe.classList.contains('dok-tabel')) {
+    if (!tabelCelle(e.target)) {
+      const c = e.target.closest('th, td') || oe.querySelector('th, td');
+      if (c) tabelFokus(c, false);
+    }
+    return true;
+  }
   if (oe && dok.el.contains(oe)) {
     // Knapperne paa en oe (Copy, GitHub-opdatering) klarer sig selv.
     if (e.target.closest('button, img')) return true;
