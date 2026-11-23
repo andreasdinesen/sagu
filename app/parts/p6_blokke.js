@@ -599,7 +599,7 @@ function filMarkdown(fil, alt) {
   return fil.inline ? `![${navn}](sagu:${fil.id})` : `[${fil.name}](sagu:${fil.id})`;
 }
 
-async function indsaetFil(fil, felt) {
+async function indsaetFil(fil, felt, noteId) {
   const erBillede = /^image\/(png|jpeg|gif|webp|avif)$/.test(fil.type);
   try {
     let krop = fil;
@@ -610,7 +610,10 @@ async function indsaetFil(fil, felt) {
       if (skaleret) { krop = skaleret.blob; type = skaleret.type; maal = skaleret; }
     }
     const q = new URLSearchParams({ name: fil.name || 'image.png' });
-    if (editor.note) q.set('note', editor.note.id);
+    // `noteId` naar filen skal paa en note, der ikke er den aabne - en ny
+    // note lavet af et traek (filSomNote).
+    if (noteId) q.set('note', noteId);
+    else if (editor.note) q.set('note', editor.note.id);
     if (maal.w) { q.set('w', maal.w); q.set('h', maal.h); }
 
     const res = await fetch(`/api/v1/files?${q}`, {
@@ -1072,8 +1075,11 @@ function bindDropZone(host) {
   host.dataset.dropbundet = '1';
   let dybde = 0;
 
+  // Importen og indstillingerne har deres egne felter - dér ingen ramme.
+  const egenSide = () => state.view === 'import' || state.view === 'settings';
   host.addEventListener('dragenter', (e) => {
     if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+    if (egenSide()) return;
     e.preventDefault();
     dybde++;
     document.body.classList.add('traekker-fil');
@@ -1090,14 +1096,151 @@ function bindDropZone(host) {
   });
   host.addEventListener('drop', async (e) => {
     if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+    // Et felt inde paa siden har allerede taget det (importens zone, en
+    // aaben blok) - saa er traekket deres, ikke vores.
+    if (e.defaultPrevented) return;
     e.preventDefault();
     dybde = 0;
     document.body.classList.remove('traekker-fil');
-    if (!editor.note) return;
+    const filer = [...e.dataTransfer.files];
+    /*
+     * Ingen aaben note = en NY note pr. fil (Andreas, 2026-11-23).
+     *
+     * Paa en aaben note betyder et traek stadig »laeg den her ind« - det er
+     * dér, man kan se, hvor den lander. Alle andre steder var traekket et
+     * slag i luften, og nu bliver det en note.
+     */
+    if (state.view !== 'note' || !editor.note) {
+      if (egenSide()) return;
+      await filerSomNoter(filer, null);
+      return;
+    }
     // Er en blok aaben, hoerer traekket til den - feltet har sin egen handler.
     if (document.getElementById('blokFelt')) return;
-    await tilfoejFiler([...e.dataTransfer.files]);
+    await tilfoejFiler(filer);
   });
+}
+
+/*
+ * Sidemenuen: en fil trukket ind dér bliver ALTID en ny note - ogsaa naar en
+ * note staar aaben, for menuen er listen over noter, ikke en note.
+ *
+ * Slippes den paa en notesbog (eller en side i den), lander noten i bogen.
+ * Ellers blandt de loese.
+ */
+function bindTraeFilDrop(host) {
+  if (!host || host.dataset.fildropbundet) return;
+  host.dataset.fildropbundet = '1';
+  const erFil = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  const ryd = () => host.querySelectorAll('.tree-row.drop-i').forEach((el) => el.classList.remove('drop-i'));
+  const bogUnder = (el) => {
+    const bog = el && el.closest && el.closest('.tree-row.book[data-bograekke]');
+    if (bog) return { id: bog.dataset.bograekke, raekke: bog };
+    const side = el && el.closest && el.closest('[data-raekke]');
+    const n = side && traeNote(side.dataset.raekke);
+    if (!n || !n.notebookId) return null;
+    return { id: n.notebookId, raekke: host.querySelector(`.tree-row.book[data-bograekke="${n.notebookId}"]`) };
+  };
+  host.addEventListener('dragover', (e) => {
+    if (!erFil(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    ryd();
+    const bog = bogUnder(e.target);
+    if (bog && bog.raekke) bog.raekke.classList.add('drop-i');
+  });
+  host.addEventListener('dragleave', (e) => {
+    if (!host.contains(e.relatedTarget)) ryd();
+  });
+  host.addEventListener('drop', async (e) => {
+    if (!erFil(e) || !e.dataTransfer.files.length) return;
+    e.preventDefault();
+    ryd();
+    const bog = bogUnder(e.target);
+    await filerSomNoter([...e.dataTransfer.files], bog ? bog.id : null);
+  });
+}
+
+/*
+ * Hvilke filer er TEKST, der skal ind i noten - og ikke haenge paa den.
+ *
+ * Endelsen afgoer det, ikke kun MIME-typen: Windows giver en .md-fil en tom
+ * type, og en .txt fra et andet program kan hedde hvad som helst.
+ */
+const TEKSTFIL = /\.(txt|text|md|markdown)$/i;
+// Stoerre end det er en log, ikke en note - den haenges paa som fil.
+const TEKSTFIL_MAX = 2 * 1024 * 1024;
+
+function erTekstfil(f) {
+  if (f.size > TEKSTFIL_MAX) return false;
+  return TEKSTFIL.test(f.name || '') || f.type === 'text/plain' || f.type === 'text/markdown';
+}
+
+/*
+ * Laeser teksten - og gaetter tegnsaettet, for en .txt fra Windows er ofte
+ * hverken UTF-8 eller ens.
+ *
+ * BOM'en afgoer UTF-16. Ellers proeves UTF-8 STRENGT, og fejler det, er det
+ * Windows-1252 (Notepads gamle »ANSI«) - saa æøå ikke bliver til �.
+ */
+async function laesTekstfil(f) {
+  const b = new Uint8Array(await f.arrayBuffer());
+  let tekst;
+  if (b[0] === 0xFF && b[1] === 0xFE) tekst = new TextDecoder('utf-16le').decode(b);
+  else if (b[0] === 0xFE && b[1] === 0xFF) tekst = new TextDecoder('utf-16be').decode(b);
+  else {
+    try { tekst = new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { tekst = new TextDecoder('windows-1252').decode(b); }
+  }
+  return tekst.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+}
+
+/** Navnet uden endelse - »rapport.pdf« bliver til noten »rapport«. */
+function filTitel(f) {
+  const navn = String(f.name || '').trim();
+  return navn.replace(/\.[^./\\]{1,10}$/, '').trim() || navn || 'Untitled';
+}
+
+/*
+ * Én ny note pr. fil.
+ *
+ * Tekst (.txt, .md) bliver noten; alt andet - billeder, PDF'er, resten -
+ * haenges paa en note med filens navn, praecis som et traek ind paa en aaben
+ * note ville have gjort.
+ *
+ * Noten oprettes FOERST og filen sendes bagefter med dens id, saa
+ * vedhaeftningen aldrig staar uden ejer et oejeblik.
+ */
+async function filerSomNoter(filer, notebookId) {
+  let sidste = null;
+  let lavet = 0;
+  for (const f of filer.slice(0, 20)) {
+    try {
+      const title = filTitel(f);
+      const tekst = erTekstfil(f) ? await laesTekstfil(f) : null;
+      const felter = { title, body: tekst || '' };
+      if (notebookId) felter.notebookId = notebookId;
+      const d = await api('POST', '/api/v1/notes', felter);
+      if (tekst === null) {
+        const fil = await indsaetFil(f, null, d.note.id);
+        if (!fil || !fil.markdown) {
+          // Filen kom ikke op (indsaetFil har sagt hvorfor) - en tom note med
+          // dens navn er bare stoej i traeet.
+          try { await api('DELETE', `/api/v1/notes/${d.note.id}`); } catch { /* saa staar den der */ }
+          continue;
+        }
+        await api('PATCH', `/api/v1/notes/${d.note.id}`, { title, body: `${fil.markdown}\n` });
+      }
+      sidste = d.note.id;
+      lavet++;
+    } catch (ex) { toast(ex.message); }
+  }
+  if (!lavet) return;
+  await hentTrae();
+  tegnTrae();
+  // Én fil: aabn den, saa man ser den lande. Flere: bliv hvor man er.
+  if (lavet === 1) { await aabnNote(sidste); toast('Note created.'); return; }
+  if (state.view === 'notes') tegnSide();
+  toast(`Created ${lavet} notes.`);
 }
 
 /** Uploader og laegger markdown'en sidst i noten. */

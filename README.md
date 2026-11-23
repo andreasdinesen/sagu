@@ -201,6 +201,7 @@ Beslutningerne og deres begrundelser står i [`DESIGN.md`](DESIGN.md), kravene i
 
 | Version | |
 |---|---|
+| **121** | **Træk en fil ind → ny note.** Uden en åben note (eller i sidemenuen) bliver en trukket fil til en ny note med filens navn. En `.txt` eller `.md` bliver notens tekst — også en Windows-kodet med æøå; billeder, PDF'er og alt andet hænges på som vedhæftning. Sluppet på en notesbog i sidemenuen lander noten i bogen. På en åben note vedhæfter et træk stadig som før. |
 | **120** | **Indsæt fra Windows lander på linjen.** Ctrl+V i Chrome eller Edge på Windows satte teksten på en ny linje, fordi Windows' indpakning af udklipsholderen gav tomme linjer før og efter. De skæres nu af — også det afsluttende linjeskift fra Excel og Notepad. |
 | **119** | **Sideoversigten ser også `# `.** Menuen i højre kant viser nu notens h1 sammen med h2 og h3 — en note skrevet med lutter `# ` fik ellers ingen oversigt. |
 | **118** | **Mærker via MCP.** `update_note` tager nu også `tags` — hele listen, som erstatter notens mærker (en tom liste fjerner dem). Uden `tags` røres mærkerne ikke. Så kan en assistent mærke en hel wiki op. |

@@ -4690,3 +4690,18 @@ TrioWiki op (han bad om det, efter mærkelisten i v117). Nu tager værktøjet og
 **hele listen**, der erstatter notens mærker — samme form som `body`, der også erstatter.
 En tom liste fjerner dem; uden feltet røres de ikke. Rensningen (`#`, mellemrum → bindestreg,
 dubletter) sker ét sted, i `saetMaerker`.
+
+## 68 · En trukket fil bliver en ny note (v121, 2026-11-23)
+
+»Hvis man dropper en fil … at den opretter den som en note« (Andreas, 2026-11-23).
+
+- **Uden åben note** bliver hver fil sin egen note; titlen er filnavnet uden endelse.
+  **På en åben note** vedhæfter et træk stadig — dér kan man se, hvor filen lander.
+- **Sidemenuen laver altid en ny note**, også med en note åben: menuen er listen over
+  noter, ikke en note. Sluppet på en notesbog (eller en side i den) → i bogen.
+- **`.txt`/`.md` op til 2 MB bliver teksten.** Endelsen afgør det, ikke kun MIME —
+  Windows giver `.md` en tom type. Tegnsættet gættes: BOM → UTF-16, ellers streng UTF-8,
+  ellers Windows-1252 (Notepads »ANSI«). Større tekst er en log og hænges på som fil.
+- **Alt andet hænges på** en ny note med filens navn. Noten oprettes FØRST og filen sendes
+  med dens id, så vedhæftningen aldrig står uden ejer. Fejler uploaden, slettes den tomme note.
+- Import og Settings tager ikke imod — de har deres egne felter.

@@ -5,7 +5,7 @@
    NB: interfacet er ENGELSK - som doda, og ogsaa den ramme, kollegaerne ser
    i wikien. Koden, kommentarerne og dokumenterne er dansk. */
 
-const APP_VERSION = 120;
+const APP_VERSION = 121;
 
 /* Mobilgraensen bor to steder: her og i style.css. Holdes de ikke i trit,
    folder menuknappen sidebaren sammen paa en iPad, hvor CSS'en tror, den er
@@ -729,6 +729,9 @@ function bindShell() {
    */
   tegnGenveje();
   tegnTrae();
+  // Traek en fil ind -> en ny note (paa en aaben note: vedhaeft den).
+  bindDropZone(document.querySelector('.main'));
+  bindTraeFilDrop(document.getElementById('treeHost'));
   klargoerNoteFaner();
   document.getElementById('userBtn').addEventListener('click', visBrugerMenu);
   saetNavSkjult(navErSkjult());
