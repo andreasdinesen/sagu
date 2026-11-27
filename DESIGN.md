@@ -4730,3 +4730,16 @@ overskue, når man skal kopiere noget ud fra den« (Andreas, 2026-11-23).
 - **»Table« i dokumentets værktøjslinje** indsætter en 3×2-tabel efter blokken — eller i
   stedet for et tomt afsnit — med markøren i første overskrift.
 - Kun i dokument-editoren. Den klassiske blok-editor åbner stadig tabellen råt.
+
+## 70 · Kopi uden browserens stilarter (v123, 2026-11-27)
+
+Tekst kopieret fra Sagu og sat ind i Teams på Windows fik en farvet baggrund (Andreas,
+2026-11-27). Chrome og Edge lægger de **beregnede** stilarter ind i `text/html`
+(`style="background-color: …; color: …; font-family: …"`), også notens baggrund.
+
+- **⌘C/⌘X på tekst i dokument-editoren skrives af Sagu selv** (`renTekstKopi` i
+  `p16_dokument.js`): markeringens DOM uden Sagus pynt og uden `style`, plus ren tekst.
+  Semantikken (overskrifter, fed, lister, links, kode med `language-`) kommer med.
+- **⌘X** sletter bagefter gennem `execCommand('delete')`, så ⌘Z bringer teksten tilbage.
+- Markeringer med billeder går stadig gennem `kopierMedBilleder` (§ om billedkopi).
+- Kun i dokument-editoren. Skrivebeskyttede noter og wikien bruger stadig browserens kopi.

@@ -1945,15 +1945,55 @@ function kopierBilledeUdklip(img) {
   return kopierMedBilleder(r.cloneContents(), '', img);
 }
 
-/** ⌘C/Ctrl+C og ⌘X i dokumentet: er der billeder i markeringen, dem med. */
-function dokKopiMedBilleder() {
+/**
+ * ⌘C/Ctrl+C og ⌘X i dokumentet: er der billeder i markeringen, dem med.
+ *
+ * Er det ren tekst, skriver vi SELV HTML'en - browserens egen kopi var ikke
+ * den rigtige. Chrome og Edge lægger de BEREGNEDE stilarter ind i
+ * `text/html` (`style="background-color: …; color: …; font-family: …"`),
+ * også notens baggrundsfarve. Teams paa Windows viste den som en farvet
+ * baggrund bag den indsatte tekst (Andreas, 2026-11-27). Vores egen kopi er
+ * markeringens DOM uden `style` - overskrifter, fed, lister og links kommer
+ * med, farverne bliver hjemme.
+ */
+function dokKopiMedBilleder(e) {
   const sel = window.getSelection();
   if (!dokAktiv() || !sel || !sel.rangeCount || sel.isCollapsed) return;
   const r = sel.getRangeAt(0);
   const fragment = r.cloneContents();
-  // Ren tekst: browserens egen kopi er den rigtige, og intet skal oven i.
-  if (!fragment.querySelector || !fragment.querySelector('img')) return;
+  if (!fragment.querySelector || !fragment.querySelector('img')) {
+    renTekstKopi(e, fragment, String(sel));
+    return;
+  }
   kopierMedBilleder(fragment, String(sel).trim(), dokValgtBillede());
+}
+
+/** Markeringens HTML uden Sagus pynt og uden indlejrede stilarter. */
+function renKopiHtml(fragment) {
+  const ramme = document.createElement('div');
+  ramme.appendChild(fragment);
+  ramme.querySelectorAll(DOK_PYNT).forEach((x) => x.remove());
+  ramme.querySelectorAll('*').forEach((x) => {
+    x.removeAttribute('style');
+    x.removeAttribute('contenteditable');
+    x.removeAttribute('spellcheck');
+  });
+  return ramme.innerHTML;
+}
+
+/**
+ * Laeg ren tekst + ren HTML paa udklipsholderen gennem selve haendelsen
+ * (synkront, ingen tilladelse). Ved ⌘X slettes markeringen bagefter med
+ * browserens egen sletning, saa ⌘Z bringer den tilbage.
+ */
+function renTekstKopi(e, fragment, ren) {
+  if (!e || !e.clipboardData) return;
+  try {
+    e.clipboardData.setData('text/plain', ren);
+    e.clipboardData.setData('text/html', renKopiHtml(fragment));
+  } catch { return; } // browserens egen kopi er bedre end ingen
+  e.preventDefault();
+  if (e.type === 'cut') document.execCommand('delete');
 }
 
 /** Det billede, markeringen er - praecis ét, og intet andet. */
